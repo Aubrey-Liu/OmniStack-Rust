@@ -8,7 +8,7 @@ set(OLD_GRAPH_SRCS ${MODULE_SRCS})
 set(ENGINE_SRCS engine/engine.cpp)
 
 add_library(${OMNI_DATA_PLANE_LIB} ${ENGINE_SRCS} ${GRAPH_SRCS} ${IO_SRCS} ${MODULE_SRCS})
-target_include_directories(${OMNI_DATA_PLANE_LIB} PRIVATE include)
+target_include_directories(${OMNI_DATA_PLANE_LIB} PUBLIC include)
 
 set(ENGINE_SRCS ${OLD_ENGINE_SRCS})
 set(GRAPH_SRCS ${OLD_GRAPH_SRCS})
