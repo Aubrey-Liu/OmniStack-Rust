@@ -1,0 +1,1 @@
+add_library(${OMNISTACK_USERLIB} SHARED symb.cpp)
