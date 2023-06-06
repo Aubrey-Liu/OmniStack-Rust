@@ -1,0 +1,16 @@
+{
+    "name": "TEMPLATE",
+    "modules": [
+        "module0", "module1", "module2", "module3", "module4"
+    ],
+    "paths": [
+        ["module0", "module1", "module2"],
+        ["module0", "module1", "module3"],
+        ["module2", "module1", "module3"],
+        ["module0", "module1", "module4"]
+    ],
+    "groups": [
+        [0, 1, 2],
+        [2, 3]
+    ]
+}

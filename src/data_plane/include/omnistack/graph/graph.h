@@ -5,6 +5,16 @@
 #ifndef OMNISTACK_GRAPH_H
 #define OMNISTACK_GRAPH_H
 
-class Graph {};
+namespace omnistack {
+    namespace data_plane {
+        class Graph {
+        public:
 
+        };
+
+        class SubGraph {};
+
+        class SliceGraph {};
+    }
+}
 #endif //OMNISTACK_GRAPH_H

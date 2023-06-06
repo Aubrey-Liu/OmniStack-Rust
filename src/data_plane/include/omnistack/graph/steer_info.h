@@ -5,12 +5,16 @@
 #ifndef OMNISTACK_STEER_INFO_H
 #define OMNISTACK_STEER_INFO_H
 
-/* at most 32 outbound-link, use a mask to filter link */
-/* also at most 32 inbound-link, mask is used to identify upstream node */
-/* the mapping from name to mask will be passed in while initializing */
-class SteerInfo {
-public:
-    uint32_t m_link_filter;
-};
+#include <cstdint>
 
+namespace omnistack {
+    namespace data_plane {
+        class DataPlanePacket : public Packet {
+        public:
+            uint32_t m_path_filter;     /* bitmask presents all possible path at present */
+            uint32_t m_upstream_node;   /* identify the upstream node of current packet */
+            bool m_first_hop;           /* if this packet is at first hop */
+        };
+    }
+}
 #endif //OMNISTACK_STEER_INFO_H

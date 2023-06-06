@@ -1,0 +1,16 @@
+{
+    "name": "UDP_COMMON",
+    "modules": [
+        "classifier_nic",   "com_nic_out",      "classifier_main",
+        "ethernet_in",      "ethernet_out",     "ipv4_in",
+        "ipv4_out",         "classifier_udp",   "udp_out",
+        "arp_out",          "com_user"
+    ],
+    "paths": [
+        ["classifier_nic", "ethernet_in", "ipv4_in", "classifier_udp", "classifier_main", "com_user"],
+        ["com_user", "udp_out", "ipv4_out", "arp_out", "ethernet_out", "com_nic_out"]
+    ],
+    "groups": [
+        [0, 1]
+    ]
+}

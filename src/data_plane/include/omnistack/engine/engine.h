@@ -5,6 +5,11 @@
 #ifndef OMNISTACK_ENGINE_H
 #define OMNISTACK_ENGINE_H
 
-class Engine {};
+namespace omnistack {
+    namespace data_plane {
+        class Engine {
+        };
+    }
+}
 
 #endif //OMNISTACK_ENGINE_H

@@ -1,6 +1,6 @@
+add_subdirectory(libraries)
 add_subdirectory(control_plane)
 add_subdirectory(data_plane)
-add_subdirectory(libraries)
 add_subdirectory(user_library)
 
 target_link_libraries(${OMNISTACK_USERLIB} PUBLIC ${OMNI_LIBRARIES})
