@@ -12,30 +12,33 @@
 
 namespace omnistack {
     namespace data_plane {
-        enum ModuleType {
-            MODULE_TYPE_READ_ONLY = 0,
-            MODULE_TYPE_READ_WRITE,
-            MODULE_TYPE_OCCUPY
+        class Packet;
+        class PacketPool;
+        enum class ModuleType {
+            kReadOnly = 0,
+            kReadWrite,
+            kOccupy
         };
 
         class Module {
         public:
-            static constexpr bool default_filter(Packet* packet) { return true; }
+            static constexpr bool DefaultFilter(Packet* packet) { return true; }
 
-            virtual std::function<bool(Packet* packet)> get_filter() { return default_filter; };
+            virtual std::function<bool(Packet* packet)> GetFilter() { return DefaultFilter; };
 
-            virtual constexpr bool m_allow_duplication() { return true; }
+            virtual Packet* MainLogic(Packet* packet) { return packet; }
 
-            virtual Packet* main_logic(Packet* packet) { return packet; }
+            virtual Packet* TimerLogic(uint64_t tick);
 
-            virtual Packet* timer_logic(uint64_t tick);
+            virtual void Init(const std::string &name_prefix, PacketPool* packet_pool);
 
-            virtual void init(const std::string &name_prefix, packet_pool);
-            virtual void destroy();
+            virtual void Destroy();
 
-            ModuleType m_type;
-            uint16_t m_burst;
-            std::string m_name;
+            virtual constexpr bool allow_duplication_() { return true; }
+
+            ModuleType type_;
+            uint16_t burst_;
+            const std::string name_;
         };
     }
 }

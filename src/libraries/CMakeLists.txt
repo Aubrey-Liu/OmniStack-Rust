@@ -1,0 +1,3 @@
+set(OMNI_LIBRARIES)
+add_subdirectory(common)
+set(OMNI_LIBRARIES ${OMNI_LIBRARIES} PARENT_SCOPE)

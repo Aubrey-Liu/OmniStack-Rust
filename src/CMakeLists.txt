@@ -1,4 +1,5 @@
 add_subdirectory(libraries)
+message(STATUS "OMNI LIBRARIES: ${OMNI_LIBRARIES}")
 add_subdirectory(control_plane)
 add_subdirectory(data_plane)
 add_subdirectory(user_library)
