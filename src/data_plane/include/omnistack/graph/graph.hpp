@@ -13,8 +13,6 @@ namespace omnistack {
         };
 
         class SubGraph {};
-
-        class SliceGraph {};
     }
 }
 #endif //OMNISTACK_GRAPH_H
