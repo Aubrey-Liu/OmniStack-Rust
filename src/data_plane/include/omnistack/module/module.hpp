@@ -9,11 +9,15 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 #include <omnistack/graph/steer_info.hpp>
 
 namespace omnistack {
     namespace data_plane {
         class PacketPool;
+
+        typedef std::function<bool(DataPlanePacket& packet)> Filter;
+
         enum class ModuleType {
             kModuleTypeReadOnly = 0,
             kModuleTypeReadWrite,
@@ -22,9 +26,14 @@ namespace omnistack {
 
         class Module {
         public:
+
             static constexpr bool DefaultFilter(DataPlanePacket& packet) { return true; }
 
-            virtual std::function<bool(DataPlanePacket& packet)> GetFilter() { return DefaultFilter; };
+            void RegisterDownstreamFilters(std::vector<Filter> filters, std::vector<uint32_t> filter_masks, std::vector<uint32_t> group_ids);
+
+            void ApplyDownstreamFilters(DataPlanePacket& packet);
+
+            virtual Filter GetFilter() { return DefaultFilter; };
 
             virtual DataPlanePacket* MainLogic(DataPlanePacket* packet) { return packet; }
 
@@ -39,6 +48,16 @@ namespace omnistack {
             ModuleType type_;
             uint16_t burst_;
             const std::string name_;
+
+        private:
+            struct FilterGroup {
+                std::vector<Filter> filters;
+                std::vector<uint32_t> filter_masks;
+                uint32_t universe_mask;
+                uint8_t last_apply;
+            };
+
+            std::vector<FilterGroup> filter_groups_;
         };
     }
 }
