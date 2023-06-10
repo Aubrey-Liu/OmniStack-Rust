@@ -5,14 +5,14 @@
 #ifndef OMNISTACK_GRAPH_H
 #define OMNISTACK_GRAPH_H
 
-namespace omnistack {
-    namespace data_plane {
-        class Graph {
-        public:
+namespace omnistack::data_plane {
+    /* basic unit of Graph, all nodes in a SubGraph must on the same CPU core */
+    class SubGraph {};
 
-        };
+    /* consist of SubGraphs, each SubGraph can run on different CPU cores */
+    class Graph {
+    public:
 
-        class SubGraph {};
-    }
+    };
 }
 #endif //OMNISTACK_GRAPH_H
