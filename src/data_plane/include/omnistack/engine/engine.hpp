@@ -10,6 +10,15 @@
 namespace omnistack::data_plane {
     /* Engine receives a SubGraph and runs it */
     class Engine {
+    public:
+        void Init(Graph& graph, uint32_t sub_graph_id, uint32_t core);
+
+        void Run();
+
+        void Destroy();
+
+    private:
+        
     };
 }
 

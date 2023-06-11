@@ -23,12 +23,18 @@ namespace omnistack::data_plane {
         kModuleTypeOccupy
     };
 
+    enum class FilterGroupType {
+        kFilterGroupTypeMutex = 0,
+        kFilterGroupTypeEqual
+    };
+
     class Module {
     public:
+        Module();
 
         static constexpr bool DefaultFilter(DataPlanePacket& packet) { return true; }
 
-        void RegisterDownstreamFilters(std::vector<Filter> filters, std::vector<uint32_t> filter_masks, std::vector<uint32_t> group_ids);
+        void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<uint32_t>& group_ids, const std::vector<FilterGroupType>& group_types);
 
         void ApplyDownstreamFilters(DataPlanePacket& packet);
 
@@ -53,6 +59,7 @@ namespace omnistack::data_plane {
             std::vector<Filter> filters;
             std::vector<uint32_t> filter_masks;
             uint32_t universe_mask;
+            FilterGroupType type;
             uint8_t last_apply;
         };
 
