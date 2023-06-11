@@ -31,6 +31,7 @@ namespace omnistack::data_plane {
     class Module {
     public:
         Module();
+        Module(Module&&);
 
         static constexpr bool DefaultFilter(DataPlanePacket& packet) { return true; }
 
@@ -38,7 +39,7 @@ namespace omnistack::data_plane {
 
         void ApplyDownstreamFilters(DataPlanePacket& packet);
 
-        virtual Filter GetFilter() { return DefaultFilter; };
+        virtual Filter GetFilter(const std::string& upstream_module) { return DefaultFilter; };
 
         virtual DataPlanePacket* MainLogic(DataPlanePacket* packet) { return packet; }
 
