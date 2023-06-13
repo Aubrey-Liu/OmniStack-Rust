@@ -6,7 +6,7 @@
 #define OMNISTACK_IO_ADAPTER_H
 
 namespace omnistack {
-    class IOAdapter {
+    class IoAdapter {
     };
 }
 

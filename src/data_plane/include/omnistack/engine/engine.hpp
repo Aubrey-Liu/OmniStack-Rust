@@ -2,8 +2,8 @@
 // Created by liuhao on 23-5-30.
 //
 
-#ifndef OMNISTACK_ENGINE_H
-#define OMNISTACK_ENGINE_H
+#ifndef OMNISTACK_ENGINE_HPP
+#define OMNISTACK_ENGINE_HPP
 
 #include <omnistack/graph/graph.hpp>
 #include <omnistack/module/module.hpp>
@@ -20,10 +20,10 @@ namespace omnistack::data_plane {
 
         void Destroy();
 
-        void SigintHandler(int sig) { stop = true; }
+        void SigintHandler(int sig) { stop_ = true; }
 
     private:
-        uint32_t module_num;
+        uint32_t module_num_;
         std::vector<Module> modules_;
         std::vector<std::vector<uint32_t>> upstream_links_;
         std::vector<std::vector<uint32_t>> downstream_links_;
@@ -32,10 +32,12 @@ namespace omnistack::data_plane {
         std::vector<std::pair<Channel, uint32_t>> receive_channels_;
         std::vector<Channel> send_channels_;
 
-        bool stop = false;
+        bool stop_ = false;
 
-        friend bool compare_link(uint32_t x, uint32_t y);
+        bool CompareLinks(uint32_t x, uint32_t y);
+
+        void SortLinks(std::vector<uint32_t>& links);
     };
 }
 
-#endif //OMNISTACK_ENGINE_H
+#endif //OMNISTACK_ENGINE_HPP

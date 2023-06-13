@@ -18,14 +18,14 @@ namespace omnistack::data_plane {
     typedef std::function<bool(DataPlanePacket& packet)> Filter;
 
     enum class ModuleType {
-        kModuleTypeReadOnly = 0,
-        kModuleTypeReadWrite,
-        kModuleTypeOccupy
+        kReadOnly = 0,
+        kReadWrite,
+        kOccupy
     };
 
     enum class FilterGroupType {
-        kFilterGroupTypeMutex = 0,
-        kFilterGroupTypeEqual
+        kMutex = 0,
+        kEqual
     };
 
     class Module {

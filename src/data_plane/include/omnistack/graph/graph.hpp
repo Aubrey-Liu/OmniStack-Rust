@@ -20,6 +20,7 @@ namespace omnistack::data_plane {
     class SubGraph {
     public:
         SubGraph(const SubGraph&) = delete;
+        SubGraph(SubGraph&&) noexcept;
 
         Graph& graph_;
         uint32_t sub_graph_id_;
@@ -33,15 +34,15 @@ namespace omnistack::data_plane {
         friend class Graph;
 
         SubGraph(Graph& graph, uint32_t sub_graph_id);
-        SubGraph(SubGraph&&);
     };
 
     /* interface for Control Plane, must consist of SubGraphs, each SubGraph can run on different CPU cores */
     class Graph {
     public:
-        Graph(std::vector<std::string>&& node_names, std::vector<uint32_t>&& node_sub_graph_ids, std::vector<GraphLink>&& links, std::vector<std::vector<uint32_t>>&& mutex_links, std::vector<std::vector<uint32_t>>&& equal_links);
+        Graph(std::vector<std::string>&& node_names, std::vector<uint32_t>&& node_sub_graph_ids,
+              std::vector<GraphLink>&& links, std::vector<std::vector<uint32_t>>&& mutex_links,
+              std::vector<std::vector<uint32_t>>&& equal_links);
         Graph(const Graph&) = delete;
-        ~Graph();
 
         SubGraph& sub_graph(uint32_t idx) { return sub_graphs_.at(idx); }
 
