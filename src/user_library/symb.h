@@ -24,7 +24,7 @@
 #ifdef __clang__
 #define omnistack_typeof(x) __typeof__(x)
 #else
-#error No typeof definition
+#define omnistack_typeof(x) typeof(x) // TODO: Unkonwn behaviour
 #endif
 #else
 #define omnistack_typeof(x) typeof(x)
