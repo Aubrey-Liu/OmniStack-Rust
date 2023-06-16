@@ -22,7 +22,7 @@ namespace omnistack::data_plane {
         SubGraph(const SubGraph&) = delete;
         SubGraph(SubGraph&&) noexcept;
 
-        Graph& graph_;
+        const Graph& graph_;
         uint32_t sub_graph_id_;
         std::vector<uint32_t> node_ids_;
         std::map<uint32_t, std::set<uint32_t>> local_links_;

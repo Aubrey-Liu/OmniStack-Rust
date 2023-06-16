@@ -24,7 +24,7 @@ namespace omnistack::data_plane {
 
     private:
         uint32_t module_num_;
-        std::vector<Module> modules_;
+        std::vector<std::unique_ptr<BaseModule>> modules_;
         std::vector<std::vector<uint32_t>> upstream_links_;
         std::vector<std::vector<uint32_t>> downstream_links_;
 

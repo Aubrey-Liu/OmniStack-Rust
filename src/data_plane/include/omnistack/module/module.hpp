@@ -10,12 +10,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <map>
 #include <omnistack/graph/steer_info.hpp>
 
 namespace omnistack::data_plane {
     class PacketPool;
-
-    typedef std::function<bool(DataPlanePacket& packet)> Filter;
 
     enum class ModuleType {
         kReadOnly = 0,
@@ -28,12 +27,13 @@ namespace omnistack::data_plane {
         kEqual
     };
 
-    class Module {
+    class BaseModule {
     public:
-        Module();
-        Module(Module&&);
+        typedef std::function<bool(DataPlanePacket& packet)> Filter;
 
-        static constexpr bool DefaultFilter(DataPlanePacket& packet) { return true; }
+        BaseModule();
+
+        static constexpr bool DefaultFilter(DataPlanePacket& packet){ return true; }
 
         void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<uint32_t>& group_ids, const std::vector<FilterGroupType>& group_types);
 
@@ -53,7 +53,7 @@ namespace omnistack::data_plane {
 
         ModuleType type_;
         uint16_t burst_;
-        const std::string name_;
+        std::string name_;
 
     private:
         struct FilterGroup {
@@ -66,6 +66,62 @@ namespace omnistack::data_plane {
 
         std::vector<FilterGroup> filter_groups_;
     };
+
+    class ModuleFactory {
+    public:
+        typedef std::function<BaseModule*()> CreateFunction;
+
+        static ModuleFactory& instance() {
+            static ModuleFactory factory;
+            return factory;
+        }
+
+        void Register(const std::string& name, const CreateFunction& func) {
+            if(module_list_.find(name) != module_list_.end()) {
+                /* TODO: report error */
+            }
+            if(func == nullptr) {
+                /* TODO: report error */
+            }
+            if(!module_list_.insert(std::make_pair(name, func)).second) {
+                /* TODO: report error */
+            }
+        }
+
+        [[nodiscard]] BaseModule* Create(const std::string& name) const {
+            auto it = module_list_.find(name);
+            if(it == module_list_.end()) {
+                /* TODO: report error */
+                return nullptr;
+            }
+            return it->second();
+        }
+
+    private:
+        std::map<std::string, CreateFunction> module_list_;
+    };
+
+    template<typename T, const char* name>
+    class Module : BaseModule {
+    public:
+        static BaseModule* CreateModuleObject() { return new T(); }
+
+    private:
+        struct FactoryEntry {
+            FactoryEntry() {
+                ModuleFactory::instance().Register(name_, CreateModuleObject);
+            }
+        };
+
+        static const std::string name_;
+        static const FactoryEntry factory_entry_;
+    };
+
+    template<typename T, const char* name>
+    const std::string Module<T, name>::name_(name);
+
+    template<typename T, const char* name>
+    const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;
 }
 
 #endif //OMNISTACK_MODULE_HPP
