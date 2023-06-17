@@ -9,10 +9,12 @@ namespace omnistack::data_plane {
 
     void
     BaseModule::RegisterDownstreamFilters(const std::vector<Filter> &filters, const std::vector<uint32_t> &filter_masks,
-                                      const std::vector<uint32_t> &group_ids,
+                                      const std::vector<std::set<uint32_t>> &groups,
                                       const std::vector<FilterGroupType> &group_types) {
 
     }
+
+    void BaseModule::set_upstream_nodes(const std::vector<std::string> &upstream_nodes) {}
 
     void BaseModule::ApplyDownstreamFilters(omnistack::data_plane::DataPlanePacket &packet) {
 

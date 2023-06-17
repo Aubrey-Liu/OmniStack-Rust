@@ -9,8 +9,8 @@ namespace omnistack::data_plane {
         int t1 = x < module_num_;
         int t2 = y < module_num_;
         if(t1 != t2) return t1 < t2;
-        if(modules_[x]->type_ == ModuleType::kReadOnly) return true;
-        return modules_[y]->type_ != ModuleType::kReadOnly;
+        if(modules_[x]->type_() == BaseModule::ModuleType::kReadOnly) return true;
+        return modules_[y]->type_() != BaseModule::ModuleType::kReadOnly;
     }
 
     void Engine::SortLinks(std::vector<uint32_t> &links) {
@@ -21,19 +21,137 @@ namespace omnistack::data_plane {
                 else break;
     }
 
-    void Engine::Init(omnistack::data_plane::SubGraph &sub_graph, uint32_t core) {
+    void Engine::Init(SubGraph &sub_graph, uint32_t core, const std::string& name_prefix) {
+        /* TODO: create packet pool */
+        std::shared_ptr<PacketPool> packet_pool;
+        auto& graph = sub_graph.graph_;
+        std::map<uint32_t, uint32_t> global_to_local;
+        std::map<uint32_t, uint32_t> local_to_global;
+
         /* initialize forward structure from graph info */
         {
-            /* create modules */
+            /* create modules and init them */
             for(auto idx : sub_graph.node_ids_) {
-                auto& module_name = sub_graph.graph_.node_names_[idx];
+                auto& module_name = graph.node_names_[idx];
+                modules_.push_back(ModuleFactory::instance().Create(module_name));
+                uint32_t module_id = modules_.size() - 1;
+                global_to_local.emplace(idx, module_id);
+                local_to_global.emplace(module_id, idx);
+                modules_.at(module_id)->Init(name_prefix, packet_pool);
+            }
 
+            module_num_ = modules_.size();
+            upstream_links_.resize(module_num_);
+            downstream_links_.resize(module_num_);
+
+            for(auto& link : sub_graph.local_links_) {
+                auto global_idu = link.first;
+                for(auto global_idv : link.second) {
+                    auto idu = global_to_local.at(global_idu);
+                    auto idv = global_to_local.at(global_idv);
+                    downstream_links_[idu].push_back(idv);
+                    upstream_links_[idv].push_back(idu);
+                }
+            }
+
+            uint32_t assigned_id = module_num_;
+            for(auto& link : sub_graph.remote_links_) {
+                auto global_idu = link.first;
+                if(graph.node_sub_graph_ids_[global_idu] == sub_graph.sub_graph_id_) {
+                    for(auto global_idv : link.second) {
+                        auto idu = global_to_local.at(global_idu);
+                        uint32_t idv;
+                        if (global_to_local.find(global_idv) != global_to_local.end())
+                            idv = global_to_local.at(global_idv);
+                        else {
+                            idv = assigned_id ++;
+                            global_to_local.emplace(global_idv, idv);
+                            local_to_global.emplace(idv, global_idv);
+                        }
+                        downstream_links_[idu].push_back(idv);
+                    }
+                }
+                else {
+                    uint32_t idu;
+                    if(global_to_local.find(global_idu) != global_to_local.end())
+                        idu = global_to_local.at(global_idu);
+                    else {
+                        idu = assigned_id ++;
+                        global_to_local.emplace(global_idu, idu);
+                        local_to_global.emplace(idu, global_idu);
+                    }
+                    for(auto global_idv : link.second) {
+                        auto idv = global_to_local.at(global_idv);
+                        upstream_links_[idv].push_back(idu);
+                    }
+                }
+            }
+
+            for(auto& links : downstream_links_)
+                SortLinks(links);
+            for(uint32_t i = 0; i < module_num_; i ++) {
+                auto& links = upstream_links_[i];
+                SortLinks(links);
+                std::vector<std::string> upstream_nodes;
+                upstream_nodes.reserve(links.size());
+                for(auto idx : links)
+                    upstream_nodes.emplace_back(graph.node_names_[local_to_global[idx]]);
+                modules_[i]->set_upstream_nodes(upstream_nodes);
             }
         }
 
         /* initialize module filters */
+        {
+            for(uint32_t u = 0; u < module_num_; u ++) {
+                std::vector<BaseModule::Filter> filters;
+                std::vector<uint32_t> filter_masks;
+                std::vector<std::set<uint32_t>> groups;
+                std::vector<BaseModule::FilterGroupType> group_types;
+                uint32_t assigned_id = 0;
+
+                filters.reserve(downstream_links_[u].size());
+                filter_masks.reserve(downstream_links_[u].size());
+
+                std::map<uint32_t, uint32_t> local_to_idx;
+                for(uint32_t j = 0; j < downstream_links_[u].size(); j ++) {
+                    auto downstream_node = downstream_links_[u][j];
+                    filters.push_back(modules_[downstream_node]->GetFilter(modules_[u]->name_()));
+                    filter_masks.push_back(1 << j);
+                    local_to_idx.emplace(downstream_node, j);
+                }
+
+                auto global_idu = local_to_global[u];
+
+                auto& mutex_links = sub_graph.mutex_links_;
+                if(mutex_links.find(global_idu) != mutex_links.end())
+                    for(auto& mutex_group : mutex_links[global_idu]) {
+                        groups.emplace_back();
+                        group_types.push_back(BaseModule::FilterGroupType::kMutex);
+                        for(auto global_idv : mutex_group) {
+                            auto v = global_to_local[global_idv];
+                            groups.rbegin()->insert(local_to_idx[v]);
+                        }
+                        assigned_id ++;
+                    }
+
+                auto& equal_links = sub_graph.equal_links_;
+                if(equal_links.find(global_idu) != equal_links.end())
+                    for(auto& equal_group : equal_links[global_idu]) {
+                        groups.emplace_back();
+                        group_types.push_back(BaseModule::FilterGroupType::kEqual);
+                        for(auto global_idv : equal_group) {
+                            auto v = global_to_local[global_idv];
+                            groups.rbegin()->insert(local_to_idx[v]);
+                        }
+                        assigned_id ++;
+                    }
+
+                modules_[u]->RegisterDownstreamFilters(filters, filter_masks, groups, group_types);
+            }
+        }
 
         /* initialize channels to remote engine */
+        /* TODO: create channels */
 
         /* register module timers */
 

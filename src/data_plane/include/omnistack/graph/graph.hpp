@@ -12,8 +12,6 @@
 #include <set>
 
 namespace omnistack::data_plane {
-    typedef std::pair<uint32_t, uint32_t> GraphLink;
-
     class Graph;
 
     /* Constructed by Graph, all nodes in a SubGraph must on the same CPU core */
@@ -39,8 +37,10 @@ namespace omnistack::data_plane {
     /* interface for Control Plane, must consist of SubGraphs, each SubGraph can run on different CPU cores */
     class Graph {
     public:
+        typedef std::pair<uint32_t, uint32_t> Link;
+
         Graph(std::vector<std::string>&& node_names, std::vector<uint32_t>&& node_sub_graph_ids,
-              std::vector<GraphLink>&& links, std::vector<std::vector<uint32_t>>&& mutex_links,
+              std::vector<Link>&& links, std::vector<std::vector<uint32_t>>&& mutex_links,
               std::vector<std::vector<uint32_t>>&& equal_links);
         Graph(const Graph&) = delete;
 
@@ -48,7 +48,7 @@ namespace omnistack::data_plane {
 
         std::vector<std::string> node_names_;
         std::vector<uint32_t> node_sub_graph_ids_;
-        std::vector<GraphLink> links_;
+        std::vector<Link> links_;
         std::vector<std::vector<uint32_t>> mutex_links_;
         std::vector<std::vector<uint32_t>> equal_links_;
     private:
