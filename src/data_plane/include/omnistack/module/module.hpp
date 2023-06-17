@@ -11,49 +11,55 @@
 #include <string>
 #include <vector>
 #include <map>
+#include<set>
 #include <omnistack/graph/steer_info.hpp>
 
 namespace omnistack::data_plane {
     class PacketPool;
 
-    enum class ModuleType {
-        kReadOnly = 0,
-        kReadWrite,
-        kOccupy
-    };
-
-    enum class FilterGroupType {
-        kMutex = 0,
-        kEqual
-    };
-
     class BaseModule {
     public:
         typedef std::function<bool(DataPlanePacket& packet)> Filter;
+
+        enum class ModuleType {
+            kReadOnly = 0,
+            kReadWrite,
+            kOccupy
+        };
+
+        enum class FilterGroupType {
+            kMutex = 0,
+            kEqual
+        };
 
         BaseModule();
 
         static constexpr bool DefaultFilter(DataPlanePacket& packet){ return true; }
 
-        void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<uint32_t>& group_ids, const std::vector<FilterGroupType>& group_types);
+        void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
+
+        void set_upstream_nodes(const std::vector<std::string>& upstream_nodes);
 
         void ApplyDownstreamFilters(DataPlanePacket& packet);
 
-        virtual Filter GetFilter(const std::string& upstream_module) { return DefaultFilter; };
+        virtual Filter GetFilter(std::string_view upstream_module) { return DefaultFilter; };
 
         virtual DataPlanePacket* MainLogic(DataPlanePacket* packet) { return packet; }
 
         virtual DataPlanePacket* TimerLogic(uint64_t tick) { return nullptr; }
 
-        virtual void Init(const std::string& name_prefix, PacketPool& packet_pool) {};
+        virtual void Init(const std::string& name_prefix, const std::shared_ptr<PacketPool>& packet_pool) {};
 
         virtual void Destroy() {};
 
-        virtual constexpr bool allow_duplication_() { return true; }
+        virtual constexpr bool allow_duplication_() { return false; }
 
-        ModuleType type_;
-        uint16_t burst_;
-        std::string name_;
+        /* TODO: use static_assert to check this */
+        virtual constexpr std::string_view name_() { return "BaseModule"; }
+
+        virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
+
+        virtual constexpr uint32_t burst_() { return 1; }
 
     private:
         struct FilterGroup {
@@ -65,11 +71,12 @@ namespace omnistack::data_plane {
         };
 
         std::vector<FilterGroup> filter_groups_;
+        std::vector<std::string> upstream_nodes_;
     };
 
     class ModuleFactory {
     public:
-        typedef std::function<BaseModule*()> CreateFunction;
+        typedef std::function<std::unique_ptr<BaseModule>()> CreateFunction;
 
         static ModuleFactory& instance() {
             static ModuleFactory factory;
@@ -88,7 +95,7 @@ namespace omnistack::data_plane {
             }
         }
 
-        [[nodiscard]] BaseModule* Create(const std::string& name) const {
+        [[nodiscard]] std::unique_ptr<BaseModule> Create(const std::string& name) const {
             auto it = module_list_.find(name);
             if(it == module_list_.end()) {
                 /* TODO: report error */
@@ -104,21 +111,21 @@ namespace omnistack::data_plane {
     template<typename T, const char* name>
     class Module : BaseModule {
     public:
-        static BaseModule* CreateModuleObject() { return new T(); }
+        static std::unique_ptr<BaseModule> CreateModuleObject() {
+            return std::make_unique<BaseModule>(new T());
+        }
+
+        constexpr std::string_view name_() override { return std::string_view(name); }
 
     private:
         struct FactoryEntry {
             FactoryEntry() {
-                ModuleFactory::instance().Register(name_, CreateModuleObject);
+                ModuleFactory::instance().Register(std::string(name), CreateModuleObject);
             }
         };
 
-        static const std::string name_;
         static const FactoryEntry factory_entry_;
     };
-
-    template<typename T, const char* name>
-    const std::string Module<T, name>::name_(name);
 
     template<typename T, const char* name>
     const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;

@@ -6,7 +6,7 @@
 
 namespace omnistack::data_plane {
     Graph::Graph(std::vector<std::string> &&node_names, std::vector<uint32_t> &&node_sub_graph_ids,
-                 std::vector<GraphLink> &&links, std::vector<std::vector<uint32_t>> &&mutex_links,
+                 std::vector<Link> &&links, std::vector<std::vector<uint32_t>> &&mutex_links,
                  std::vector<std::vector<uint32_t>> &&equal_links) : node_names_(node_names), node_sub_graph_ids_(node_sub_graph_ids), links_(links), mutex_links_(mutex_links), equal_links_(equal_links) {
         CreateSubGraphs();
     }
@@ -51,7 +51,7 @@ namespace omnistack::data_plane {
                 else if(mark.find(u) != mark.end())
                     mutex_links_[u].rbegin()->insert(v);
                 else {
-                    mutex_links_[u].push_back(std::set<uint32_t>({v}));
+                    mutex_links_[u].emplace_back(std::set<uint32_t>({v}));
                     mark.insert(u);
                 }
             }
