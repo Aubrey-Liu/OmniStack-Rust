@@ -10,7 +10,7 @@
 #include <string>
 
 namespace omnistack {
-    namespace mem {
+    namespace memory {
         constexpr uint64_t kMetaHeadroomSize = 64;
         constexpr uint64_t kMaxTotalAllocateSize = 16ll * 1024 * 1024 * 1024;
 

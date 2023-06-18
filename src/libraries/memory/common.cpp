@@ -19,23 +19,23 @@
 #error Not supported System OS
 #endif
 
-namespace omnistack::mem {
-    enum class RPCRequestType {
+namespace omnistack::memory {
+    enum class RpcRequestType {
         kGetProcessId = 0,
         kDestroyProcess,
         kNewThread,
         kDestroyThread
     };
 
-    enum class RPCResponseStatus {
+    enum class RpcResponseStatus {
         kSuccess = 0,
         kUnknownProcess,
         kUnknownType,
     };
 
-    struct RPCResponse {
+    struct RpcResponse {
         int id;
-        RPCResponseStatus status;
+        RpcResponseStatus status;
         union {
             struct {
                 uint64_t process_id;
@@ -46,15 +46,15 @@ namespace omnistack::mem {
         };
     };
 
-    struct RPCRequestMeta {
+    struct RpcRequestMeta {
         bool cond_rpc_finished;
         std::condition_variable cond_rpc_changed;
         std::mutex cond_rpc_lock;
-        RPCResponse resp;
+        RpcResponse resp;
     };
 
-    struct RPCRequest {
-        RPCRequestType type;
+    struct RpcRequest {
+        RpcRequestType type;
         int id;
     };
 
@@ -206,7 +206,7 @@ namespace omnistack::mem {
                         return ;
                     }
                 } else {
-                    RPCRequest rpc_request{};
+                    RpcRequest rpc_request{};
                     bool peer_closed = false;
                     {
                         ssize_t rd_bytes;
@@ -214,13 +214,13 @@ namespace omnistack::mem {
                             ssize_t sum_rd_bytes = 0;
                             do {
                                 rd_bytes = read(fd, reinterpret_cast<char *>(&rpc_request) + sum_rd_bytes,
-                                                sizeof(RPCRequest) - sum_rd_bytes);
+                                                sizeof(RpcRequest) - sum_rd_bytes);
                                 if (rd_bytes < 0) {
                                     usleep(1);
                                     continue;
                                 }
                                 sum_rd_bytes += rd_bytes;
-                            } while (rd_bytes != 0 && sum_rd_bytes < sizeof(RPCRequest));
+                            } while (rd_bytes != 0 && sum_rd_bytes < sizeof(RpcRequest));
                         }
                         if (rd_bytes == 0) {
                             peer_closed = true;
@@ -228,21 +228,21 @@ namespace omnistack::mem {
                     }
 
                     if (!peer_closed) {
-                        // A normal RPC Request
-                        RPCResponse resp{};
+                        // A normal Rpc Request
+                        RpcResponse resp{};
                         resp.id = rpc_request.id;
                         switch (rpc_request.type) {
-                            case RPCRequestType::kGetProcessId: {
+                            case RpcRequestType::kGetProcessId: {
                                 if (fd_to_process_info.count(fd)) {
                                     auto& info = fd_to_process_info[fd];
-                                    resp.status = RPCResponseStatus::kSuccess;
+                                    resp.status = RpcResponseStatus::kSuccess;
                                     resp.get_process_id.process_id = info.process_id;
                                 } else
-                                    resp.status = RPCResponseStatus::kUnknownProcess;
+                                    resp.status = RpcResponseStatus::kUnknownProcess;
                                 break;
                             }
                             default:
-                                resp.status = RPCResponseStatus::kUnknownType;
+                                resp.status = RpcResponseStatus::kUnknownType;
                         }
 
                         ssize_t sd_bytes;
@@ -250,13 +250,13 @@ namespace omnistack::mem {
                             ssize_t sum_sd_bytes = 0;
                             do {
                                 sd_bytes = write(fd, reinterpret_cast<char *>(&resp) + sum_sd_bytes,
-                                                 sizeof(RPCResponse) - sum_sd_bytes);
+                                                 sizeof(RpcResponse) - sum_sd_bytes);
                                 if (sd_bytes < 0) {
                                     usleep(1);
                                     continue ;
                                 }
                                 sum_sd_bytes += sd_bytes;
-                            } while(sd_bytes != 0 && sum_sd_bytes < sizeof(RPCResponse));
+                            } while(sd_bytes != 0 && sum_sd_bytes < sizeof(RpcResponse));
                         }
 
                         if (!sd_bytes) peer_closed = true;
@@ -396,18 +396,18 @@ namespace omnistack::mem {
     }
 
     static std::thread* rpc_response_receiver;
-    static std::map<int, RPCRequestMeta*> id_to_rpc_meta;
-    static thread_local RPCRequest local_rpc_request{};
-    static thread_local RPCRequestMeta local_rpc_meta{};
+    static std::map<int, RpcRequestMeta*> id_to_rpc_meta;
+    static thread_local RpcRequest local_rpc_request{};
+    static thread_local RpcRequestMeta local_rpc_meta{};
     static std::mutex rpc_request_lock;
 
-    static void RPCResponseReceiver() {
-        RPCResponse resp{};
+    static void RpcResponseReceiver() {
+        RpcResponse resp{};
         while (true) {
             ssize_t recv_bytes = 0;
             ssize_t last_recv_bytes;
             do {
-                last_recv_bytes = read(sock_client, reinterpret_cast<char*>(&resp) + recv_bytes, sizeof(RPCResponse) - recv_bytes);
+                last_recv_bytes = read(sock_client, reinterpret_cast<char*>(&resp) + recv_bytes, sizeof(RpcResponse) - recv_bytes);
                 if (last_recv_bytes == -1) {
                     if (errno == EINTR)
                         continue;
@@ -416,7 +416,7 @@ namespace omnistack::mem {
                 } else if (last_recv_bytes == 0)
                     throw std::runtime_error("Control plane crashed");
                 recv_bytes += last_recv_bytes;
-            } while(recv_bytes < sizeof(RPCResponse));
+            } while(recv_bytes < sizeof(RpcResponse));
 
             {
                 std::unique_lock<std::mutex> _1(rpc_request_lock);
@@ -433,7 +433,7 @@ namespace omnistack::mem {
         }
     }
 
-    static RPCResponse SendLocalRPCRequest() {
+    static RpcResponse SendLocalRpcRequest() {
         {
             std::unique_lock<std::mutex> _(rpc_request_lock);
             local_rpc_request.id = 1;
@@ -441,8 +441,8 @@ namespace omnistack::mem {
                 local_rpc_request.id ++;
             id_to_rpc_meta[local_rpc_request.id] = &local_rpc_meta;
             local_rpc_meta.cond_rpc_finished = false;
-            ssize_t sent_bytes = write(sock_client, &local_rpc_request, sizeof(RPCRequest));
-            if (sent_bytes != sizeof(RPCRequest))
+            ssize_t sent_bytes = write(sock_client, &local_rpc_request, sizeof(RpcRequest));
+            if (sent_bytes != sizeof(RpcRequest))
                 throw std::runtime_error("Failed to send request");
         }
 
@@ -470,11 +470,11 @@ namespace omnistack::mem {
         if (connect(sock_client, (struct sockaddr*)&addr, sizeof(addr.sun_family) + sock_name.length()))
             throw std::runtime_error("Failed to connect to control plane");
 
-        rpc_response_receiver = new std::thread(RPCResponseReceiver);
+        rpc_response_receiver = new std::thread(RpcResponseReceiver);
 
-        local_rpc_request.type = RPCRequestType::kGetProcessId;
-        auto resp = SendLocalRPCRequest();
-        if (resp.status == RPCResponseStatus::kSuccess) {
+        local_rpc_request.type = RpcRequestType::kGetProcessId;
+        auto resp = SendLocalRpcRequest();
+        if (resp.status == RpcResponseStatus::kSuccess) {
             process_id = resp.get_process_id.process_id;
         } else {
             std::cerr << "Failed to initialize subsystem\n";
@@ -483,9 +483,9 @@ namespace omnistack::mem {
     }
 
     void InitializeSubsystemThread() {
-        local_rpc_request.type = RPCRequestType::kNewThread;
-        auto resp = SendLocalRPCRequest();
-        if (resp.status == RPCResponseStatus::kSuccess) {
+        local_rpc_request.type = RpcRequestType::kNewThread;
+        auto resp = SendLocalRpcRequest();
+        if (resp.status == RpcResponseStatus::kSuccess) {
             thread_id = resp.new_thread.thread_id;
         } else {
             std::cerr << "Failed to initialize subsystem per thread\n";

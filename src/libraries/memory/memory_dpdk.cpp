@@ -5,7 +5,7 @@
 #include <omnistack/memory/memory.h>
 
 namespace omnistack {
-    namespace mem {
+    namespace memory {
 #if defined(OMNIMEM_BACKEND_DPDK)
 #error Not implemented
 #endif

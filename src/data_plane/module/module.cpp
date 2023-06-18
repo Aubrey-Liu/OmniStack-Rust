@@ -5,10 +5,10 @@
 #include <omnistack/module/module.hpp>
 
 namespace omnistack::data_plane {
-    void
-    BaseModule::RegisterDownstreamFilters(const std::vector<Filter> &filters, const std::vector<uint32_t> &filter_masks,
-                                      const std::vector<std::set<uint32_t>> &groups,
-                                      const std::vector<FilterGroupType> &group_types) {
+    void BaseModule::RegisterDownstreamFilters(const std::vector<Filter> &filters,
+                                               const std::vector<uint32_t> &filter_masks,
+                                               const std::vector<std::set<uint32_t>> &groups,
+                                               const std::vector<FilterGroupType> &group_types) {
         filter_groups_.resize(groups.size());
         for(int i = 0; i < groups.size(); i ++) {
             auto& group_ids = groups[i];
