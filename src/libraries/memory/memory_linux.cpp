@@ -16,6 +16,7 @@ namespace omnistack {
             meta->iova = 0;
             meta->size = size;
             meta->thread_id = thread_id;
+            meta->offset = 0;
 
             return ret;
         }

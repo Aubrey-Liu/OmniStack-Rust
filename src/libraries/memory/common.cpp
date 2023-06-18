@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <sys/socket.h>
 #include <iostream>
+#include <set>
 
 #if defined(__APPLE__)
 #include <sys/event.h>
@@ -39,6 +40,9 @@ namespace omnistack::mem {
             struct {
                 uint64_t process_id;
             } get_process_id;
+            struct {
+                uint64_t thread_id;
+            } new_thread;
         };
     };
 
@@ -105,7 +109,8 @@ namespace omnistack::mem {
     struct ProcessInfo {
         uint64_t process_id;
     };
-    std::map<int, ProcessInfo> fd_to_process_info;
+    static std::map<int, ProcessInfo> fd_to_process_info;
+    static std::set<uint64_t> process_id_used;
     /** PROCESS INFORMATION **/
 
     void ControlPlane() {
@@ -137,7 +142,7 @@ namespace omnistack::mem {
         }
 
         while (!stop_control_plane) {
-            int nevents = 0;
+            int nevents;
 #if defined(__APPLE__)
             struct timespec timeout = {
                     .tv_sec = 1,
@@ -151,17 +156,20 @@ namespace omnistack::mem {
                 auto fd = (int)(intptr_t)evt.udata;
 #endif
                 if (fd == sock_client) {
-                    int new_fd = 0;
+                    int new_fd;
                     do {
                         new_fd = accept(sock_client, nullptr, nullptr);
                         if (new_fd > 0) {
-                            uint64_t new_process_id = 1;
-                            while (fd_to_process_info.count(new_process_id))
+                            /** GET A NEW PROCESS ID **/
+                            int new_process_id = 1;
+                            while (process_id_used.count(new_process_id))
                                 new_process_id ++;
+                            process_id_used.insert(new_process_id);
+
+                            /** INIT PROCESS INFO **/
                             fd_to_process_info[new_fd] = ProcessInfo();
                             auto& info = fd_to_process_info[new_fd];
 
-                            /** INIT PROCESS INFO **/
                             info.process_id = new_process_id;
 
                             /** SET EVENT DRIVEN **/
@@ -221,7 +229,7 @@ namespace omnistack::mem {
 
                     if (!peer_closed) {
                         // A normal RPC Request
-                        RPCResponse resp;
+                        RPCResponse resp{};
                         resp.id = rpc_request.id;
                         switch (rpc_request.type) {
                             case RPCRequestType::kGetProcessId: {
@@ -232,9 +240,6 @@ namespace omnistack::mem {
                                 } else
                                     resp.status = RPCResponseStatus::kUnknownProcess;
                                 break;
-                            }
-                            case RPCRequestType::kNewThread: {
-
                             }
                             default:
                                 resp.status = RPCResponseStatus::kUnknownType;
@@ -269,8 +274,7 @@ namespace omnistack::mem {
 
 #if !defined(OMNIMEM_BACKEND_DPDK)
     static uint8_t** virt_base_addrs = nullptr;
-    static bool is_master_process = false;
-    static std::string virt_base_addrs_name = "";
+    static std::string virt_base_addrs_name;
     static int virt_base_addrs_fd = 0;
 #endif
 
@@ -278,7 +282,6 @@ namespace omnistack::mem {
         std::unique_lock<std::mutex> _(control_plane_state_lock);
 
 #if !defined(OMNIMEM_BACKEND_DPDK)
-        is_master_process = true;
         virt_base_addrs_name = "omnistack_virt_base_addrs_" + std::to_string(getpid());
         {
             auto ret = shm_open(virt_base_addrs_name.c_str(), O_RDWR);
@@ -305,13 +308,10 @@ namespace omnistack::mem {
                 sock_lock_name = std::filesystem::temp_directory_path().string() + "/omnistack_memory_sock" +
                                  std::to_string(sock_id) + ".lock";
                 sock_lock_fd = open(sock_lock_name.c_str(), O_RDONLY | O_CREAT);
-                if (sock_lock_fd < 0) {
-                    sock_lock_fd = 0;
+                if (sock_lock_fd < 0)
                     continue;
-                }
                 if (flock(sock_lock_fd, LOCK_EX | LOCK_NB)) {
                     close(sock_lock_fd);
-                    sock_lock_fd = 0;
                     continue;
                 }
 
@@ -319,7 +319,7 @@ namespace omnistack::mem {
                             std::to_string(sock_id) + ".socket";
             }
 
-            sockaddr_un addr;
+            sockaddr_un addr{};
             addr.sun_family = AF_UNIX;
             if (sock_name.length() >= sizeof(addr.sun_path))
                 throw std::runtime_error("Failed to assign sock path to unix domain addr");
@@ -368,7 +368,7 @@ namespace omnistack::mem {
                 virt_base_addrs_name = "";
             }
             if (virt_base_addrs != nullptr) {
-                auto ret = munmap(virt_base_addrs, sizeof(kMaxProcess) * sizeof(uint8_t *));
+                auto ret = munmap(virt_base_addrs, kMaxProcess * sizeof(uint8_t *));
                 if (ret) throw std::runtime_error("Failed to unmap virt_base_addr");
                 virt_base_addrs = nullptr;
             }
@@ -402,7 +402,7 @@ namespace omnistack::mem {
     static std::mutex rpc_request_lock;
 
     static void RPCResponseReceiver() {
-        RPCResponse resp;
+        RPCResponse resp{};
         while (true) {
             ssize_t recv_bytes = 0;
             ssize_t last_recv_bytes;
@@ -419,7 +419,7 @@ namespace omnistack::mem {
             } while(recv_bytes < sizeof(RPCResponse));
 
             {
-                std::unique_lock<std::mutex> __(rpc_request_lock);
+                std::unique_lock<std::mutex> _1(rpc_request_lock);
                 if (id_to_rpc_meta.count(resp.id)) {
                     auto meta = id_to_rpc_meta[resp.id];
                     std::unique_lock<std::mutex> _(meta->cond_rpc_lock);
@@ -433,22 +433,34 @@ namespace omnistack::mem {
         }
     }
 
-    static void SendLocalRPCRequest() {
+    static RPCResponse SendLocalRPCRequest() {
         {
             std::unique_lock<std::mutex> _(rpc_request_lock);
-            id_to_rpc_meta.at(local_rpc_request.id) = &local_rpc_meta;
+            local_rpc_request.id = 1;
+            while (id_to_rpc_meta.count(local_rpc_request.id))
+                local_rpc_request.id ++;
+            id_to_rpc_meta[local_rpc_request.id] = &local_rpc_meta;
             local_rpc_meta.cond_rpc_finished = false;
             ssize_t sent_bytes = write(sock_client, &local_rpc_request, sizeof(RPCRequest));
             if (sent_bytes != sizeof(RPCRequest))
                 throw std::runtime_error("Failed to send request");
         }
+
+        {
+            std::unique_lock<std::mutex> _(local_rpc_meta.cond_rpc_lock);
+            local_rpc_meta.cond_rpc_changed.wait(_, [](){
+                return local_rpc_meta.cond_rpc_finished;
+            });
+        }
+
+        return local_rpc_meta.resp;
     }
 
     void InitializeSubsystem(int control_plane_id) {
         sock_id = control_plane_id;
         sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_memory_sock" +
                     std::to_string(sock_id) + ".socket";
-        sockaddr_un addr;
+        sockaddr_un addr{};
         addr.sun_family = AF_UNIX;
         if (sock_name.length() >= sizeof(addr.sun_path))
             throw std::runtime_error("Failed to assign sock path to unix domain addr");
@@ -461,11 +473,23 @@ namespace omnistack::mem {
         rpc_response_receiver = new std::thread(RPCResponseReceiver);
 
         local_rpc_request.type = RPCRequestType::kGetProcessId;
-        local_rpc_request.id = 1;
-        SendLocalRPCRequest();
+        auto resp = SendLocalRPCRequest();
+        if (resp.status == RPCResponseStatus::kSuccess) {
+            process_id = resp.get_process_id.process_id;
+        } else {
+            std::cerr << "Failed to initialize subsystem\n";
+            exit(1);
+        }
     }
 
-    void DestroySubsystem() {
-
+    void InitializeSubsystemThread() {
+        local_rpc_request.type = RPCRequestType::kNewThread;
+        auto resp = SendLocalRPCRequest();
+        if (resp.status == RPCResponseStatus::kSuccess) {
+            thread_id = resp.new_thread.thread_id;
+        } else {
+            std::cerr << "Failed to initialize subsystem per thread\n";
+            exit(1);
+        }
     }
 }
