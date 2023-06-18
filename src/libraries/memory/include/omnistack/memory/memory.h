@@ -12,9 +12,11 @@
 namespace omnistack {
     namespace mem {
         constexpr uint64_t kMetaHeadroomSize = 64;
+        constexpr uint64_t kMaxTotalAllocateSize = 16ll * 1024 * 1024 * 1024;
 
         extern uint64_t process_id;
         extern thread_local uint64_t thread_id;
+        extern uint8_t* virt_base_addr;
 
 #if defined(OMNIMEM_BACKEND_DPDK)
         static constexpr std::string_view kBackendName = "dpdk";
@@ -33,22 +35,34 @@ namespace omnistack {
             RegionType type;
             uint64_t iova;
             uint64_t thread_id;
+            uint64_t offset;
             size_t size;
 
             union {
                 MemoryPool* mempool;
             };
         };
+        static_assert(sizeof(RegionMeta) <= kMetaHeadroomSize);
 
         /**
          * @brief Initialize the memory subsystem per process
          */
-        void InitializeSubsystem();
+        void InitializeSubsystem(int control_plane_id = 0);
 
         /**
          * @brief Initialize the memory subsystem per thread
          */
         void InitializeSubsystemThread();
+
+        /**
+         * @brief Destroy the memory subsystem per thread
+         */
+        void DestroySubsystemThread();
+
+        /**
+         * @brief Destroy the memory subsystem per process
+         */
+        void DestroySubsystem();
 
         /**
          * @brief Allocate memory in shared memory by name (Can be used cross process)
@@ -113,7 +127,7 @@ namespace omnistack {
         }
 
         /**
-         * @brief This function must be called before returned by Memory Pool
+         * @brief This function must be called before returned by Memory Pool, and return (ptr + kMetaHeadroomSize)
          */
 #if defined(_MSC_VER_)
         __forceinline
@@ -138,6 +152,8 @@ namespace omnistack {
          */
         class MemoryPool {
         public:
+            static void DestroyMempool(MemoryPool* mempool);
+
             virtual void* Get() = 0;
             static void PutBack(void* ptr);
             virtual void Put(void* ptr) = 0;
@@ -145,9 +161,21 @@ namespace omnistack {
             virtual uint32_t UsableCount() = 0;
             virtual uint32_t UsedCount() = 0;
 
+            /**
+             * @brief This function will be called after Destroy been called but not successfully destroied
+             * @param thread_id
+             */
             virtual void ThreadDestroy(uint64_t thread_id) = 0;
         private:
+            virtual void Init();
+            virtual int Destroy();
         };
+
+        /**
+         * @brief This namespace are some function that used to accelerate the memory subsystem
+         */
+        namespace accel {
+        }
     }
 }
 

@@ -7,7 +7,7 @@
 namespace omnistack {
     namespace mem {
 #if defined(OMNIMEM_BACKEND_DPDK)
-
+#error Not implemented
 #endif
     }
 }
