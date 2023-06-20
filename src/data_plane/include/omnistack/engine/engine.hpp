@@ -20,19 +20,28 @@ namespace omnistack::data_plane {
 
         void Destroy();
 
-        void SigintHandler(int sig) { stop_ = true; }
+        static void SigintHandler(int sig) { stop_ = true; }
 
     private:
+        typedef std::pair<uint32_t, DataPlanePacket*> QueueItem;
+
+        /* graph info */
         uint32_t module_num_;
+        uint32_t assigned_module_idx_;
         std::vector<std::unique_ptr<BaseModule>> modules_;
         std::vector<std::vector<uint32_t>> upstream_links_;
         std::vector<std::vector<uint32_t>> downstream_links_;
-
         std::vector<uint32_t> timer_modules_;
         std::vector<std::pair<Channel, uint32_t>> receive_channels_;
         std::vector<Channel> send_channels_;
 
-        bool stop_ = false;
+        /* helper structures */
+        std::vector<uint32_t> next_hop_filter_default_;
+        std::vector<bool> module_read_only_;
+
+        static thread_local volatile bool stop_;
+
+        void ForwardPacket(std::vector<QueueItem>& packet_queue, DataPlanePacket* &packet, uint32_t node_idx);
 
         bool CompareLinks(uint32_t x, uint32_t y);
 

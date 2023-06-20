@@ -27,7 +27,8 @@ namespace omnistack::data_plane {
     }
 
     void BaseModule::set_upstream_nodes(const std::vector<std::string> &upstream_nodes) {
-        upstream_nodes_ = upstream_nodes;
+        /* TODO: how to provide upstream node global id? */
+//        upstream_nodes_ = upstream_nodes;
     }
 
     void BaseModule::ApplyDownstreamFilters(omnistack::data_plane::DataPlanePacket *packet) {

@@ -8,6 +8,8 @@
 namespace omnistack {
 
     class Packet {
+    public:
+        uint16_t reference_count_;
     };
 
 }
