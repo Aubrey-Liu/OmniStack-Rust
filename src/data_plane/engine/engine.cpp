@@ -31,7 +31,6 @@ namespace omnistack::data_plane {
         std::shared_ptr<PacketPool> packet_pool;
         auto& graph = sub_graph.graph_;
         std::map<uint32_t, uint32_t> global_to_local;
-        std::map<uint32_t, uint32_t> local_to_global;
 
         /* initialize forward structure from graph info */
         {
@@ -97,11 +96,10 @@ namespace omnistack::data_plane {
             for(uint32_t i = 0; i < module_num_; i ++) {
                 auto& links = upstream_links_[i];
                 SortLinks(links);
-                std::vector<std::string> upstream_nodes;
+                std::vector<std::pair<std::string, uint32_t>> upstream_nodes;
                 upstream_nodes.reserve(links.size());
                 for(auto idx : links)
-                    upstream_nodes.emplace_back(graph.node_names_[local_to_global[idx]]);
-                /* TODO: should provide a global id for each node */
+                    upstream_nodes.emplace_back(graph.node_names_[local_to_global[idx]], local_to_global[idx]);
                 modules_[i]->set_upstream_nodes(upstream_nodes);
             }
         }
@@ -183,8 +181,7 @@ namespace omnistack::data_plane {
             return;
         }
 
-        /* TODO: how to set upstream node */
-//        packet->upstream_node_ =
+        packet->upstream_node_ = local_to_global[node_idx];
         do [[unlikely]] {
             auto idx = std::countr_zero(forward_mask);
             forward_mask ^= (1 << idx);

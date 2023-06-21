@@ -31,9 +31,11 @@ namespace omnistack::data_plane {
         std::vector<std::unique_ptr<BaseModule>> modules_;
         std::vector<std::vector<uint32_t>> upstream_links_;
         std::vector<std::vector<uint32_t>> downstream_links_;
+        std::map<uint32_t, uint32_t> local_to_global;
         std::vector<uint32_t> timer_modules_;
         std::vector<std::pair<Channel, uint32_t>> receive_channels_;
         std::vector<Channel> send_channels_;
+
 
         /* helper structures */
         std::vector<uint32_t> next_hop_filter_default_;

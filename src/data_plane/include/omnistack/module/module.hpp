@@ -38,11 +38,11 @@ namespace omnistack::data_plane {
 
         void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
 
-        void set_upstream_nodes(const std::vector<std::string>& upstream_nodes);
+        void set_upstream_nodes(const std::vector<std::pair<std::string, uint32_t>>& upstream_nodes);
 
         void ApplyDownstreamFilters(DataPlanePacket* packet);
 
-        virtual Filter GetFilter(std::string_view upstream_module) { return DefaultFilter; };
+        virtual Filter GetFilter(std::string_view upstream_module, uint32_t global_id) { return DefaultFilter; };
 
         virtual DataPlanePacket* MainLogic(DataPlanePacket* packet) { return packet; }
 
@@ -77,7 +77,7 @@ namespace omnistack::data_plane {
         };
 
         std::vector<FilterGroup> filter_groups_;
-        std::vector<std::string> upstream_nodes_;
+        std::vector<std::pair<std::string, uint32_t>> upstream_nodes_;
     };
 
     class ModuleFactory {
