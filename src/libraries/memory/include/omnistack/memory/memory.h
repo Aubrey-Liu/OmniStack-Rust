@@ -13,6 +13,7 @@ namespace omnistack {
     namespace mem {
         constexpr uint64_t kMetaHeadroomSize = 64;
         constexpr uint64_t kMaxTotalAllocateSize = 16ll * 1024 * 1024 * 1024;
+        constexpr uint64_t kMaxNameLength = 64;
 
         extern uint64_t process_id;
         extern thread_local uint64_t thread_id;
@@ -25,7 +26,6 @@ namespace omnistack {
 #endif
         enum class RegionType {
             kLocal = 0,
-            kShared,
             kNamedShared,
             kMempoolChunk
         };
@@ -34,9 +34,10 @@ namespace omnistack {
         struct RegionMeta {
             RegionType type;
             uint64_t iova;
-            uint64_t thread_id;
+            uint64_t process_id;
             uint64_t offset;
             size_t size;
+            uint64_t ref_cnt;
 
             union {
                 MemoryPool* mempool;
@@ -68,25 +69,11 @@ namespace omnistack {
          * @brief Allocate memory in shared memory by name (Can be used cross process)
          * @param name The name of the memory region
          * @param size
-         * @param same_pos Set to true to make all the address to the same name has the same virtual address in all processes
          * @return The pointer if created by other process the same address
          */
-        void* AllocateNamedShared(const std::string& name, size_t size, bool same_pos = false);
+        void* AllocateNamedShared(const std::string& name, size_t size);
 
         void FreeNamedShared(void* ptr);
-
-        /**
-         * @brief Allocate Memory in Shared Memory
-         * @param size the size of the memory in bytes
-         * @return The pointer to the shared region
-         */
-        void* AllocateShared(size_t size);
-
-        /**
-         * @brief Free the memory in shared memory
-         * @param ptr The pointer to the shared region
-         */
-        void FreeShared(void* ptr);
 
         /**
          * @brief Allocate Memory in Local Memory
@@ -121,9 +108,9 @@ namespace omnistack {
 #elif defined(__GNUC__)
         __inline__ __attribute__((always_inline))
 #endif
-        void SetOwnerThread(void* ptr, uint64_t thread_id) {
+        void SetOwnerProcess(void* ptr, uint64_t process_id) {
             auto meta = (RegionMeta*) (reinterpret_cast<char*>(ptr) - kMetaHeadroomSize);
-            meta->thread_id = thread_id;
+            meta->process_id = thread_id;
         }
 
         /**
@@ -137,7 +124,7 @@ namespace omnistack {
         static void InitMemoryChunkMeta(void* ptr, MemoryPool* mempool, uint64_t iova = 0, uint64_t size = 0) {
             auto meta = (RegionMeta*) (ptr);
             meta->type = RegionType::kMempoolChunk;
-            meta->thread_id = thread_id;
+            meta->process_id = process_id;
             meta->iova = iova;
             meta->size = size;
             meta->mempool = mempool;
