@@ -56,8 +56,8 @@ void writeAll(int sockfd, const char* buf, size_t len, bool* stopped = nullptr) 
     }
 }
 
-namespace omnistack::mem {
-    enum class RPCRequestType {
+namespace omnistack::memory {
+    enum class RpcRequestType {
         kGetProcessId = 0,
         kDestroyProcess,
         kNewThread,
@@ -68,15 +68,15 @@ namespace omnistack::mem {
         kFreeMemoryPool
     };
 
-    enum class RPCResponseStatus {
+    enum class RpcResponseStatus {
         kSuccess = 0,
         kUnknownProcess,
         kUnknownType,
     };
 
-    struct RPCResponse {
+    struct RpcResponse {
         int id;
-        RPCResponseStatus status;
+        RpcResponseStatus status;
         union {
             struct {
                 uint64_t process_id;
@@ -91,15 +91,15 @@ namespace omnistack::mem {
         };
     };
 
-    struct RPCRequestMeta {
+    struct RpcRequestMeta {
         bool cond_rpc_finished;
         std::condition_variable cond_rpc_changed;
         std::mutex cond_rpc_lock;
-        RPCResponse resp;
+        RpcResponse resp;
     };
 
-    struct RPCRequest {
-        RPCRequestType type;
+    struct RpcRequest {
+        RpcRequestType type;
         int id;
 
         union {
@@ -279,35 +279,35 @@ namespace omnistack::mem {
                         return ;
                     }
                 } else {
-                    RPCRequest rpc_request{};
+                    RpcRequest rpc_request{};
                     bool peer_closed = false;
                     try {
-                        readAll(fd, reinterpret_cast<char *>(&rpc_request), sizeof(RPCRequest));
+                        readAll(fd, reinterpret_cast<char *>(&rpc_request), sizeof(RpcRequest));
                     } catch(std::runtime_error& err_info) {
                         peer_closed = true;
                     }
 
                     if (!peer_closed) {
-                        // A normal RPC Request
-                        RPCResponse resp{};
+                        // A normal Rpc Request
+                        RpcResponse resp{};
                         resp.id = rpc_request.id;
                         switch (rpc_request.type) {
-                            case RPCRequestType::kGetProcessId: {
+                            case RpcRequestType::kGetProcessId: {
                                 if (fd_to_process_info.count(fd)) {
-                                    auto &info = fd_to_process_info[fd];
-                                    resp.status = RPCResponseStatus::kSuccess;
+                                    auto& info = fd_to_process_info[fd];
+                                    resp.status = RpcResponseStatus::kSuccess;
                                     resp.get_process_id.process_id = info.process_id;
                                     resp.get_process_id.pid = getpid();
                                 } else
-                                    resp.status = RPCResponseStatus::kUnknownProcess;
+                                    resp.status = RpcResponseStatus::kUnknownProcess;
                                 break;
                             }
-                            case RPCRequestType::kNewThread: {
+                            case RpcRequestType::kNewThread: {
                                 resp.new_thread.thread_id = 0;
-                                resp.status = RPCResponseStatus::kSuccess;
+                                resp.status = RpcResponseStatus::kSuccess;
                                 break;
                             }
-                            case RPCRequestType::kGetMemory: {
+                            case RpcRequestType::kGetMemory: {
                                 auto region_name = std::string(rpc_request.get_memory.name);
                                 if (region_name == "" || region_name_to_meta.count(region_name) == 0) {
                                     auto aligned_size =
@@ -343,26 +343,26 @@ namespace omnistack::mem {
 #endif
                                     used_regions.insert(local_meta);
                                     resp.get_memory.offset = local_meta->offset;
-                                    resp.status = RPCResponseStatus::kSuccess;
+                                    resp.status = RpcResponseStatus::kSuccess;
                                     if (region_name != "")
                                         region_name_to_meta[region_name] = local_meta;
                                 } else {
                                     auto &meta = region_name_to_meta[region_name];
                                     meta->ref_cnt ++;
                                     resp.get_memory.offset = meta->offset;
-                                    resp.status = RPCResponseStatus::kSuccess;
+                                    resp.status = RpcResponseStatus::kSuccess;
                                 }
                                 break;
                             }
-                            case RPCRequestType::kGetMemoryPool: {
+                            case RpcRequestType::kGetMemoryPool: {
                                 break;
                             }
                             default:
-                                resp.status = RPCResponseStatus::kUnknownType;
+                                resp.status = RpcResponseStatus::kUnknownType;
                         }
 
                         try {
-                            writeAll(fd, reinterpret_cast<char *>(&resp), sizeof(RPCResponse));
+                            writeAll(fd, reinterpret_cast<char *>(&resp), sizeof(RpcResponse));
                         } catch(std::runtime_error& err_info) {
                             peer_closed = true;
                         }
@@ -468,7 +468,7 @@ namespace omnistack::mem {
                 if (ret == -1)
                     throw std::runtime_error("Failed to set unix socket flags");
             }
-        } // Init Unix Socket
+        }
 
         control_plane_thread = new std::thread(ControlPlane);
         cond_control_plane_started.wait(_, [&](){
@@ -522,16 +522,16 @@ namespace omnistack::mem {
     }
 
     static std::thread* rpc_response_receiver;
-    static std::map<int, RPCRequestMeta*> id_to_rpc_meta;
-    static thread_local RPCRequest local_rpc_request{};
-    static int rpc_id;
-    static thread_local RPCRequestMeta local_rpc_meta{};
+    static std::map<int, RpcRequestMeta*> id_to_rpc_meta;
+    static thread_local RpcRequest local_rpc_request{};
+    static thread_local RpcRequestMeta local_rpc_meta{};
     static std::mutex rpc_request_lock;
+    static int rpc_id;
 
-    static void RPCResponseReceiver() {
-        RPCResponse resp{};
+    static void RpcResponseReceiver() {
+        RpcResponse resp{};
         while (true) {
-            readAll(sock_client, reinterpret_cast<char*>(&resp), sizeof(RPCResponse));
+            readAll(sock_client, reinterpret_cast<char*>(&resp), sizeof(RpcResponse));
             {
                 std::unique_lock<std::mutex> _1(rpc_request_lock);
                 if (id_to_rpc_meta.count(resp.id)) {
@@ -547,7 +547,7 @@ namespace omnistack::mem {
         }
     }
 
-    static RPCResponse SendLocalRPCRequest() {
+    static RpcResponse SendLocalRpcRequest() {
         {
             std::unique_lock<std::mutex> _(rpc_request_lock);
             local_rpc_request.id = ++rpc_id;
@@ -555,7 +555,7 @@ namespace omnistack::mem {
                 local_rpc_request.id = ++rpc_id;
             id_to_rpc_meta[local_rpc_request.id] = &local_rpc_meta;
             local_rpc_meta.cond_rpc_finished = false;
-            writeAll(sock_client, reinterpret_cast<char*>(&local_rpc_request), sizeof(RPCRequest));
+            writeAll(sock_client, reinterpret_cast<char*>(&local_rpc_request), sizeof(RpcRequest));
         }
 
         {
@@ -583,11 +583,11 @@ namespace omnistack::mem {
         if (connect(sock_client, (struct sockaddr*)&addr, sizeof(addr.sun_family) + sock_name.length()))
             throw std::runtime_error("Failed to connect to control plane");
 
-        rpc_response_receiver = new std::thread(RPCResponseReceiver);
+        rpc_response_receiver = new std::thread(RpcResponseReceiver);
 
-        local_rpc_request.type = RPCRequestType::kGetProcessId;
-        auto resp = SendLocalRPCRequest();
-        if (resp.status == RPCResponseStatus::kSuccess) {
+        local_rpc_request.type = RpcRequestType::kGetProcessId;
+        auto resp = SendLocalRpcRequest();
+        if (resp.status == RpcResponseStatus::kSuccess) {
             process_id = resp.get_process_id.process_id;
             main_process_pid = resp.get_process_id.pid;
         } else {
@@ -637,9 +637,9 @@ namespace omnistack::mem {
     }
 
     void InitializeSubsystemThread() {
-        local_rpc_request.type = RPCRequestType::kNewThread;
-        auto resp = SendLocalRPCRequest();
-        if (resp.status == RPCResponseStatus::kSuccess) {
+        local_rpc_request.type = RpcRequestType::kNewThread;
+        auto resp = SendLocalRpcRequest();
+        if (resp.status == RpcResponseStatus::kSuccess) {
             thread_id = resp.new_thread.thread_id;
         } else {
             std::cerr << "Failed to initialize subsystem per thread\n";
@@ -670,12 +670,12 @@ namespace omnistack::mem {
          * @return The pointer if created by other process the same address
          */
     void* AllocateNamedShared(const std::string& name, size_t size) {
-        local_rpc_request.type = RPCRequestType::kGetMemory;
+        local_rpc_request.type = RpcRequestType::kGetMemory;
         if (name.length() >= kMaxNameLength) throw std::runtime_error("Name too long");
         local_rpc_request.get_memory.size = size;
         strcpy(local_rpc_request.get_memory.name, name.c_str());
-        auto resp = SendLocalRPCRequest();
-        if (resp.status == RPCResponseStatus::kSuccess) {
+        auto resp = SendLocalRpcRequest();
+        if (resp.status == RpcResponseStatus::kSuccess) {
             auto meta = reinterpret_cast<RegionMeta*>(virt_base_addrs[process_id] + resp.get_memory.offset);
             return reinterpret_cast<uint8_t*>(meta) + kMetaHeadroomSize;
         }
@@ -683,8 +683,8 @@ namespace omnistack::mem {
     }
 
     void FreeNamedShared(void* ptr) {
-        local_rpc_request.type = RPCRequestType::kFreeMemory;
+        local_rpc_request.type = RpcRequestType::kFreeMemory;
         local_rpc_request.free_memory.offset = reinterpret_cast<uint8_t*>(ptr) - virt_base_addrs[process_id] - kMetaHeadroomSize;
-        auto resp = SendLocalRPCRequest();
+        auto resp = SendLocalRpcRequest();
     }
 }

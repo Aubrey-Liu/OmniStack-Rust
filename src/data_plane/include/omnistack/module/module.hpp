@@ -19,7 +19,7 @@ namespace omnistack::data_plane {
 
     class BaseModule {
     public:
-        typedef std::function<bool(DataPlanePacket& packet)> Filter;
+        typedef std::function<bool(DataPlanePacket* packet)> Filter;
 
         enum class ModuleType {
             kReadOnly = 0,
@@ -32,17 +32,17 @@ namespace omnistack::data_plane {
             kEqual
         };
 
-        BaseModule();
+        BaseModule() = default;
 
-        static constexpr bool DefaultFilter(DataPlanePacket& packet){ return true; }
+        static constexpr bool DefaultFilter(DataPlanePacket* packet){ return true; }
 
         void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
 
-        void set_upstream_nodes(const std::vector<std::string>& upstream_nodes);
+        void set_upstream_nodes(const std::vector<std::pair<std::string, uint32_t>>& upstream_nodes);
 
-        void ApplyDownstreamFilters(DataPlanePacket& packet);
+        void ApplyDownstreamFilters(DataPlanePacket* packet);
 
-        virtual Filter GetFilter(std::string_view upstream_module) { return DefaultFilter; };
+        virtual Filter GetFilter(std::string_view upstream_module, uint32_t global_id) { return DefaultFilter; };
 
         virtual DataPlanePacket* MainLogic(DataPlanePacket* packet) { return packet; }
 
@@ -59,7 +59,13 @@ namespace omnistack::data_plane {
 
         virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
 
-        virtual constexpr uint32_t burst_() { return 1; }
+        /* when does this act? will it be done in son-class? */
+        uint32_t burst_ = 1;
+
+        /* seems that this will introduce an extra function-call by virtual, only useful when visiting through son-class pointer */
+//        virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
+//
+//        virtual constexpr uint32_t burst_() { return 1; }
 
     private:
         struct FilterGroup {
@@ -71,7 +77,7 @@ namespace omnistack::data_plane {
         };
 
         std::vector<FilterGroup> filter_groups_;
-        std::vector<std::string> upstream_nodes_;
+        std::vector<std::pair<std::string, uint32_t>> upstream_nodes_;
     };
 
     class ModuleFactory {

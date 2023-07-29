@@ -4,7 +4,12 @@
 
 #include <omnistack/engine/engine.hpp>
 
+#include <bit>
+#include <csignal>
+
 namespace omnistack::data_plane {
+    thread_local volatile bool Engine::stop_ = false;
+
     bool Engine::CompareLinks(uint32_t x, uint32_t y) {
         int t1 = x < module_num_;
         int t2 = y < module_num_;
@@ -26,7 +31,6 @@ namespace omnistack::data_plane {
         std::shared_ptr<PacketPool> packet_pool;
         auto& graph = sub_graph.graph_;
         std::map<uint32_t, uint32_t> global_to_local;
-        std::map<uint32_t, uint32_t> local_to_global;
 
         /* initialize forward structure from graph info */
         {
@@ -54,7 +58,7 @@ namespace omnistack::data_plane {
                 }
             }
 
-            uint32_t assigned_id = module_num_;
+            assigned_module_idx_ = module_num_;
             for(auto& link : sub_graph.remote_links_) {
                 auto global_idu = link.first;
                 if(graph.node_sub_graph_ids_[global_idu] == sub_graph.sub_graph_id_) {
@@ -64,7 +68,7 @@ namespace omnistack::data_plane {
                         if (global_to_local.find(global_idv) != global_to_local.end())
                             idv = global_to_local.at(global_idv);
                         else {
-                            idv = assigned_id ++;
+                            idv = assigned_module_idx_ ++;
                             global_to_local.emplace(global_idv, idv);
                             local_to_global.emplace(idv, global_idv);
                         }
@@ -76,7 +80,7 @@ namespace omnistack::data_plane {
                     if(global_to_local.find(global_idu) != global_to_local.end())
                         idu = global_to_local.at(global_idu);
                     else {
-                        idu = assigned_id ++;
+                        idu = assigned_module_idx_ ++;
                         global_to_local.emplace(global_idu, idu);
                         local_to_global.emplace(idu, global_idu);
                     }
@@ -92,10 +96,10 @@ namespace omnistack::data_plane {
             for(uint32_t i = 0; i < module_num_; i ++) {
                 auto& links = upstream_links_[i];
                 SortLinks(links);
-                std::vector<std::string> upstream_nodes;
+                std::vector<std::pair<std::string, uint32_t>> upstream_nodes;
                 upstream_nodes.reserve(links.size());
                 for(auto idx : links)
-                    upstream_nodes.emplace_back(graph.node_names_[local_to_global[idx]]);
+                    upstream_nodes.emplace_back(graph.node_names_[local_to_global[idx]], local_to_global[idx]);
                 modules_[i]->set_upstream_nodes(upstream_nodes);
             }
         }
@@ -150,12 +154,12 @@ namespace omnistack::data_plane {
             }
         }
 
-        /* initialize channels to remote engine */
-        /* TODO: create channels */
+        /* TODO: initialize channels to remote engine */
 
-        /* register module timers */
+        /* TODO: register module timers */
 
         /* register signal handler */
+        signal(SIGINT, SigintHandler);
     }
 
     void Engine::Destroy() {
@@ -166,5 +170,75 @@ namespace omnistack::data_plane {
         /* TODO: destroy channels */
     }
 
-    void Engine::Run() {}
+
+    inline void Engine::ForwardPacket(std::vector<QueueItem>& packet_queue, DataPlanePacket* &packet, uint32_t node_idx) {
+        uint32_t reference_count = -- packet->reference_count_;
+        auto forward_mask = packet->next_hop_filter_;
+        if(forward_mask == 0) [[unlikely]] {
+            if(packet->reference_count_ == 0) {
+                /* TODO: free this packet */
+            }
+            return;
+        }
+
+        packet->upstream_node_ = local_to_global[node_idx];
+        do [[unlikely]] {
+            auto idx = std::countr_zero(forward_mask);
+            forward_mask ^= (1 << idx);
+            auto downstream_node = downstream_links_[node_idx][idx];
+
+            if(module_read_only_[downstream_node]) {
+                packet_queue.emplace_back(downstream_node, packet);
+                reference_count ++;
+            }
+            else if(downstream_node < module_num_) {
+                if(reference_count > 0) [[unlikely]] {
+                    /* TODO: duplicate the packet and enqueue it */
+                }
+                else {
+                    packet_queue.emplace_back(downstream_node, packet);
+                    reference_count ++;
+                }
+            }
+            else [[unlikely]] {
+                /* TODO: duplicate the packet and send it to remote */
+            }
+        } while(forward_mask);
+
+        packet->reference_count_ = reference_count;
+        packet = packet->next_packet_;
+    }
+
+    void Engine::Run() {
+        std::vector<QueueItem> packet_queue;
+
+        next_hop_filter_default_.resize(module_num_);
+        module_read_only_.resize(assigned_module_idx_, false);
+        for(int i = 0; i < module_num_; i ++) {
+            next_hop_filter_default_[i] = (1 << downstream_links_[i].size()) - 1;
+            module_read_only_[i] = modules_[i]->type_() == BaseModule::ModuleType::kReadOnly;
+        }
+
+        uint8_t batch_num = 0;
+        while((batch_num ++) || (!stop_)) {
+            /* TODO: receive from remote channels */
+
+            /* TODO: handle timer logic */
+
+            /* process packets in queue */
+            while(!packet_queue.empty()) [[likely]] {
+                auto node_idx = packet_queue.back().first;
+                auto packet = packet_queue.back().second;
+                packet_queue.pop_back();
+
+                packet->next_hop_filter_ = next_hop_filter_default_[node_idx];
+                auto return_packet = modules_[node_idx]->MainLogic(packet);
+                modules_[node_idx]->ApplyDownstreamFilters(packet);
+                if(return_packet != nullptr) [[likely]]
+                    ForwardPacket(packet_queue, return_packet, node_idx);
+                while (return_packet != nullptr) [[unlikely]]
+                    ForwardPacket(packet_queue, return_packet, node_idx);
+            }
+        }
+    }
 }
