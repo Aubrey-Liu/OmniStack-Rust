@@ -8,12 +8,17 @@
 #include <unistd.h>
 #include <cstdint>
 #include <string>
+#include <pthread.h>
 
 namespace omnistack {
     namespace memory {
         constexpr uint64_t kMetaHeadroomSize = 64;
         constexpr uint64_t kMaxTotalAllocateSize = 16ll * 1024 * 1024 * 1024;
         constexpr uint64_t kMaxNameLength = 64;
+        constexpr int kMaxProcess = 1024;
+        constexpr int kMaxThread = 8192;
+        constexpr int kMaxControlPlane = 8;
+        constexpr int kMaxIncomingProcess = 16;
 
         extern uint64_t process_id;
         extern thread_local uint64_t thread_id;
@@ -23,6 +28,7 @@ namespace omnistack {
         static constexpr std::string_view kBackendName = "dpdk";
 #else
         static constexpr std::string_view kBackendName = "origin";
+
 #endif
         enum class RegionType {
             kLocal = 0,
@@ -130,6 +136,16 @@ namespace omnistack {
             meta->mempool = mempool;
         }
 
+        constexpr uint64_t kMemoryPoolLocalCache = 256;
+        struct MemoryPoolBatch {
+            uint64_t offsets[kMemoryPoolLocalCache];
+            uint32_t cnt;
+            uint32_t used;
+            uint64_t next;
+            char padding[64 - sizeof(cnt) - sizeof(used) - sizeof(next)];
+        };
+        static_assert(sizeof(MemoryPoolBatch) % 64 == 0);
+
         /**
          * @brief This is the base class of memory pool
          *  The implement must require:
@@ -139,24 +155,36 @@ namespace omnistack {
          */
         class MemoryPool {
         public:
-            static void DestroyMempool(MemoryPool* mempool);
-
-            virtual void* Get() = 0;
+            void* Get();
             static void PutBack(void* ptr);
-            virtual void Put(void* ptr) = 0;
+            void Put(void* ptr);
 
-            virtual uint32_t UsableCount() = 0;
-            virtual uint32_t UsedCount() = 0;
+#if !defined(OMNIMEM_BACKEND_DPDK)
+            uint64_t region_offset_; // The offset of payload memory
+#else
+            uint8_t* region_ptr_;
+#endif
+            uint64_t chunk_size_; // Chunk Size include metadata header
+            uint64_t chunk_count_;
 
-            /**
-             * @brief This function will be called after Destroy been called but not successfully destroied
-             * @param thread_id
-             */
-            virtual void ThreadDestroy(uint64_t thread_id) = 0;
-        private:
-            virtual void Init();
-            virtual int Destroy();
+#if !defined(OMNIMEM_BACKEND_DPDK)
+            uint64_t batch_container_offset_;
+            uint64_t full_container_offset_;
+            uint64_t empty_container_offset_;
+#else
+            uint8_t* batch_container_ptr_;
+            MemoryPoolBatch* full_container_ptr_;
+            MemoryPoolBatch* empty_container_ptr_;
+#endif
+
+            MemoryPoolBatch* local_cache_[kMaxThread + 1];
+            MemoryPoolBatch* local_free_cache_[kMaxThread + 1];
+            pthread_mutex_t recycle_mutex_;
         };
+
+        MemoryPool* AllocateMemoryPool(const std::string& name, size_t chunk_size, size_t chunk_count);
+
+        void FreeMemoryPool(MemoryPool* memory_pool);
 
         /**
          * @brief This namespace are some function that used to accelerate the memory subsystem
