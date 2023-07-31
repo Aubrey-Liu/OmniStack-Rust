@@ -186,6 +186,8 @@ namespace omnistack::memory {
     };
     static std::map<int, ProcessInfo> fd_to_process_info;
     static std::set<uint64_t> process_id_used;
+    static std::set<uint64_t> thread_id_used;
+    static std::map<uint64_t, uint64_t> thread_id_to_fd;
     /** PROCESS INFORMATION **/
 
     void ControlPlane() {
@@ -309,7 +311,14 @@ namespace omnistack::memory {
                                 break;
                             }
                             case RpcRequestType::kNewThread: {
-                                resp.new_thread.thread_id = 0;
+                                auto& info = fd_to_process_info[fd];
+                                resp.new_thread.thread_id = 1;
+                                while (thread_id_used.count(resp.new_thread.thread_id) && resp.new_thread.thread_id <= kMaxThread)
+                                    resp.new_thread.thread_id ++;
+                                if (resp.new_thread.thread_id > kMaxThread)
+                                    throw std::runtime_error("Too many threads");
+                                thread_id_used.insert(resp.new_thread.thread_id);
+                                thread_id_to_fd[resp.new_thread.thread_id] = fd;
                                 resp.status = RpcResponseStatus::kSuccess;
                                 break;
                             }
