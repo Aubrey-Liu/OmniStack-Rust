@@ -16,7 +16,13 @@
 #if defined(__APPLE__)
 #include <sys/event.h>
 #else
-#error Not supported System OS
+#include <sys/epoll.h>
+#include <mutex>
+#include <condition_variable>
+#include <sys/mman.h>
+#include <sys/stat.h>        /* For mode constants */
+#include <fcntl.h>
+#include <sys/file.h>
 #endif
 
 static inline
@@ -201,6 +207,8 @@ namespace omnistack::memory {
         constexpr int kMaxEvents = 16;
 #if defined(__APPLE__)
         struct kevent events[kMaxEvents];
+#else
+        struct epoll_event events[kMaxEvents];
 #endif
         try {
 #if defined(__APPLE__)
@@ -226,11 +234,15 @@ namespace omnistack::memory {
                     .tv_nsec = 0
             };
             nevents = kevent(epfd, nullptr, 0, events, kMaxEvents, &timeout);
+#else
+            nevents = epoll_wait(epfd, events, kMaxEvents, 1000);
 #endif
             for (int eidx = 0; eidx < nevents; eidx ++) {
                 auto& evt = events[eidx];
 #if defined(__APPLE__)
                 auto fd = (int)(intptr_t)evt.udata;
+#else
+                auto fd = evt.data.fd;
 #endif
                 if (fd == sock_client) {
                     int new_fd;
@@ -271,6 +283,13 @@ namespace omnistack::memory {
                             EV_SET(&ev, new_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void *) (intptr_t) new_fd);
                             if (kevent(epfd, &ev, 1, nullptr, 0, nullptr)) {
                                 std::cerr << "Failed to set kevent for new process\n";
+                                return ;
+                            }
+#else
+                            struct epoll_event ev{};
+                            ev.events = EPOLLIN | EPOLLET;
+                            if (epoll_ctl(epfd, EPOLL_CTL_ADD, new_fd, &ev)) {
+                                std::cerr << "Failed to set epoll for new process\n";
                                 return ;
                             }
 #endif
@@ -518,11 +537,19 @@ namespace omnistack::memory {
         {
             virt_base_addrs_name = "omnistack_virt_base_addrs_" + std::to_string(getpid());
             {
+                #if defined(__APPLE__)
                 auto ret = shm_open(virt_base_addrs_name.c_str(), O_RDWR);
+                #else
+                auto ret = shm_open(virt_base_addrs_name.c_str(), O_RDWR, 0666);
+                #endif
                 if (ret >= 0) throw std::runtime_error("Failed to init virt_base_addrs for already exists");
             }
             {
+                #if defined(__APPLE__)
                 virt_base_addrs_fd = shm_open(virt_base_addrs_name.c_str(), O_RDWR | O_CREAT);
+                #else
+                virt_base_addrs_fd = shm_open(virt_base_addrs_name.c_str(), O_RDWR | O_CREAT, 0666);
+                #endif
                 if (virt_base_addrs_fd < 0) throw std::runtime_error("Failed to init virt_base_addrs");
             }
             {
@@ -542,11 +569,19 @@ namespace omnistack::memory {
         {
             virt_shared_region_name = "omnistack_virt_shared_region_" + std::to_string(getpid());
             {
+                #if defined(__APPLE__)
                 auto ret = shm_open(virt_shared_region_name.c_str(), O_RDWR);
+                #else
+                auto ret = shm_open(virt_shared_region_name.c_str(), O_RDWR, 0666);
+                #endif
                 if (ret >= 0) throw std::runtime_error("Failed to init virt_shared_region for already exists");
             }
             {
+                #if defined(__APPLE__)
                 virt_shared_region_control_plane_fd = shm_open(virt_shared_region_name.c_str(), O_RDWR | O_CREAT);
+                #else
+                virt_shared_region_control_plane_fd = shm_open(virt_shared_region_name.c_str(), O_RDWR | O_CREAT, 0666);
+                #endif
                 if (virt_shared_region_control_plane_fd < 0) throw std::runtime_error("Failed to init virt_shared_region");
             }
             {
@@ -734,7 +769,11 @@ namespace omnistack::memory {
             {
                 virt_base_addrs_name = "omnistack_virt_base_addrs_" + std::to_string(main_process_pid);
                 {
+                    #if defined(__APPLE__)
                     virt_base_addrs_fd = shm_open(virt_base_addrs_name.c_str(), O_RDWR);
+                    #else
+                    virt_base_addrs_fd = shm_open(virt_base_addrs_name.c_str(), O_RDWR, 0666);
+                    #endif
                     if (virt_base_addrs_fd < 0) throw std::runtime_error("Failed to init virt_base_addrs");
                 }
                 {
@@ -754,7 +793,11 @@ namespace omnistack::memory {
             {
                 virt_shared_region_name = "omnistack_virt_shared_region_" + std::to_string(main_process_pid);
                 {
+                    #if defined(__APPLE__)
                     virt_shared_region_fd = shm_open(virt_shared_region_name.c_str(), O_RDWR);
+                    #else
+                    virt_shared_region_fd = shm_open(virt_shared_region_name.c_str(), O_RDWR, 0666);
+                    #endif
                     if (virt_shared_region_fd < 0) throw std::runtime_error("Failed to init virt_shared_region");
                 }
                 {
