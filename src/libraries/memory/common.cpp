@@ -85,6 +85,7 @@ namespace omnistack::memory {
         kSuccess = 0,
         kUnknownProcess,
         kUnknownType,
+        kInvalidThreadId,
     };
 
     struct RpcResponse {
@@ -145,6 +146,10 @@ namespace omnistack::memory {
                 uint64_t offset;
 #endif
             } free_memory;
+            struct {
+                uint64_t thread_id;
+                int cpu_idx;
+            } thread_bind_cpu;
         };
     };
 
@@ -562,12 +567,24 @@ namespace omnistack::memory {
                                             mempool->local_free_cache_[i] = nullptr;
                                         }
                                     }
+
+                                    pool_name_to_meta[pool_name] = mempool_meta;
                                 } else {
                                     auto &meta = pool_name_to_meta[pool_name];
                                     meta->ref_cnt ++;
                                     resp.get_memory_pool.addr = meta->addr;
                                     resp.status = RpcResponseStatus::kSuccess;
                                 }
+                                break;
+                            }
+                            case RpcRequestType::kThreadBindCPU: {
+                                auto thread_id = rpc_request.thread_bind_cpu.thread_id;
+                                if (thread_id_to_fd[thread_id] != fd) {
+                                    resp.status = RpcResponseStatus::kInvalidThreadId;
+                                    break;
+                                }
+                                thread_id_to_cpu[thread_id] = rpc_request.thread_bind_cpu.cpu_idx;
+                                resp.status = RpcResponseStatus::kSuccess;
                                 break;
                             }
                             default:
