@@ -9,7 +9,7 @@
 #include <omnistack/common/packet.hpp>
 
 namespace omnistack::data_plane {
-    class DataPlanePacket : public Packet {
+    class DataPlanePacket : public omnistack::common::Packet {
     public:
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         uint32_t upstream_node_;        /* identify the upstream node of current packet */
