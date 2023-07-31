@@ -233,9 +233,10 @@ namespace omnistack::data_plane {
 
                 packet->next_hop_filter_ = next_hop_filter_default_[node_idx];
                 auto return_packet = modules_[node_idx]->MainLogic(packet);
-                modules_[node_idx]->ApplyDownstreamFilters(packet);
-                if(return_packet != nullptr) [[likely]]
+                if(return_packet != nullptr) [[likely]] {
+                    modules_[node_idx]->ApplyDownstreamFilters(return_packet);
                     ForwardPacket(packet_queue, return_packet, node_idx);
+                }
                 while (return_packet != nullptr) [[unlikely]]
                     ForwardPacket(packet_queue, return_packet, node_idx);
             }
