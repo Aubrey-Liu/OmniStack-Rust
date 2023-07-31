@@ -168,9 +168,9 @@ namespace omnistack {
             uint64_t chunk_count_;
 
 #if !defined(OMNIMEM_BACKEND_DPDK)
-            uint64_t batch_container_offset_;
-            uint64_t full_container_offset_;
-            uint64_t empty_container_offset_;
+            uint64_t batch_block_offset_;
+            uint64_t full_block_offset_;
+            uint64_t empty_block_offset_;
 #else
             uint8_t* batch_container_ptr_;
             MemoryPoolBatch* full_container_ptr_;

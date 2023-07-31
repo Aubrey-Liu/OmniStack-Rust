@@ -399,17 +399,81 @@ namespace omnistack::memory {
 
                                     auto mempool = reinterpret_cast<MemoryPool*>(reinterpret_cast<uint8_t*>(mempool_meta) + kMetaHeadroomSize);
 
-                                    mempool->chunk_size_ = rpc_request.get_memory_pool.chunk_size;
-                                    mempool->chunk_count_ = rpc_request.get_memory_pool.chunk_count;
+                                    mempool->chunk_size_ = (rpc_request.get_memory_pool.chunk_size + 63 + kMetaHeadroomSize) / 64 * 64;
+                                    mempool->chunk_count_ = (rpc_request.get_memory_pool.chunk_count + 63) / 64 * 64;
                                     pthread_mutexattr_t init_attr;
                                     pthread_mutexattr_init(&init_attr);
                                     pthread_mutexattr_setpshared(&init_attr, PTHREAD_PROCESS_SHARED);
                                     pthread_mutex_init(&mempool->recycle_mutex_, &init_attr);
                                     pthread_mutexattr_destroy(&init_attr);
 
+
                                     { // Allocate Chunks
+                                        auto aligned_chunk_region_size = mempool->chunk_size_ * mempool->chunk_count_;
+                                        auto need_allocate_chunk_region_size = (aligned_chunk_region_size + kMetaHeadroomSize + 63) / 64 * 64;
+#if !defined(OMNIMEM_BACKEND_DPDK)
+                                        {
+                                            auto usable_iter = usable_region.lower_bound(
+                                                    std::make_pair(need_allocate_chunk_region_size, 0));
+                                            if (usable_iter == usable_region.end())
+                                                throw std::runtime_error("No usable region for mempool chunks");
+                                            auto region_info = *usable_iter;
+                                            usable_region.erase(usable_iter);
+                                            mempool->region_offset_ = region_info.second;
+                                            region_info.first -= need_allocate_chunk_region_size;
+                                            region_info.second += need_allocate_chunk_region_size;
+                                            if (region_info.first > 0)
+                                                usable_region.insert(region_info);
+                                        }
+#else
+#error Not implemented
+#endif
                                     }
                                     { // Allocate & Set Blocks
+                                        auto chunk_region_begin = mempool->region_offset_ + kMetaHeadroomSize;
+                                        auto chunk_need_allocate = (mempool->chunk_count_ + kMemoryPoolLocalCache) / kMemoryPoolLocalCache + 2 * kMaxThread + 1;
+#if !defined(OMNIMEM_BACKEND_DPDK)
+                                        {
+                                            auto usable_iter = usable_region.lower_bound(
+                                                    std::make_pair(chunk_need_allocate * sizeof(MemoryPoolBatch), 0));
+                                            if (usable_iter == usable_region.end())
+                                                throw std::runtime_error("No usable region for mempool chunks");
+                                            auto region_info = *usable_iter;
+                                            usable_region.erase(usable_iter);
+                                            mempool->batch_block_offset_ = region_info.second;
+                                            region_info.first -= chunk_need_allocate * sizeof(MemoryPoolBatch);
+                                            region_info.second += chunk_need_allocate * sizeof(MemoryPoolBatch);
+                                            if (region_info.first > 0)
+                                                usable_region.insert(region_info);
+                                        }
+
+                                        mempool->full_block_offset_ = ~0;
+                                        mempool->empty_block_offset_ = ~0;
+                                        auto current_block = reinterpret_cast<MemoryPoolBatch*>(virt_shared_region + mempool->batch_block_offset_);
+                                        int used_chunk = 0;
+                                        for (int i = 0; i < mempool->chunk_count_; i += kMemoryPoolLocalCache, used_chunk ++) {
+                                            current_block->cnt = std::min(mempool->chunk_count_ - i, kMemoryPoolLocalCache);
+                                            current_block->used = 0;
+                                            for (int j = 0; j < current_block->cnt; j ++) {
+                                                auto chunk = chunk_region_begin + (i + j) * mempool->chunk_size_;
+                                                current_block->offsets[j] = chunk;
+                                            }
+                                            current_block->next = mempool->full_block_offset_;
+                                            mempool->full_block_offset_ = reinterpret_cast<uint8_t*>(current_block) - virt_shared_region;
+                                            current_block ++;
+                                        }
+                                        for (;used_chunk < chunk_need_allocate; used_chunk ++) {
+                                            current_block->next = mempool->empty_block_offset_;
+                                            mempool->empty_block_offset_ = reinterpret_cast<uint8_t*>(current_block) - virt_shared_region;
+                                            current_block ++;
+                                        }
+                                        for (int i = 0; i <= kMaxThread; i ++) {
+                                            mempool->local_cache_[i] = nullptr;
+                                            mempool->local_free_cache_[i] = nullptr;
+                                        }
+#else
+#error Not implemented
+#endif
                                     }
                                 } else {
                                     auto &meta = pool_name_to_meta[pool_name];
@@ -753,45 +817,76 @@ namespace omnistack::memory {
     void MemoryPool::Put(void* ptr) {
         auto real_ptr = reinterpret_cast<uint8_t*>(ptr) - kMetaHeadroomSize;
         auto cache = local_free_cache_[thread_id];
-        if (cache->used == kMemoryPoolLocalCache) { // Get a empty block from main pool
+        if (!cache) [[unlikely]] {
+            pthread_mutex_lock(&recycle_mutex_);
+            auto container_ptr = reinterpret_cast<MemoryPoolBatch *>(virt_base_addrs[process_id] +
+                                                                     empty_block_offset_);
+            empty_block_offset_ = container_ptr->next;
+            pthread_mutex_unlock(&recycle_mutex_);
+
+            local_free_cache_[thread_id] = cache = container_ptr;
+            container_ptr->used = 0;
+        } else if (cache->used == kMemoryPoolLocalCache) [[unlikely]] { // Get a empty block from main pool
             cache->cnt = cache->used;
             pthread_mutex_lock(&recycle_mutex_);
-            cache->next = full_container_offset_;
-            full_container_offset_ = reinterpret_cast<uint8_t*>(cache) - virt_base_addrs[process_id];
+            cache->next = full_block_offset_;
+            full_block_offset_ = reinterpret_cast<uint8_t*>(cache) - virt_base_addrs[process_id];
 
-            auto container_ptr = reinterpret_cast<MemoryPoolBatch*>(virt_base_addrs[process_id] + empty_container_offset_);
-            empty_container_offset_ = container_ptr->next;
+            auto container_ptr = reinterpret_cast<MemoryPoolBatch*>(virt_base_addrs[process_id] + empty_block_offset_);
+            empty_block_offset_ = container_ptr->next;
             pthread_mutex_unlock(&recycle_mutex_);
 
             local_free_cache_[thread_id] = cache = container_ptr;
             container_ptr->used = 0;
         }
-        cache->offsets[cache->used ++] = (real_ptr - virt_base_addrs[process_id]);
+        if (cache) [[likely]] {
+            cache->offsets[cache->used++] = (real_ptr - virt_base_addrs[process_id]);
+        } else throw std::runtime_error("Cache is nullptr");
     }
 
     void* MemoryPool::Get() {
-        if (local_cache_[thread_id]->used == local_cache_[thread_id]->cnt) { // chunk ran out
+        if (local_cache_[thread_id] == nullptr) [[unlikely]] {
             pthread_mutex_lock(&recycle_mutex_);
-            auto container_ptr = reinterpret_cast<MemoryPoolBatch*>(virt_base_addrs[process_id] + full_container_offset_);
-            full_container_offset_ = container_ptr->next;
+            if (full_block_offset_ != ~0) {
+                auto container_ptr = reinterpret_cast<MemoryPoolBatch *>(virt_base_addrs[process_id] +
+                                                                         full_block_offset_);
+                full_block_offset_ = container_ptr->next;
 
-            local_cache_[thread_id]->next = empty_container_offset_;
-            empty_container_offset_ = reinterpret_cast<uint8_t*>(local_cache_[thread_id]) - virt_base_addrs[process_id];
+                /// TODO: prefetch
 
+                local_cache_[thread_id] = container_ptr;
+            }
             pthread_mutex_unlock(&recycle_mutex_);
-            /// TODO: prefetch
+        } else if (local_cache_[thread_id]->used == local_cache_[thread_id]->cnt) [[unlikely]] { // chunk ran out
+            pthread_mutex_lock(&recycle_mutex_);
+            if (full_block_offset_ != ~0) {
+                auto container_ptr = reinterpret_cast<MemoryPoolBatch *>(virt_base_addrs[process_id] +
+                                                                         full_block_offset_);
+                full_block_offset_ = container_ptr->next;
 
-            local_cache_[thread_id] = container_ptr;
+                local_cache_[thread_id]->next = empty_block_offset_;
+                empty_block_offset_ =
+                        reinterpret_cast<uint8_t *>(local_cache_[thread_id]) - virt_base_addrs[process_id];
+
+
+                /// TODO: prefetch
+
+                local_cache_[thread_id] = container_ptr;
+            } else local_cache_[thread_id] = nullptr;
+            pthread_mutex_unlock(&recycle_mutex_);
         }
-        auto ret_offset = local_cache_[thread_id]->offsets[local_cache_[thread_id]->used ++];
-        auto ret = virt_base_addrs[process_id] + ret_offset;
-        auto meta = reinterpret_cast<RegionMeta*>(ret);
-        meta->mempool = this;
-        meta->offset = ret_offset;
-        meta->size = chunk_size_;
-        meta->process_id = process_id;
-        meta->type = RegionType::kMempoolChunk;
-        return ret + kMetaHeadroomSize;
+        if (local_cache_[thread_id] != nullptr) [[likely]] {
+            auto ret_offset = local_cache_[thread_id]->offsets[local_cache_[thread_id]->used++];
+            auto ret = virt_base_addrs[process_id] + ret_offset;
+            auto meta = reinterpret_cast<RegionMeta *>(ret);
+            meta->mempool = this;
+            meta->offset = ret_offset;
+            meta->size = chunk_size_;
+            meta->process_id = process_id;
+            meta->type = RegionType::kMempoolChunk;
+            return ret + kMetaHeadroomSize;
+        }
+        return nullptr;
     }
 
     MemoryPool* AllocateMemoryPool(const std::string& name, size_t chunk_size, size_t chunk_count) {
