@@ -105,7 +105,11 @@ namespace omnistack {
         /**
          * @brief Start a control plane to monitor all the process / thread that allocate the memory to automatically free memory
          */
-        void StartControlPlane();
+        void StartControlPlane(
+#if defined(OMNIMEM_BACKEND_DPDK)
+            bool init_dpdk = false
+#endif
+        );
         void StopControlPlane();
 
         /**
@@ -198,11 +202,12 @@ namespace omnistack {
 
         void FreeMemoryPool(MemoryPool* memory_pool);
 
-        /**
-         * @brief This namespace are some function that used to accelerate the memory subsystem
-         */
-        namespace accel {
-        }
+        enum class ControlPlaneStatus {
+            kStarting = 0,
+            kRunning,
+            kStopped
+        };
+        ControlPlaneStatus GetControlPlaneStatus();
     }
 }
 

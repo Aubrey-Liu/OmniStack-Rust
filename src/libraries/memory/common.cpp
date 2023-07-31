@@ -195,6 +195,8 @@ namespace omnistack::memory {
     static int sock_lock_fd = 0;
     static int sock_id = 0;
 
+    static ControlPlaneStatus control_plane_status = ControlPlaneStatus::kStopped;
+
 #if !defined(OMNIMEM_BACKEND_DPDK)
     static uint8_t** virt_base_addrs = nullptr;
     static std::string virt_base_addrs_name;
@@ -229,6 +231,7 @@ namespace omnistack::memory {
             control_plane_started = true;
             cond_control_plane_started.notify_all();
         }
+        control_plane_status = ControlPlaneStatus::kRunning;
 
         int epfd;
         constexpr int kMaxEvents = 16;
@@ -604,11 +607,29 @@ namespace omnistack::memory {
                 }
             }
         }
+
+        control_plane_status = ControlPlaneStatus::kStopped;
     }
 
-    void StartControlPlane() {
+    void StartControlPlane(
+#if defined(OMNIMEM_BACKEND_DPDK)
+        bool init_dpdk
+#endif
+    ) {
+        control_plane_status = ControlPlaneStatus::kStarting;
         std::unique_lock<std::mutex> _(control_plane_state_lock);
-
+#if defined(OMNIMEM_BACKEND_DPDK)
+        if (init_dpdk) {
+            constexpr int argc = 1;
+            char** argv = new char*[1];
+            argv[0] = new char[10];
+            strcpy(argv[0], "./_");
+            if (rte_eal_init(argc, argv) < 0)
+                throw std::runtime_error("Failed to init dpdk");
+            delete [] argv[0];
+            delete [] argv;
+        }
+#endif
 #if !defined(OMNIMEM_BACKEND_DPDK)
         {
             virt_base_addrs_name = "omnistack_virt_base_addrs_" + std::to_string(getpid());
@@ -679,7 +700,7 @@ namespace omnistack::memory {
             for (sock_id = 0; sock_id < kMaxControlPlane; sock_id ++) {
                 sock_lock_name = std::filesystem::temp_directory_path().string() + "/omnistack_memory_sock" +
                                  std::to_string(sock_id) + ".lock";
-                sock_lock_fd = open(sock_lock_name.c_str(), O_RDONLY | O_CREAT);
+                sock_lock_fd = open(sock_lock_name.c_str(), O_WRONLY | O_CREAT);
                 if (sock_lock_fd < 0)
                     continue;
                 if (flock(sock_lock_fd, LOCK_EX | LOCK_NB)) {
@@ -689,6 +710,7 @@ namespace omnistack::memory {
 
                 sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_memory_sock" +
                             std::to_string(sock_id) + ".socket";
+                break;
             }
 
             sockaddr_un addr{};
@@ -699,9 +721,10 @@ namespace omnistack::memory {
             sock_client = socket(AF_UNIX, SOCK_STREAM, 0);
             if (sock_client < 0)
                 throw std::runtime_error("Failed to create unix socket");
+            std::filesystem::remove(sock_name);
             if (bind(sock_client, (struct sockaddr*)&addr,
                      sock_name.length() + sizeof(addr.sun_family))) {
-                throw std::runtime_error("Failed to bind unix socket");
+                throw std::runtime_error("Failed to bind unix socket" + sock_name);
             }
             if (listen(sock_client, kMaxIncomingProcess)) {
                 throw std::runtime_error("Failed to listen unix socket");
@@ -1093,5 +1116,9 @@ namespace omnistack::memory {
             return pool;
         }
         return nullptr;
+    }
+
+    ControlPlaneStatus GetControlPlaneStatus() {
+        return control_plane_status;
     }
 }
