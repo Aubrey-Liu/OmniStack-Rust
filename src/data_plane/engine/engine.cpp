@@ -26,7 +26,7 @@ namespace omnistack::data_plane {
                 else break;
     }
 
-    void Engine::Init(SubGraph &sub_graph, uint32_t core, const std::string& name_prefix) {
+    void Engine::Init(SubGraph &sub_graph, uint32_t core, std::string_view name_prefix) {
         /* TODO: create packet pool */
         std::shared_ptr<PacketPool> packet_pool;
         auto& graph = sub_graph.graph_;
@@ -100,7 +100,7 @@ namespace omnistack::data_plane {
                 upstream_nodes.reserve(links.size());
                 for(auto idx : links)
                     upstream_nodes.emplace_back(graph.node_names_[local_to_global[idx]], local_to_global[idx]);
-                modules_[i]->set_upstream_nodes(upstream_nodes);
+                modules_[i]->set_upstream_nodes_(upstream_nodes);
             }
         }
 

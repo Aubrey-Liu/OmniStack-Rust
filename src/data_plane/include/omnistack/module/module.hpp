@@ -38,7 +38,7 @@ namespace omnistack::data_plane {
 
         void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
 
-        void set_upstream_nodes(const std::vector<std::pair<std::string, uint32_t>>& upstream_nodes);
+        void set_upstream_nodes_(const std::vector<std::pair<std::string, uint32_t>>& upstream_nodes);
 
         void ApplyDownstreamFilters(DataPlanePacket* packet);
 
@@ -48,7 +48,7 @@ namespace omnistack::data_plane {
 
         virtual DataPlanePacket* TimerLogic(uint64_t tick) { return nullptr; }
 
-        virtual void Init(const std::string& name_prefix, const std::shared_ptr<PacketPool>& packet_pool) {};
+        virtual void Init(std::string_view name_prefix, const std::shared_ptr<PacketPool>& packet_pool) {};
 
         virtual void Destroy() {};
 
@@ -69,11 +69,11 @@ namespace omnistack::data_plane {
 
     private:
         struct FilterGroup {
-            std::vector<Filter> filters;
-            std::vector<uint32_t> filter_masks;
-            uint32_t universe_mask;
-            FilterGroupType type;
-            uint8_t last_apply;
+            std::vector<Filter> filters_;
+            std::vector<uint32_t> filter_masks_;
+            uint32_t universe_mask_;
+            FilterGroupType type_;
+            uint8_t last_apply_;
         };
 
         std::vector<FilterGroup> filter_groups_;
