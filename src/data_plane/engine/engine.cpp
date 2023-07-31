@@ -119,7 +119,7 @@ namespace omnistack::data_plane {
                 std::map<uint32_t, uint32_t> local_to_idx;
                 for(uint32_t j = 0; j < downstream_links_[u].size(); j ++) {
                     auto downstream_node = downstream_links_[u][j];
-                    filters.push_back(modules_[downstream_node]->GetFilter(modules_[u]->name_()));
+                    filters.push_back(modules_[downstream_node]->GetFilter(modules_[u]->name_(), local_to_global[downstream_node]));
                     filter_masks.push_back(1 << j);
                     local_to_idx.emplace(downstream_node, j);
                 }
