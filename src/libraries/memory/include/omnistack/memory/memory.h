@@ -41,7 +41,11 @@ namespace omnistack {
             RegionType type;
             uint64_t iova;
             uint64_t process_id;
+            #if defined(OMNIMEM_BACKEND_DPDK)
+            void* addr;
+            #else
             uint64_t offset;
+            #endif
             size_t size;
             uint64_t ref_cnt;
 
@@ -138,10 +142,18 @@ namespace omnistack {
 
         constexpr uint64_t kMemoryPoolLocalCache = 256;
         struct MemoryPoolBatch {
-            uint64_t offsets[kMemoryPoolLocalCache];
+#if defined(OMNIMEM_BACKEND_DPDK)
+            void* addrs[kMemoryPoolLocalCache];        
+#else
+            uint64_t offsets[kMemoryPoolLocalCache];        
+#endif
             uint32_t cnt;
             uint32_t used;
+#if defined(OMNIMEM_BACKEND_DPDK)
+            MemoryPoolBatch* next;
+#else
             uint64_t next;
+#endif
             char padding[64 - sizeof(cnt) - sizeof(used) - sizeof(next)];
         };
         static_assert(sizeof(MemoryPoolBatch) % 64 == 0);
@@ -172,9 +184,9 @@ namespace omnistack {
             uint64_t full_block_offset_;
             uint64_t empty_block_offset_;
 #else
-            uint8_t* batch_container_ptr_;
-            MemoryPoolBatch* full_container_ptr_;
-            MemoryPoolBatch* empty_container_ptr_;
+            uint8_t* batch_block_ptr_;
+            MemoryPoolBatch* full_block_ptr_;
+            MemoryPoolBatch* empty_block_ptr_;
 #endif
 
             MemoryPoolBatch* local_cache_[kMaxThread + 1];
