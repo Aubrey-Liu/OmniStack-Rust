@@ -8,10 +8,12 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <concepts>
 #include <string>
 #include <vector>
+#include <array>
 #include <map>
-#include<set>
+#include <set>
 #include <omnistack/graph/steer_info.hpp>
 
 namespace omnistack::data_plane {
@@ -114,8 +116,9 @@ namespace omnistack::data_plane {
         std::map<std::string, CreateFunction> module_list_;
     };
 
-    template<typename T, const char* name>
-    class Module : BaseModule {
+    template<typename T, std::array name>
+    requires std::same_as<typename decltype(name)::value_type, char>
+    class Module : public BaseModule {
     public:
         static std::unique_ptr<BaseModule> CreateModuleObject() {
             return std::make_unique<BaseModule>(new T());
@@ -133,7 +136,8 @@ namespace omnistack::data_plane {
         static const FactoryEntry factory_entry_;
     };
 
-    template<typename T, const char* name>
+    template<typename T, std::array name>
+    requires std::same_as<typename decltype(name)::value_type, char>
     const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;
 }
 
