@@ -40,7 +40,7 @@ int readAll(int sockfd, char* buf, size_t len, const bool* stopped = nullptr) {
             if ((errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) && (stopped == nullptr || !*stopped)) {
                 continue;
             } else {
-                throw std::runtime_error("read error");
+                throw std::runtime_error("read error " + std::to_string(errno));
             }
         } else if (ret == 0) {
             throw std::runtime_error("read EOF");
@@ -231,7 +231,6 @@ namespace omnistack::memory {
             control_plane_started = true;
             cond_control_plane_started.notify_all();
         }
-        control_plane_status = ControlPlaneStatus::kRunning;
 
         int epfd;
         constexpr int kMaxEvents = 16;
@@ -250,11 +249,22 @@ namespace omnistack::memory {
                 if (ret)
                     throw std::runtime_error("Failed to set kevent");
             }
+#else
+            epfd = epoll_create(128);
+            struct epoll_event ev{};
+            ev.events = EPOLLIN;
+            ev.data.fd = sock_client;
+            {
+                auto ret = epoll_ctl(epfd, EPOLL_CTL_ADD, sock_client, &ev);
+                if (ret)
+                    throw std::runtime_error("Failed to set epoll " + std::to_string(errno));
+            }
 #endif
         } catch(std::runtime_error& err) {
             std::cerr << err.what() << std::endl;
             return ;
         }
+        control_plane_status = ControlPlaneStatus::kRunning;
 
         while (!stop_control_plane) {
             int nevents;
@@ -317,6 +327,7 @@ namespace omnistack::memory {
 #else
                             struct epoll_event ev{};
                             ev.events = EPOLLIN | EPOLLET;
+                            ev.data.fd = new_fd;
                             if (epoll_ctl(epfd, EPOLL_CTL_ADD, new_fd, &ev)) {
                                 std::cerr << "Failed to set epoll for new process\n";
                                 return ;
@@ -349,6 +360,7 @@ namespace omnistack::memory {
                         resp.id = rpc_request.id;
                         switch (rpc_request.type) {
                             case RpcRequestType::kGetProcessId: {
+                                printf("Received get process id\n");
                                 if (fd_to_process_info.count(fd)) {
                                     auto& info = fd_to_process_info[fd];
                                     resp.status = RpcResponseStatus::kSuccess;
@@ -798,6 +810,7 @@ namespace omnistack::memory {
     static int rpc_id;
 
     static void RpcResponseReceiver() {
+        printf("Receiver Thread Started\n");
         RpcResponse resp{};
         while (true) {
             readAll(sock_client, reinterpret_cast<char*>(&resp), sizeof(RpcResponse));
@@ -826,6 +839,8 @@ namespace omnistack::memory {
             local_rpc_meta.cond_rpc_finished = false;
             writeAll(sock_client, reinterpret_cast<char*>(&local_rpc_request), sizeof(RpcRequest));
         }
+
+        printf("RPC Request sent\n");
 
         {
             std::unique_lock<std::mutex> _(local_rpc_meta.cond_rpc_lock);
