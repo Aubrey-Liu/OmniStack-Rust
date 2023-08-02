@@ -16,15 +16,15 @@ namespace omnistack::common {
     constexpr uint32_t kPacketMaxHeaderNum = 4;
     constexpr uint32_t kPacketMaxHeaderLength = 128;
 
+    struct PacketHeader {
+        uint8_t length_;
+        unsigned char* data_;
+    };
+
     class Packet {
     public:
         Packet() = delete;
         ~Packet() = delete;
-
-        struct PacketHeader {
-            uint8_t length_;
-            unsigned char* data_;
-        };
         
         uint16_t reference_count_;
         uint16_t length_;           // total length of data in mbuf
@@ -34,9 +34,9 @@ namespace omnistack::common {
         uint16_t mbuf_type_;        // Origin, DPDK
         uint32_t custom_mask_;      // bitmask, module can use for transferring infomation
         uint64_t custom_value_;     // value, module can use for transferring data
-        uint8_t header_num_;        // number of headers decoded
-        unsigned char* data;        // pointer to packet data
-        uint64_t iova;              // IO address for DMA
+        PacketHeader* header_tail_; // pointer to decoded headers' tail
+        unsigned char* data_;       // pointer to packet data
+        uint64_t iova_;             // IO address for DMA
         uint32_t flow_hash_;
         void* memory_pool_;     
         /* a cache line ends here */

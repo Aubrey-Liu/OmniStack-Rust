@@ -28,7 +28,7 @@ namespace omnistack::data_plane {
 
     void Engine::Init(SubGraph &sub_graph, uint32_t core, std::string_view name_prefix) {
         /* TODO: create packet pool */
-        std::shared_ptr<PacketPool> packet_pool;
+        PacketPool* packet_pool;
         auto& graph = sub_graph.graph_;
         std::map<uint32_t, uint32_t> global_to_local;
 
@@ -41,7 +41,7 @@ namespace omnistack::data_plane {
                 uint32_t module_id = modules_.size() - 1;
                 global_to_local.emplace(idx, module_id);
                 local_to_global.emplace(module_id, idx);
-                modules_.at(module_id)->Init(name_prefix, packet_pool);
+                modules_.at(module_id)->Init(name_prefix, *packet_pool);
             }
 
             module_num_ = modules_.size();
