@@ -54,12 +54,12 @@ namespace omnistack::data_plane {
 
         virtual void Destroy() {};
 
-        virtual constexpr bool allow_duplication_() { return false; }
+        static constexpr bool allow_duplication_() { return false; }
 
         /* TODO: use static_assert to check this */
-        virtual constexpr std::string_view name_() { return "BaseModule"; }
+        static constexpr std::string_view name_() { return "BaseModule"; }
 
-        virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
+        static constexpr ModuleType type_() { return ModuleType::kOccupy; }
 
         /* when does this act? will it be done in son-class? */
         uint32_t burst_ = 1;
@@ -116,15 +116,14 @@ namespace omnistack::data_plane {
         std::map<std::string, CreateFunction> module_list_;
     };
 
-    template<typename T, std::array name>
-    requires std::same_as<typename decltype(name)::value_type, char>
+    template<typename T, const char name[]>
     class Module : public BaseModule {
     public:
         static std::unique_ptr<BaseModule> CreateModuleObject() {
             return std::make_unique<BaseModule>(new T());
         }
 
-        constexpr std::string_view name_() override { return std::string_view(name); }
+        static constexpr std::string_view name_() { return std::string_view(name); }
 
     private:
         struct FactoryEntry {
@@ -136,8 +135,7 @@ namespace omnistack::data_plane {
         static const FactoryEntry factory_entry_;
     };
 
-    template<typename T, std::array name>
-    requires std::same_as<typename decltype(name)::value_type, char>
+    template<typename T, const char name[]>
     const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;
 }
 
