@@ -136,23 +136,6 @@ namespace omnistack {
             meta->process_id = thread_id;
         }
 
-        /**
-         * @brief This function must be called before returned by Memory Pool, and return (ptr + kMetaHeadroomSize)
-         */
-#if defined(_MSC_VER_)
-        __forceinline
-#elif defined(__GNUC__)
-        __inline__ __attribute__((always_inline))
-#endif
-        static void InitMemoryChunkMeta(void* ptr, MemoryPool* mempool, uint64_t iova = 0, uint64_t size = 0) {
-            auto meta = (RegionMeta*) (ptr);
-            meta->type = RegionType::kMempoolChunk;
-            meta->process_id = process_id;
-            meta->iova = iova;
-            meta->size = size;
-            meta->mempool = mempool;
-        }
-
         constexpr uint64_t kMemoryPoolLocalCache = 256;
         struct MemoryPoolBatch {
 #if defined(OMNIMEM_BACKEND_DPDK)
