@@ -86,7 +86,8 @@ namespace omnistack::memory {
         kUnknownProcess,
         kUnknownType,
         kInvalidThreadId,
-        kInvalidMemory
+        kInvalidMemory,
+        kDoubleFree
     };
 
     struct RpcResponse {
@@ -637,7 +638,24 @@ namespace omnistack::memory {
                                         region_meta->ref_cnt --;
                                         if (!region_meta->ref_cnt) {
                                             /// TODO: Free the region
-                                        }
+#if defined(OMNIMEM_BACKEND_DPDK)
+                                            rte_free(region_meta);
+#else
+#error not impelemented
+#endif
+                                            region_meta_to_fd.erase(region_meta);
+                                            auto iter = region_name_to_meta.begin();
+                                            while (iter != region_name_to_meta.end() && iter->second != region_meta)
+                                                iter ++;
+                                            if (iter != region_name_to_meta.end())
+                                                region_name_to_meta.erase(iter);
+                                            if (!used_regions.count(region_meta))
+                                                resp.status = RpcResponseStatus::kDoubleFree;
+                                            else {
+                                                used_regions.erase(region_meta);
+                                                resp.status = RpcResponseStatus::kSuccess;
+                                            }
+                                        } else resp.status = RpcResponseStatus::kSuccess;
                                     } else resp.status = RpcResponseStatus::kInvalidThreadId;
                                 } else {
                                     resp.status = RpcResponseStatus::kInvalidMemory;
@@ -656,7 +674,9 @@ namespace omnistack::memory {
                     }
 
                     if (peer_closed) {
-                        // TODO: Close Process
+                        /// TODO: Clear Process
+
+                        close(fd);
                     }
                 }
             }
@@ -1046,6 +1066,8 @@ namespace omnistack::memory {
         local_rpc_request.free_memory.offset = reinterpret_cast<uint8_t*>(ptr) - virt_base_addrs[process_id] - kMetaHeadroomSize;
 #endif
         auto resp = SendLocalRpcRequest();
+        if (resp.status != RpcResponseStatus::kSuccess)
+            throw std::runtime_error("Failed to free shared memory");
     }
 
     void MemoryPool::Put(void* ptr) {
@@ -1064,9 +1086,8 @@ namespace omnistack::memory {
             pthread_mutex_unlock(&recycle_mutex_);
 
             local_free_cache_[thread_id] = cache = container_ptr;
-            container_ptr->used = 0;
-        } else if (cache->used == kMemoryPoolLocalCache) [[unlikely]] { // Get a empty block from main pool
-            cache->cnt = cache->used;
+            container_ptr->used = container_ptr->cnt = 0;
+        } else if (cache->cnt == kMemoryPoolLocalCache) [[unlikely]] { // Get a empty block from main pool
             pthread_mutex_lock(&recycle_mutex_);
 #if defined(OMNIMEM_BACKEND_DPDK)
             cache->next = full_block_ptr_;
@@ -1086,13 +1107,13 @@ namespace omnistack::memory {
             pthread_mutex_unlock(&recycle_mutex_);
 
             local_free_cache_[thread_id] = cache = container_ptr;
-            container_ptr->used = 0;
+            container_ptr->used = container_ptr->cnt = 0;
         }
         if (cache) [[likely]] {
 #if defined(OMNIMEM_BACKEND_DPDK)
-            cache->addrs[cache->used++] = real_ptr;
+            cache->addrs[cache->cnt++] = real_ptr;
 #else
-            cache->offsets[cache->used++] = (real_ptr - virt_base_addrs[process_id]);
+            cache->offsets[cache->cnt++] = (real_ptr - virt_base_addrs[process_id]);
 #endif
         } else throw std::runtime_error("Cache is nullptr");
     }
