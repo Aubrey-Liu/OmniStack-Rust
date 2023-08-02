@@ -1185,10 +1185,11 @@ namespace omnistack::memory {
             auto ret = virt_base_addrs[process_id] + ret_offset;
 #endif
             auto meta = reinterpret_cast<RegionMeta *>(ret);
-            meta->mempool = this;
 #if defined(OMNIMEM_BACKEND_DPDK)
+            meta->mempool = this;
             meta->addr = ret;
 #else
+            meta->mempool_offset = (char*)this - virt_base_addrs[process_id];
             meta->offset = ret_offset;
 #endif
             meta->size = chunk_size_;
