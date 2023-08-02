@@ -58,7 +58,12 @@ namespace omnistack {
         /**
          * @brief Initialize the memory subsystem per process
          */
-        void InitializeSubsystem(int control_plane_id = 0);
+        void InitializeSubsystem(
+            int control_plane_id = 0,
+#if defined(OMNIMEM_BACKEND_DPDK)
+            bool init_dpdk = false
+#endif
+        );
 
         /**
          * @brief Initialize the memory subsystem per thread

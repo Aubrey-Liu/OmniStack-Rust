@@ -360,7 +360,6 @@ namespace omnistack::memory {
                         resp.id = rpc_request.id;
                         switch (rpc_request.type) {
                             case RpcRequestType::kGetProcessId: {
-                                printf("Received get process id\n");
                                 if (fd_to_process_info.count(fd)) {
                                     auto& info = fd_to_process_info[fd];
                                     resp.status = RpcResponseStatus::kSuccess;
@@ -632,14 +631,16 @@ namespace omnistack::memory {
         std::unique_lock<std::mutex> _(control_plane_state_lock);
 #if defined(OMNIMEM_BACKEND_DPDK)
         if (init_dpdk) {
-            constexpr int argc = 1;
-            char** argv = new char*[1];
-            argv[0] = new char[10];
+            constexpr int argc = 4;
+            char** argv = new char*[argc];
+            for (int i = 0; i < argc; i ++)
+                argv[i] = new char[256];
             strcpy(argv[0], "./_");
+            strcpy(argv[1], "--log-level");
+            strcpy(argv[2], "warning");
+            strcpy(argv[3], "--proc-type=auto");
             if (rte_eal_init(argc, argv) < 0)
                 throw std::runtime_error("Failed to init dpdk");
-            delete [] argv[0];
-            delete [] argv;
         }
 #endif
 #if !defined(OMNIMEM_BACKEND_DPDK)
@@ -810,7 +811,6 @@ namespace omnistack::memory {
     static int rpc_id;
 
     static void RpcResponseReceiver() {
-        printf("Receiver Thread Started\n");
         RpcResponse resp{};
         while (true) {
             readAll(sock_client, reinterpret_cast<char*>(&resp), sizeof(RpcResponse));
@@ -840,8 +840,6 @@ namespace omnistack::memory {
             writeAll(sock_client, reinterpret_cast<char*>(&local_rpc_request), sizeof(RpcRequest));
         }
 
-        printf("RPC Request sent\n");
-
         {
             std::unique_lock<std::mutex> _(local_rpc_meta.cond_rpc_lock);
             local_rpc_meta.cond_rpc_changed.wait(_, [](){
@@ -852,7 +850,25 @@ namespace omnistack::memory {
         return local_rpc_meta.resp;
     }
 
-    void InitializeSubsystem(int control_plane_id) {
+    void InitializeSubsystem(int control_plane_id,
+#if defined(OMNIMEM_BACKEND_DPDK)
+            bool init_dpdk
+#endif
+        ) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+        if (init_dpdk) {
+            constexpr int argc = 4;
+            char** argv = new char*[argc];
+            for (int i = 0; i < argc; i ++)
+                argv[i] = new char[256];
+            strcpy(argv[0], "./_");
+            strcpy(argv[1], "--log-level");
+            strcpy(argv[2], "warning");
+            strcpy(argv[3], "--proc-type=auto");
+            if (rte_eal_init(argc, argv) < 0)
+                throw std::runtime_error("Failed to init dpdk");
+        }
+#endif
         rpc_id = 0;
         sock_id = control_plane_id;
         sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_memory_sock" +
