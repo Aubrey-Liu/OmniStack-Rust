@@ -50,7 +50,7 @@ namespace omnistack::data_plane {
 
         virtual DataPlanePacket* TimerLogic(uint64_t tick) { return nullptr; }
 
-        virtual void Init(std::string_view name_prefix, const std::shared_ptr<PacketPool>& packet_pool) {};
+        virtual void Init(std::string_view name_prefix, const PacketPool& packet_pool) {};
 
         virtual void Destroy() {};
 
