@@ -54,20 +54,14 @@ namespace omnistack::data_plane {
 
         virtual void Destroy() {};
 
-        static constexpr bool allow_duplication_() { return false; }
+        virtual constexpr bool allow_duplication_() { return false; }
 
-        /* TODO: use static_assert to check this */
-        static constexpr std::string_view name_() { return "BaseModule"; }
+        virtual constexpr std::string_view name_() { return "BaseModule"; }
 
-        static constexpr ModuleType type_() { return ModuleType::kOccupy; }
+        virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
 
         /* when does this act? will it be done in son-class? */
-        uint32_t burst_ = 1;
-
-        /* seems that this will introduce an extra function-call by virtual, only useful when visiting through son-class pointer */
-//        virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
-//
-//        virtual constexpr uint32_t burst_() { return 1; }
+        // uint32_t burst_ = 1;
 
     private:
         struct FilterGroup {
@@ -123,7 +117,7 @@ namespace omnistack::data_plane {
             return std::make_unique<BaseModule>(new T());
         }
 
-        static constexpr std::string_view name_() { return std::string_view(name); }
+        constexpr std::string_view name_() override { return std::string_view(name); }
 
     private:
         struct FactoryEntry {

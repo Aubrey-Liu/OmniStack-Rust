@@ -16,11 +16,9 @@ public:
 
     DataPlanePacket* MainLogic(DataPlanePacket* packet) override;
 
-    constexpr bool allow_duplication_() { return true; }
+    constexpr bool allow_duplication_() override { return true; }
 
-    constexpr ModuleType type_() { return ModuleType::kReadOnly; }
-
-    static_assert(name_() == kName);
+    constexpr ModuleType type_() override { return ModuleType::kReadOnly; }
 };
 
 }
