@@ -54,6 +54,65 @@ TEST(LibrariesMemory, ConnectToControlPlane) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
+TEST(LibrariesMemory, ResourcesRecycle) {
+    auto control_pid = fork();
+    if (!control_pid) {
+        omnistack::memory::StartControlPlane(
+    #if defined(OMNIMEM_BACKEND_DPDK)
+            true
+    #endif
+        );
+        usleep(5000000);
+        exit(0);
+    }
+    usleep(2000000);
+    auto client_pid0 = fork();
+    if (!client_pid0) {
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
+        printf("Connected to Control Plane\n");
+        omnistack::memory::InitializeSubsystemThread();
+        auto shared_mem = omnistack::memory::AllocateNamedShared("Hello World", 1024);
+        auto mem_pool = omnistack::memory::AllocateMemoryPool("Hello World", 1024, 1024);
+        exit(0);
+    }
+    int status;
+    waitpid(client_pid0, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
+
+    auto client_pid1 = fork();
+    if (!client_pid1) {
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
+        printf("Connected to Control Plane\n");
+        omnistack::memory::InitializeSubsystemThread();
+        printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);
+        auto shared_mem = omnistack::memory::AllocateNamedShared("Hello World", 1024);
+        auto mem_pool = omnistack::memory::AllocateMemoryPool("Hello World", 1024, 1024);
+        if (omnistack::memory::process_id != 1)
+            exit(1);
+        if (omnistack::memory::thread_id != 1)
+            exit(2);
+        exit(0);
+    }
+    waitpid(client_pid1, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
+    
+    waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, MultiConnectToControlPlane) {
@@ -64,7 +123,7 @@ TEST(LibrariesMemory, MultiConnectToControlPlane) {
             true
     #endif
         );
-        usleep(3000000);
+        usleep(3500000);
         exit(0);
     }
     usleep(2000000);
@@ -102,6 +161,8 @@ TEST(LibrariesMemory, MultiConnectToControlPlane) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, AllocateLocal) {
@@ -138,6 +199,8 @@ TEST(LibrariesMemory, AllocateLocal) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, AllocateShared) {
@@ -148,7 +211,7 @@ TEST(LibrariesMemory, AllocateShared) {
             true
     #endif
         );
-        usleep(3000000);
+        usleep(3500000);
         exit(0);
     }
     usleep(2000000);
@@ -192,6 +255,8 @@ TEST(LibrariesMemory, AllocateShared) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, FreeShared) {
@@ -248,6 +313,8 @@ TEST(LibrariesMemory, FreeShared) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, CreateMempool) {
@@ -284,6 +351,8 @@ TEST(LibrariesMemory, CreateMempool) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, GetChunkFromMempool) {
@@ -320,6 +389,8 @@ TEST(LibrariesMemory, GetChunkFromMempool) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, PutChunkToMempool) {
@@ -355,6 +426,8 @@ TEST(LibrariesMemory, PutChunkToMempool) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, GetChunksFromMempool) {
@@ -396,6 +469,8 @@ TEST(LibrariesMemory, GetChunksFromMempool) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, PutChunksToMempool) {
@@ -436,6 +511,8 @@ TEST(LibrariesMemory, PutChunksToMempool) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
 TEST(LibrariesMemory, MixedMempool) {
@@ -496,4 +573,60 @@ TEST(LibrariesMemory, MixedMempool) {
     EXPECT_EQ(bool(WIFEXITED(status)), true);
     EXPECT_EQ(WEXITSTATUS(status), 0);
     waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
+TEST(LibrariesMemory, FreeMemoryPool) {
+    auto control_pid = fork();
+    if (!control_pid) {
+        omnistack::memory::StartControlPlane(
+    #if defined(OMNIMEM_BACKEND_DPDK)
+            true
+    #endif
+        );
+        usleep(4000000);
+        exit(0);
+    }
+    usleep(2000000);
+    auto client_pid0 = fork();
+    if (!client_pid0) {
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
+        printf("Connected to Control Plane\n");
+        omnistack::memory::InitializeSubsystemThread();
+        printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);
+        auto mempool = omnistack::memory::AllocateMemoryPool("Hello World", 1024, 1024);
+        usleep(1000000);
+        omnistack::memory::FreeMemoryPool(mempool);
+        exit(0);
+    }
+    auto client_pid1 = fork();
+    if (!client_pid1) {
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
+        printf("Connected to Control Plane\n");
+        omnistack::memory::InitializeSubsystemThread();
+        printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);
+        auto mempool = omnistack::memory::AllocateMemoryPool("Hello World", 1024, 1024);
+        usleep(1000000);
+        omnistack::memory::FreeMemoryPool(mempool);
+        exit(0);
+    }
+    int status;
+    waitpid(client_pid0, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
+    waitpid(client_pid1, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
+    waitpid(control_pid, &status, 0);
+    EXPECT_EQ(bool(WIFEXITED(status)), true);
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
