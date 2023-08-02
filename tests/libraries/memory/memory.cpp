@@ -39,7 +39,11 @@ TEST(LibrariesMemory, ConnectToControlPlane) {
     usleep(2000000);
     auto client_pid = fork();
     if (!client_pid) {
-        omnistack::memory::InitializeSubsystem(0, true);
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
         printf("Connected to Control Plane\n");
         omnistack::memory::InitializeSubsystemThread();
         printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);
@@ -66,7 +70,11 @@ TEST(LibrariesMemory, MultiConnectToControlPlane) {
     usleep(2000000);
     auto client_pid0 = fork();
     if (!client_pid0) {
-        omnistack::memory::InitializeSubsystem(0, true);
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
         printf("Connected to Control Plane\n");
         omnistack::memory::InitializeSubsystemThread();
         printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);
@@ -75,7 +83,11 @@ TEST(LibrariesMemory, MultiConnectToControlPlane) {
     }
     auto client_pid1 = fork();
     if (!client_pid1) {
-        omnistack::memory::InitializeSubsystem(0, true);
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
         printf("Connected to Control Plane\n");
         omnistack::memory::InitializeSubsystemThread();
         printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);
@@ -106,7 +118,11 @@ TEST(LibrariesMemory, AllocateLocal) {
     usleep(2000000);
     auto client_pid = fork();
     if (!client_pid) {
-        omnistack::memory::InitializeSubsystem(0, true);
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
         printf("Connected to Control Plane\n");
         omnistack::memory::InitializeSubsystemThread();
         printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);
@@ -138,7 +154,11 @@ TEST(LibrariesMemory, AllocateShared) {
     usleep(2000000);
     auto client_pid0 = fork();
     if (!client_pid0) {
-        omnistack::memory::InitializeSubsystem(0, true);
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
         printf("Connected to Control Plane\n");
         omnistack::memory::InitializeSubsystemThread();
         printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);
@@ -150,7 +170,11 @@ TEST(LibrariesMemory, AllocateShared) {
     auto client_pid1 = fork();
     if (!client_pid1) {
         usleep(500000);
-        omnistack::memory::InitializeSubsystem(0, true);
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        , true
+#endif
+        );
         printf("Connected to Control Plane\n");
         omnistack::memory::InitializeSubsystemThread();
         printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);

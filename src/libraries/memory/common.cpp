@@ -86,6 +86,7 @@ namespace omnistack::memory {
         kUnknownProcess,
         kUnknownType,
         kInvalidThreadId,
+        kInvalidMemory
     };
 
     struct RpcResponse {
@@ -212,7 +213,7 @@ namespace omnistack::memory {
 #endif
     static std::set<RegionMeta*> used_regions;
     static std::map<std::string, RegionMeta*> region_name_to_meta;
-    static std::map<RegionMeta*, std::set<int> > region_meta_to_fd;
+    static std::map<RegionMeta*, std::multiset<int> > region_meta_to_fd;
     static std::set<RegionMeta*> used_pools;
     static std::map<std::string, RegionMeta*> pool_name_to_meta;
 
@@ -622,6 +623,25 @@ namespace omnistack::memory {
                                 break;
                             }
                             case RpcRequestType::kFreeMemory: {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                                auto region_meta = reinterpret_cast<RegionMeta*>(rpc_request.free_memory.addr);
+#else
+                                auto region_meta = reinterpret_cast<RegionMeta*>(
+                                    virt_shared_region + rpc_request.free_memory.offset
+                                );
+#endif
+                                if (region_meta_to_fd.count(region_meta)) [[likely]] {
+                                    if (region_meta_to_fd[region_meta].count(fd)) {
+                                        region_meta_to_fd[region_meta].erase(
+                                            region_meta_to_fd[region_meta].find(fd));
+                                        region_meta->ref_cnt --;
+                                        if (!region_meta->ref_cnt) {
+                                            /// TODO: Free the region
+                                        }
+                                    } else resp.status = RpcResponseStatus::kInvalidThreadId;
+                                } else {
+                                    resp.status = RpcResponseStatus::kInvalidMemory;
+                                }
                                 break;
                             }
                             default:
@@ -873,9 +893,9 @@ namespace omnistack::memory {
         return local_rpc_meta.resp;
     }
 
-    void InitializeSubsystem(int control_plane_id,
+    void InitializeSubsystem(int control_plane_id
 #if defined(OMNIMEM_BACKEND_DPDK)
-            bool init_dpdk
+            ,bool init_dpdk
 #endif
         ) {
 #if defined(OMNIMEM_BACKEND_DPDK)
@@ -1145,7 +1165,11 @@ namespace omnistack::memory {
 #endif
             auto meta = reinterpret_cast<RegionMeta *>(ret);
             meta->mempool = this;
+#if defined(OMNIMEM_BACKEND_DPDK)
             meta->addr = ret;
+#else
+            meta->offset = ret_offset;
+#endif
             meta->size = chunk_size_;
             meta->process_id = process_id;
             meta->type = RegionType::kMempoolChunk;
