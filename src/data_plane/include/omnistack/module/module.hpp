@@ -56,18 +56,12 @@ namespace omnistack::data_plane {
 
         virtual constexpr bool allow_duplication_() { return false; }
 
-        /* TODO: use static_assert to check this */
         virtual constexpr std::string_view name_() { return "BaseModule"; }
 
         virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
 
         /* when does this act? will it be done in son-class? */
-        uint32_t burst_ = 1;
-
-        /* seems that this will introduce an extra function-call by virtual, only useful when visiting through son-class pointer */
-//        virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
-//
-//        virtual constexpr uint32_t burst_() { return 1; }
+        // uint32_t burst_ = 1;
 
     private:
         struct FilterGroup {
@@ -116,8 +110,7 @@ namespace omnistack::data_plane {
         std::map<std::string, CreateFunction> module_list_;
     };
 
-    template<typename T, std::array name>
-    requires std::same_as<typename decltype(name)::value_type, char>
+    template<typename T, const char name[]>
     class Module : public BaseModule {
     public:
         static std::unique_ptr<BaseModule> CreateModuleObject() {
@@ -136,8 +129,7 @@ namespace omnistack::data_plane {
         static const FactoryEntry factory_entry_;
     };
 
-    template<typename T, std::array name>
-    requires std::same_as<typename decltype(name)::value_type, char>
+    template<typename T, const char name[]>
     const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;
 }
 
