@@ -210,9 +210,11 @@ namespace omnistack::memory {
 
     std::set<std::pair<uint64_t, uint64_t> > usable_region;
 #endif
-    std::set<RegionMeta*> used_regions;
-    std::map<std::string, RegionMeta*> region_name_to_meta;
-    std::map<std::string, RegionMeta*> pool_name_to_meta;
+    static std::set<RegionMeta*> used_regions;
+    static std::map<std::string, RegionMeta*> region_name_to_meta;
+    static std::map<RegionMeta*, std::set<int> > region_meta_to_fd;
+    static std::set<RegionMeta*> used_pools;
+    static std::map<std::string, RegionMeta*> pool_name_to_meta;
 
     /** PROCESS INFORMATION **/
     struct ProcessInfo {
@@ -421,16 +423,24 @@ namespace omnistack::memory {
                                     region_info.second += aligned_size;
                                     if (region_info.first > 0)
                                         usable_region.insert(region_info);
+                                    resp.get_memory.offset = reinterpret_cast<uint8_t*>(local_meta) - virt_shared_region;
+#else
+                                    resp.get_memory.addr = local_meta->addr;
 #endif
                                     used_regions.insert(local_meta);
-                                    resp.get_memory.addr = local_meta->addr;
+                                    region_meta_to_fd[local_meta].insert(fd);
                                     resp.status = RpcResponseStatus::kSuccess;
                                     if (region_name != "")
                                         region_name_to_meta[region_name] = local_meta;
                                 } else {
                                     auto &meta = region_name_to_meta[region_name];
                                     meta->ref_cnt ++;
+#if !defined(OMNIMEM_BACKEND_DPDK)
+                                    resp.get_memory.offset = reinterpret_cast<uint8_t*>(meta) - virt_shared_region;
+#else
                                     resp.get_memory.addr = meta->addr;
+#endif
+                                    region_meta_to_fd[meta].insert(fd);
                                     resp.status = RpcResponseStatus::kSuccess;
                                 }
                                 break;
@@ -473,7 +483,13 @@ namespace omnistack::memory {
                                     mempool_meta->addr = mempool_meta;
 #endif
                                     mempool_meta->ref_cnt = 1;
+                                    used_pools.insert(mempool_meta);
+#if defined(OMNIMEM_BACKEND_DPDK)
                                     resp.get_memory_pool.addr = mempool_meta->addr;
+#else
+                                    resp.get_memory_pool.offset = mempool_meta->offset;
+#endif
+                                    region_meta_to_fd[mempool_meta].insert(fd);
                                     resp.status = RpcResponseStatus::kSuccess;
 
                                     auto mempool = reinterpret_cast<MemoryPool*>(reinterpret_cast<uint8_t*>(mempool_meta) + kMetaHeadroomSize);
@@ -586,7 +602,11 @@ namespace omnistack::memory {
                                 } else {
                                     auto &meta = pool_name_to_meta[pool_name];
                                     meta->ref_cnt ++;
+#if defined(OMNIMEM_BACKEND_DPDK)
                                     resp.get_memory_pool.addr = meta->addr;
+#else
+                                    resp.get_memory_pool.offset = meta->offset;
+#endif
                                     resp.status = RpcResponseStatus::kSuccess;
                                 }
                                 break;
@@ -599,6 +619,9 @@ namespace omnistack::memory {
                                 }
                                 thread_id_to_cpu[thread_id] = rpc_request.thread_bind_cpu.cpu_idx;
                                 resp.status = RpcResponseStatus::kSuccess;
+                                break;
+                            }
+                            case RpcRequestType::kFreeMemory: {
                                 break;
                             }
                             default:

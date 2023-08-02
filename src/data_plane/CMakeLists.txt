@@ -15,7 +15,7 @@ target_include_directories(${OMNI_DATA_PLANE_LIB} PUBLIC include)
 message(STATUS "${OMNI_LIBRARIES}")
 target_link_libraries(${OMNI_DATA_PLANE_LIB} PUBLIC ${OMNI_LIBRARIES})
 
-add_subdirectory(modules)
+# add_subdirectory(modules)
 
 set(ENGINE_SRCS ${OLD_ENGINE_SRCS})
 set(GRAPH_SRCS ${OLD_GRAPH_SRCS})
