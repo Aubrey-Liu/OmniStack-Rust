@@ -461,7 +461,8 @@ TEST(LibrariesMemory, MixedMempool) {
         omnistack::memory::InitializeSubsystemThread();
         printf("Process id is %lu, Thread id is %lu\n", omnistack::memory::process_id, omnistack::memory::thread_id);
         auto mempool = omnistack::memory::AllocateMemoryPool("Hello World", 1024, 1024);
-        typeof(mempool->Get()) chunks[259];
+        typeof(mempool->Get()) chunks[1024];
+        int current = 0;
         for (int T = 0; T < 10; T ++) {
             for (int i = 0; i < 259; i ++) {
                 chunks[i] = mempool->Get();
@@ -469,6 +470,23 @@ TEST(LibrariesMemory, MixedMempool) {
             }
             for (int i = 0; i < 259; i ++) {
                 mempool->Put(chunks[i]);
+            }
+        }
+        for (int T = 0; T < 50; T ++) {
+            int rnd = rand() & 1;
+            if ((rnd == 0 && current != 767) || current == 0) {
+                int num_get = rand() % (767 - current) + 1;
+                while (num_get --) {
+                    chunks[current] = mempool->Get();
+                    if (chunks[current] == nullptr)
+                        throw std::runtime_error("Failed to get chunk " + std::to_string(current));
+                    current ++;
+                }
+            } else {
+                int num_put = (rand() % current) + 1;
+                while (num_put --) {
+                    mempool->Put(chunks[-- current]);
+                }
             }
         }
         exit(0);

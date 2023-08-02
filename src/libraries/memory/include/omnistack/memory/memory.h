@@ -50,7 +50,11 @@ namespace omnistack {
             uint64_t ref_cnt;
 
             union {
+#if defined(OMNIMEM_BACKEND_DPDK)
                 MemoryPool* mempool;
+#else
+                uint64_t mempool_offset;
+#endif
             };
         };
         static_assert(sizeof(RegionMeta) <= kMetaHeadroomSize);
