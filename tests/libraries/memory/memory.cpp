@@ -202,7 +202,7 @@ TEST(LibrariesMemory, FreeShared) {
             true
     #endif
         );
-        usleep(3000000);
+        usleep(5000000);
         exit(0);
     }
     usleep(2000000);

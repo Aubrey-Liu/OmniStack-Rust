@@ -176,15 +176,6 @@ namespace omnistack::memory {
         }
     }
 
-    void MemoryPool::PutBack(void *ptr) {
-        auto meta = (RegionMeta*)( reinterpret_cast<char*>(ptr) - kMetaHeadroomSize );
-        if (meta->type == RegionType::kMempoolChunk) {
-            if (meta->mempool != nullptr)
-                meta->mempool->Put(ptr);
-            else throw std::runtime_error("Chunk's mem-pool is nullptr");
-        } else throw std::runtime_error("Ptr is not a chunk");
-    }
-
     static std::thread* control_plane_thread = nullptr;
     static std::condition_variable cond_control_plane_started;
     static std::mutex control_plane_state_lock;
@@ -228,6 +219,20 @@ namespace omnistack::memory {
     static std::map<uint64_t, uint64_t> thread_id_to_fd;
     static std::map<uint64_t, int> thread_id_to_cpu;
     /** PROCESS INFORMATION **/
+
+    void MemoryPool::PutBack(void *ptr) {
+        auto meta = (RegionMeta*)( reinterpret_cast<char*>(ptr) - kMetaHeadroomSize );
+        if (meta->type == RegionType::kMempoolChunk) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+            if (meta->mempool != nullptr)
+                meta->mempool->Put(ptr);
+#else
+            if (meta->mempool_offset != ~0)
+                ((MemoryPool*)(virt_base_addrs[process_id] + meta->mempool_offset))->Put(ptr);
+#endif
+            else throw std::runtime_error("Chunk's mem-pool is nullptr");
+        } else throw std::runtime_error("Ptr is not a chunk");
+    }
 
     void ControlPlane() {
         {
@@ -637,11 +642,33 @@ namespace omnistack::memory {
                                             region_meta_to_fd[region_meta].find(fd));
                                         region_meta->ref_cnt --;
                                         if (!region_meta->ref_cnt) {
-                                            /// TODO: Free the region
 #if defined(OMNIMEM_BACKEND_DPDK)
                                             rte_free(region_meta);
 #else
-#error not impelemented
+                                            printf("Freeing region meta %p\n", region_meta);
+                                            auto pre_iter = usable_region.begin();
+                                            while (pre_iter != usable_region.end() && 
+                                                pre_iter->first + pre_iter->second != region_meta->offset)
+                                                pre_iter ++;
+                                            
+                                            auto bak_iter = usable_region.begin();
+                                            while (bak_iter != usable_region.end() &&
+                                                bak_iter->second != region_meta->offset + region_meta->size)
+                                                bak_iter ++;
+                                            
+                                            printf("Iterated\n");
+                                            auto pre_size = pre_iter == usable_region.end() ? 0 : pre_iter->first;
+                                            auto bak_size = bak_iter == usable_region.end() ? 0 : bak_iter->first;
+                                            if (pre_size) usable_region.erase(pre_iter);
+                                            if (bak_size) usable_region.erase(bak_iter);
+
+                                            usable_region.insert(
+                                                std::make_pair(
+                                                    pre_size + region_meta->size + bak_size,
+                                                    region_meta->offset - pre_size
+                                                )
+                                            );
+                                            printf("Inserted\n");
 #endif
                                             region_meta_to_fd.erase(region_meta);
                                             auto iter = region_name_to_meta.begin();
@@ -1189,7 +1216,7 @@ namespace omnistack::memory {
             meta->mempool = this;
             meta->addr = ret;
 #else
-            meta->mempool_offset = (char*)this - virt_base_addrs[process_id];
+            meta->mempool_offset = (uint8_t*)this - virt_base_addrs[process_id];
             meta->offset = ret_offset;
 #endif
             meta->size = chunk_size_;
