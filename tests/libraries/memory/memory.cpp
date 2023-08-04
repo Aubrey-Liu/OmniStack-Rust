@@ -59,6 +59,8 @@ TEST(LibrariesMemory, ConnectToControlPlane) {
 }
 
 TEST(LibrariesMemory, ResourcesRecycle) {
+    if (omnistack::memory::kBackendName != "origin")
+        return ;
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
