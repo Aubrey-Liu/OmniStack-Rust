@@ -22,7 +22,6 @@ namespace omnistack {
 
         extern uint64_t process_id;
         extern thread_local uint64_t thread_id;
-        extern uint8_t* virt_base_addr;
 
 #if defined(OMNIMEM_BACKEND_DPDK)
         static constexpr std::string_view kBackendName = "dpdk";
@@ -32,6 +31,7 @@ namespace omnistack {
 #endif
         enum class RegionType {
             kLocal = 0,
+            kMempool,
             kNamedShared,
             kMempoolChunk
         };
@@ -166,6 +166,8 @@ namespace omnistack {
             void* Get();
             static void PutBack(void* ptr);
             void Put(void* ptr);
+            void SafePut(void* ptr); // This is used by control plane
+            void FlushSafePut(); // This is used by control plane
 
 #if !defined(OMNIMEM_BACKEND_DPDK)
             uint64_t region_offset_; // The offset of payload memory
@@ -184,6 +186,8 @@ namespace omnistack {
             MemoryPoolBatch* full_block_ptr_;
             MemoryPoolBatch* empty_block_ptr_;
 #endif
+
+            MemoryPoolBatch* recycle_block_;
 
             MemoryPoolBatch* local_cache_[kMaxThread + 1];
             MemoryPoolBatch* local_free_cache_[kMaxThread + 1];

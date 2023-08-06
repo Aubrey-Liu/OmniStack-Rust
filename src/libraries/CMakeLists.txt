@@ -1,4 +1,5 @@
 set(OMNI_LIBRARIES)
 add_subdirectory(common)
 add_subdirectory(memory)
+add_subdirectory(token)
 set(OMNI_LIBRARIES ${OMNI_LIBRARIES} PARENT_SCOPE)

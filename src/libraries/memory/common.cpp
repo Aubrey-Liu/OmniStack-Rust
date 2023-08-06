@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <iostream>
 #include <set>
+#include <vector>
 
 #if defined(__APPLE__)
 #include <sys/event.h>
@@ -149,6 +150,13 @@ namespace omnistack::memory {
 #endif
             } free_memory;
             struct {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                void* addr;
+#else
+                uint64_t offset;
+#endif
+            } free_memory_pool;
+            struct {
                 uint64_t thread_id;
                 int cpu_idx;
             } thread_bind_cpu;
@@ -232,6 +240,163 @@ namespace omnistack::memory {
 #endif
             else throw std::runtime_error("Chunk's mem-pool is nullptr");
         } else throw std::runtime_error("Ptr is not a chunk");
+    }
+
+    static inline
+    RegionMeta* AllocateRegionMeta(size_t size, int thread_cpu, RegionType region_type = RegionType::kNamedShared) {
+        auto aligned_size = (size + kMetaHeadroomSize + 63) / 64 * 64;
+#if defined(OMNIMEM_BACKEND_DPDK)
+        auto region_meta = (RegionMeta*)rte_malloc_socket(nullptr, aligned_size, 64, (thread_cpu == -1 ? -1 : numa_node_of_cpu(
+            thread_cpu
+        )));
+        region_meta->addr = region_meta;
+        region_meta->iova = rte_mem_virt2iova(region_meta);
+#else
+        auto usable_iter = usable_region.lower_bound(
+                std::make_pair(aligned_size, 0));
+        if (usable_iter == usable_region.end())
+            throw std::runtime_error("No usable region for mempool chunks");
+        auto region_info = *usable_iter;
+        usable_region.erase(usable_iter);
+        auto region_meta = reinterpret_cast<RegionMeta*>(
+            virt_shared_region + region_info.second
+        );
+        region_info.first -= aligned_size;
+        region_info.second += aligned_size;
+        if (region_info.first > 0)
+            usable_region.insert(region_info);
+        
+        
+        region_meta->iova = 0;
+        region_meta->offset = reinterpret_cast<uint8_t*>(region_meta) - virt_shared_region;
+#endif
+        region_meta->size = aligned_size;
+        region_meta->type = region_type;
+        region_meta->process_id = 0;
+        region_meta->ref_cnt = 1;
+        return region_meta;
+    }
+
+    /**
+     * @brief Free region_meta to memory by (DPDK / Linux Kernel)
+    */
+    static inline
+    void FreeRegionMeta(RegionMeta* region_meta) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+        rte_free(region_meta);
+#else
+        auto pre_iter = usable_region.begin();
+        while (pre_iter != usable_region.end() && 
+            pre_iter->first + pre_iter->second != region_meta->offset)
+            pre_iter ++;
+        
+        auto bak_iter = usable_region.begin();
+        while (bak_iter != usable_region.end() &&
+            bak_iter->second != region_meta->offset + region_meta->size)
+            bak_iter ++;
+        
+        auto pre_size = pre_iter == usable_region.end() ? 0 : pre_iter->first;
+        auto bak_size = bak_iter == usable_region.end() ? 0 : bak_iter->first;
+        if (pre_size) usable_region.erase(pre_iter);
+        if (bak_size) usable_region.erase(bak_iter);
+
+        usable_region.insert(
+            std::make_pair(
+                pre_size + region_meta->size + bak_size,
+                region_meta->offset - pre_size
+            )
+        );
+#endif
+    }
+
+    static inline
+    RpcResponse ControlPlaneFreeMemoryPool(int fd, const RpcRequest& rpc_request) {
+        RpcResponse resp;
+#if defined(OMNIMEM_BACKEND_DPDK)
+        auto region_meta = reinterpret_cast<RegionMeta*>(rpc_request.free_memory_pool.addr);
+#else
+        auto region_meta = reinterpret_cast<RegionMeta*>(
+            virt_shared_region + rpc_request.free_memory_pool.offset
+        );
+#endif
+        auto mempool = reinterpret_cast<MemoryPool*>(
+            reinterpret_cast<uint8_t*>(region_meta) + kMetaHeadroomSize
+        );
+        if (region_meta_to_fd.count(region_meta) && used_pools.count(region_meta)) {
+            if (region_meta_to_fd[region_meta].count(fd)) {
+                region_meta_to_fd[region_meta].erase(
+                    region_meta_to_fd[region_meta].find(fd)
+                );
+                region_meta->ref_cnt --;
+                if (!region_meta->ref_cnt) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                    auto block_meta = reinterpret_cast<RegionMeta*>(mempool->batch_block_ptr_);
+                    auto chunk_meta = reinterpret_cast<RegionMeta*>(mempool->region_ptr_);
+#else
+                    auto block_meta = reinterpret_cast<RegionMeta*>(
+                        virt_shared_region + mempool->batch_block_offset_
+                    );
+                    auto chunk_meta = reinterpret_cast<RegionMeta*>(
+                        virt_shared_region + mempool->region_offset_
+                    );
+#endif
+                    FreeRegionMeta(block_meta);
+                    FreeRegionMeta(chunk_meta);
+                    FreeRegionMeta(region_meta);
+                    region_meta_to_fd.erase(region_meta);
+                    auto iter = std::find_if(pool_name_to_meta.begin(), pool_name_to_meta.end(), 
+                        [&](std::pair<std::string, RegionMeta*> arg){return arg.second == region_meta;});
+                    if (iter != pool_name_to_meta.end()) {
+                        printf("Memory Pool Name is %s\n", iter->first.c_str());
+                        pool_name_to_meta.erase(iter);
+                    }
+                    if (!used_pools.count(region_meta))
+                        resp.status = RpcResponseStatus::kDoubleFree;
+                    else {
+                        used_pools.erase(region_meta);
+                        resp.status = RpcResponseStatus::kSuccess;
+                    }
+
+                    printf("Memory Pool Successfully Freed\n");
+                } else resp.status = RpcResponseStatus::kSuccess;
+            } else resp.status = RpcResponseStatus::kInvalidThreadId;
+        } else resp.status = RpcResponseStatus::kInvalidMemory;
+        return resp;
+    }
+
+    static inline
+    RpcResponse ControlPlaneFreeShared(int fd, const RpcRequest& rpc_request) {
+        RpcResponse resp;
+#if defined(OMNIMEM_BACKEND_DPDK)
+        auto region_meta = reinterpret_cast<RegionMeta*>(rpc_request.free_memory.addr);
+#else
+        auto region_meta = reinterpret_cast<RegionMeta*>(
+            virt_shared_region + rpc_request.free_memory.offset
+        );
+#endif
+        if (region_meta_to_fd.count(region_meta) && used_regions.count(region_meta)) [[likely]] {
+            if (region_meta_to_fd[region_meta].count(fd)) {
+                region_meta_to_fd[region_meta].erase(
+                    region_meta_to_fd[region_meta].find(fd));
+                region_meta->ref_cnt --;
+                if (!region_meta->ref_cnt) {
+                    FreeRegionMeta(region_meta);
+                    region_meta_to_fd.erase(region_meta);
+                    auto iter = std::find_if(region_name_to_meta.begin(), region_name_to_meta.end(), 
+                        [&](std::pair<std::string, RegionMeta*> arg){return arg.second == region_meta;});
+                    if (iter != region_name_to_meta.end())
+                        region_name_to_meta.erase(iter);
+                    if (!used_regions.count(region_meta))
+                        resp.status = RpcResponseStatus::kDoubleFree;
+                    else {
+                        used_regions.erase(region_meta);
+                        resp.status = RpcResponseStatus::kSuccess;
+                    }
+                    printf("Shared Memory Successfully Freed\n");
+                } else resp.status = RpcResponseStatus::kSuccess;
+            } else resp.status = RpcResponseStatus::kInvalidThreadId;
+        } else resp.status = RpcResponseStatus::kInvalidMemory;
+        return resp;
     }
 
     void ControlPlane() {
@@ -366,7 +531,6 @@ namespace omnistack::memory {
                     if (!peer_closed) {
                         // A normal Rpc Request
                         RpcResponse resp{};
-                        resp.id = rpc_request.id;
                         switch (rpc_request.type) {
                             case RpcRequestType::kGetProcessId: {
                                 if (fd_to_process_info.count(fd)) {
@@ -395,41 +559,8 @@ namespace omnistack::memory {
                                 auto region_name = std::string(rpc_request.get_memory.name);
                                 auto thread_cpu = thread_id_to_cpu[rpc_request.get_memory.thread_id];
                                 if (region_name == "" || region_name_to_meta.count(region_name) == 0) {
-                                    auto aligned_size =
-                                            (rpc_request.get_memory.size + kMetaHeadroomSize + 63) / 64 * 64;
+                                    auto local_meta = AllocateRegionMeta(rpc_request.get_memory.size, thread_cpu);
 #if !defined(OMNIMEM_BACKEND_DPDK)
-                                    auto usable_region_iter = usable_region.lower_bound(
-                                            std::make_pair(aligned_size, 0));
-                                    if (usable_region_iter == usable_region.end())
-                                        throw std::runtime_error("No usable region");
-                                    auto region_info = *usable_region_iter;
-                                    usable_region.erase(usable_region_iter);
-                                    auto local_meta = reinterpret_cast<RegionMeta *>(virt_shared_region +
-                                                                                     region_info.second);
-#else
-                                    auto local_meta = reinterpret_cast<RegionMeta *>(
-                                        rte_malloc_socket(nullptr, aligned_size, 64, (thread_cpu == -1 ? -1 : numa_node_of_cpu(
-                                            thread_cpu
-                                        )))
-                                    );
-#endif
-                                    local_meta->size = aligned_size;
-                                    local_meta->type = RegionType::kNamedShared;
-                                    auto &process_info = fd_to_process_info[fd];
-                                    local_meta->process_id = process_info.process_id;
-                                    local_meta->iova = 0;
-#if !defined(OMNIMEM_BACKEND_DPDK)
-                                    local_meta->offset = region_info.second;
-#else
-                                    local_meta->addr = local_meta;
-#endif
-                                    local_meta->ref_cnt = 1;
-
-#if !defined(OMNIMEM_BACKEND_DPDK)
-                                    region_info.first -= aligned_size;
-                                    region_info.second += aligned_size;
-                                    if (region_info.first > 0)
-                                        usable_region.insert(region_info);
                                     resp.get_memory.offset = reinterpret_cast<uint8_t*>(local_meta) - virt_shared_region;
 #else
                                     resp.get_memory.addr = local_meta->addr;
@@ -456,40 +587,7 @@ namespace omnistack::memory {
                                 auto pool_name = std::string(rpc_request.get_memory_pool.name);
                                 auto thread_cpu = thread_id_to_cpu[rpc_request.get_memory_pool.thread_id];
                                 if (pool_name == "" || pool_name_to_meta.count(pool_name) == 0) {
-                                    auto aligned_mempool_size = (sizeof(MemoryPool) + kMetaHeadroomSize + 63) / 64 * 64;
-                                    RegionMeta* mempool_meta = nullptr;
-#if !defined(OMNIMEM_BACKEND_DPDK)
-                                    {
-                                        auto usable_iter = usable_region.lower_bound(
-                                                std::make_pair(aligned_mempool_size, 0));
-                                        if (usable_iter == usable_region.end())
-                                            throw std::runtime_error("No usable region for mempool");
-                                        auto region_info = *usable_iter;
-                                        usable_region.erase(usable_iter);
-                                        mempool_meta = reinterpret_cast<RegionMeta *>(virt_shared_region +
-                                                                                       region_info.second);
-                                        region_info.first -= aligned_mempool_size;
-                                        region_info.second += aligned_mempool_size;
-                                        if (region_info.first > 0)
-                                            usable_region.insert(region_info);
-                                    }
-#else
-                                    mempool_meta = reinterpret_cast<RegionMeta *>(
-                                        rte_malloc_socket(nullptr, aligned_mempool_size, 64, (thread_cpu == -1 ? -1 : numa_node_of_cpu(
-                                            thread_cpu
-                                        )))
-                                    );
-#endif
-                                    mempool_meta->size = aligned_mempool_size;
-                                    mempool_meta->type = RegionType::kNamedShared;
-                                    mempool_meta->process_id = 0;
-                                    mempool_meta->iova = 0;
-#if !defined(OMNIMEM_BACKEND_DPDK)
-                                    mempool_meta->offset = reinterpret_cast<uint8_t*>(mempool_meta) - virt_shared_region;
-#else
-                                    mempool_meta->addr = mempool_meta;
-#endif
-                                    mempool_meta->ref_cnt = 1;
+                                    RegionMeta* mempool_meta = AllocateRegionMeta(sizeof(MemoryPool), thread_cpu, RegionType::kMempool);
                                     used_pools.insert(mempool_meta);
 #if defined(OMNIMEM_BACKEND_DPDK)
                                     resp.get_memory_pool.addr = mempool_meta->addr;
@@ -500,7 +598,6 @@ namespace omnistack::memory {
                                     resp.status = RpcResponseStatus::kSuccess;
 
                                     auto mempool = reinterpret_cast<MemoryPool*>(reinterpret_cast<uint8_t*>(mempool_meta) + kMetaHeadroomSize);
-
                                     mempool->chunk_size_ = (rpc_request.get_memory_pool.chunk_size + 63 + kMetaHeadroomSize) / 64 * 64;
                                     mempool->chunk_count_ = (rpc_request.get_memory_pool.chunk_count + 63) / 64 * 64;
                                     pthread_mutexattr_t init_attr;
@@ -509,48 +606,31 @@ namespace omnistack::memory {
                                     pthread_mutex_init(&mempool->recycle_mutex_, &init_attr);
                                     pthread_mutexattr_destroy(&init_attr);
 
-
-                                    { // Allocate Chunks
-                                        auto aligned_chunk_region_size = mempool->chunk_size_ * mempool->chunk_count_;
-                                        auto need_allocate_chunk_region_size = (aligned_chunk_region_size + kMetaHeadroomSize + 63) / 64 * 64;
-                                        auto thread_cpu = thread_id_to_cpu[rpc_request.get_memory_pool.thread_id];
-#if !defined(OMNIMEM_BACKEND_DPDK)
-                                        {
-                                            auto usable_iter = usable_region.lower_bound(
-                                                    std::make_pair(need_allocate_chunk_region_size, 0));
-                                            if (usable_iter == usable_region.end())
-                                                throw std::runtime_error("No usable region for mempool chunks");
-                                            auto region_info = *usable_iter;
-                                            usable_region.erase(usable_iter);
-                                            mempool->region_offset_ = region_info.second;
-                                            region_info.first -= need_allocate_chunk_region_size;
-                                            region_info.second += need_allocate_chunk_region_size;
-                                            if (region_info.first > 0)
-                                                usable_region.insert(region_info);
-                                        }
-#else
-                                        mempool->region_ptr_ = (uint8_t*)rte_malloc_socket(nullptr, need_allocate_chunk_region_size, 64, (thread_cpu == -1 ? -1 : numa_node_of_cpu(
-                                            thread_cpu
-                                        )));
-#endif
-                                    }
-                                    { // Allocate & Set Blocks
-                                        auto block_need_allocate = (mempool->chunk_count_ + kMemoryPoolLocalCache) / kMemoryPoolLocalCache + 2 * kMaxThread + 1;
+                                    auto aligned_chunk_region_size = mempool->chunk_size_ * mempool->chunk_count_;
+                                    auto chunk_meta = AllocateRegionMeta(aligned_chunk_region_size, thread_cpu);
 #if defined(OMNIMEM_BACKEND_DPDK)
-                                        auto chunk_region_begin = mempool->region_ptr_;
-                                        mempool->batch_block_ptr_ = (uint8_t*)rte_malloc_socket(nullptr, block_need_allocate * sizeof(MemoryPoolBatch), 64, (thread_cpu == -1 ? -1 : numa_node_of_cpu(
-                                            thread_cpu
-                                        )));
+                                    mempool->region_ptr_ = reinterpret_cast<uint8_t*>(chunk_meta);
+#else
+                                    mempool->region_offset_ = reinterpret_cast<uint8_t*>(chunk_meta) - virt_shared_region;
+#endif
+                                    { // Allocate & Set Blocks
+                                        auto block_need_allocate = (mempool->chunk_count_ + kMemoryPoolLocalCache) / kMemoryPoolLocalCache + 2 * kMaxThread + 4;
+                                        auto all_block_size = block_need_allocate * sizeof(MemoryPoolBatch);
+                                        auto block_meta = AllocateRegionMeta(all_block_size, thread_cpu);
+#if defined(OMNIMEM_BACKEND_DPDK)
+                                        auto chunk_region_begin = mempool->region_ptr_ + kMetaHeadroomSize;
+                                        mempool->batch_block_ptr_ = reinterpret_cast<uint8_t*>(block_meta);
                                         mempool->full_block_ptr_ = nullptr;
                                         mempool->empty_block_ptr_ = nullptr;
-                                        auto current_block = reinterpret_cast<MemoryPoolBatch*>(mempool->batch_block_ptr_);
+                                        auto current_block = reinterpret_cast<MemoryPoolBatch*>(mempool->batch_block_ptr_ + kMetaHeadroomSize);
                                         int used_chunk = 0;
-
                                         for (int i = 0; i < mempool->chunk_count_; i += kMemoryPoolLocalCache, used_chunk ++) {
                                             current_block->cnt = std::min(mempool->chunk_count_ - i, kMemoryPoolLocalCache);
                                             current_block->used = 0;
                                             for (int j = 0; j < current_block->cnt; j ++) {
                                                 auto chunk = chunk_region_begin + (i + j) * mempool->chunk_size_;
+                                                auto single_chunk_meta = reinterpret_cast<RegionMeta*>(chunk);
+                                                single_chunk_meta->iova = (chunk - reinterpret_cast<uint8_t*>(chunk_meta)) + chunk_meta->iova;
                                                 current_block->addrs[j] = chunk;
                                             }
                                             current_block->next = mempool->full_block_ptr_;
@@ -564,29 +644,18 @@ namespace omnistack::memory {
                                         }
 #else
                                         auto chunk_region_begin = mempool->region_offset_ + kMetaHeadroomSize;
-                                        {
-                                            auto usable_iter = usable_region.lower_bound(
-                                                    std::make_pair(block_need_allocate * sizeof(MemoryPoolBatch), 0));
-                                            if (usable_iter == usable_region.end())
-                                                throw std::runtime_error("No usable region for mempool chunks");
-                                            auto region_info = *usable_iter;
-                                            usable_region.erase(usable_iter);
-                                            mempool->batch_block_offset_ = region_info.second;
-                                            region_info.first -= block_need_allocate * sizeof(MemoryPoolBatch);
-                                            region_info.second += block_need_allocate * sizeof(MemoryPoolBatch);
-                                            if (region_info.first > 0)
-                                                usable_region.insert(region_info);
-                                        }
-
+                                        mempool->batch_block_offset_ = reinterpret_cast<uint8_t*>(block_meta) - virt_shared_region;
                                         mempool->full_block_offset_ = ~0;
                                         mempool->empty_block_offset_ = ~0;
-                                        auto current_block = reinterpret_cast<MemoryPoolBatch*>(virt_shared_region + mempool->batch_block_offset_);
+                                        auto current_block = reinterpret_cast<MemoryPoolBatch*>(virt_shared_region + mempool->batch_block_offset_ + kMetaHeadroomSize);
                                         int used_chunk = 0;
                                         for (int i = 0; i < mempool->chunk_count_; i += kMemoryPoolLocalCache, used_chunk ++) {
                                             current_block->cnt = std::min(mempool->chunk_count_ - i, kMemoryPoolLocalCache);
                                             current_block->used = 0;
                                             for (int j = 0; j < current_block->cnt; j ++) {
                                                 auto chunk = chunk_region_begin + (i + j) * mempool->chunk_size_;
+                                                auto single_chunk_meta = reinterpret_cast<RegionMeta*>(chunk + virt_shared_region);
+                                                single_chunk_meta->iova = 0;
                                                 current_block->offsets[j] = chunk;
                                             }
                                             current_block->next = mempool->full_block_offset_;
@@ -604,11 +673,13 @@ namespace omnistack::memory {
                                             mempool->local_free_cache_[i] = nullptr;
                                         }
                                     }
-
-                                    pool_name_to_meta[pool_name] = mempool_meta;
+                                    
+                                    if (pool_name != "")
+                                        pool_name_to_meta[pool_name] = mempool_meta;
                                 } else {
                                     auto &meta = pool_name_to_meta[pool_name];
                                     meta->ref_cnt ++;
+                                    region_meta_to_fd[meta].insert(fd);
 #if defined(OMNIMEM_BACKEND_DPDK)
                                     resp.get_memory_pool.addr = meta->addr;
 #else
@@ -629,70 +700,18 @@ namespace omnistack::memory {
                                 break;
                             }
                             case RpcRequestType::kFreeMemory: {
-#if defined(OMNIMEM_BACKEND_DPDK)
-                                auto region_meta = reinterpret_cast<RegionMeta*>(rpc_request.free_memory.addr);
-#else
-                                auto region_meta = reinterpret_cast<RegionMeta*>(
-                                    virt_shared_region + rpc_request.free_memory.offset
-                                );
-#endif
-                                if (region_meta_to_fd.count(region_meta)) [[likely]] {
-                                    if (region_meta_to_fd[region_meta].count(fd)) {
-                                        region_meta_to_fd[region_meta].erase(
-                                            region_meta_to_fd[region_meta].find(fd));
-                                        region_meta->ref_cnt --;
-                                        if (!region_meta->ref_cnt) {
-#if defined(OMNIMEM_BACKEND_DPDK)
-                                            rte_free(region_meta);
-#else
-                                            printf("Freeing region meta %p\n", region_meta);
-                                            auto pre_iter = usable_region.begin();
-                                            while (pre_iter != usable_region.end() && 
-                                                pre_iter->first + pre_iter->second != region_meta->offset)
-                                                pre_iter ++;
-                                            
-                                            auto bak_iter = usable_region.begin();
-                                            while (bak_iter != usable_region.end() &&
-                                                bak_iter->second != region_meta->offset + region_meta->size)
-                                                bak_iter ++;
-                                            
-                                            printf("Iterated\n");
-                                            auto pre_size = pre_iter == usable_region.end() ? 0 : pre_iter->first;
-                                            auto bak_size = bak_iter == usable_region.end() ? 0 : bak_iter->first;
-                                            if (pre_size) usable_region.erase(pre_iter);
-                                            if (bak_size) usable_region.erase(bak_iter);
-
-                                            usable_region.insert(
-                                                std::make_pair(
-                                                    pre_size + region_meta->size + bak_size,
-                                                    region_meta->offset - pre_size
-                                                )
-                                            );
-                                            printf("Inserted\n");
-#endif
-                                            region_meta_to_fd.erase(region_meta);
-                                            auto iter = region_name_to_meta.begin();
-                                            while (iter != region_name_to_meta.end() && iter->second != region_meta)
-                                                iter ++;
-                                            if (iter != region_name_to_meta.end())
-                                                region_name_to_meta.erase(iter);
-                                            if (!used_regions.count(region_meta))
-                                                resp.status = RpcResponseStatus::kDoubleFree;
-                                            else {
-                                                used_regions.erase(region_meta);
-                                                resp.status = RpcResponseStatus::kSuccess;
-                                            }
-                                        } else resp.status = RpcResponseStatus::kSuccess;
-                                    } else resp.status = RpcResponseStatus::kInvalidThreadId;
-                                } else {
-                                    resp.status = RpcResponseStatus::kInvalidMemory;
-                                }
+                                resp = ControlPlaneFreeShared(fd, rpc_request);
+                                break;
+                            }
+                            case RpcRequestType::kFreeMemoryPool: {
+                                resp = ControlPlaneFreeMemoryPool(fd, rpc_request);
                                 break;
                             }
                             default:
                                 resp.status = RpcResponseStatus::kUnknownType;
                         }
 
+                        resp.id = rpc_request.id;
                         try {
                             writeAll(fd, reinterpret_cast<char *>(&resp), sizeof(RpcResponse));
                         } catch(std::runtime_error& err_info) {
@@ -701,8 +720,82 @@ namespace omnistack::memory {
                     }
 
                     if (peer_closed) {
-                        /// TODO: Clear Process
-
+                        std::vector<RegionMeta*> need_free;
+                        std::vector<std::pair<RegionMeta*, uint64_t> > unique_free;
+                        std::set<int> thread_ids;
+                        auto& proc_info = fd_to_process_info[fd];
+                        for (auto& iter : thread_id_to_fd) {
+                            if (iter.second == fd) {
+                                thread_ids.insert(iter.first);
+                            }
+                        }
+                        for (auto& tid : thread_ids) {
+                            thread_id_used.erase(tid);
+                            thread_id_to_cpu.erase(tid);
+                            thread_id_to_fd.erase(tid);
+                        }
+                        process_id_used.erase(proc_info.process_id);
+                        for (auto& region_fds : region_meta_to_fd) {
+                            auto free_times = region_fds.second.count(fd);
+                            for (int it = 0; it < free_times; it ++) {
+                                need_free.emplace_back(region_fds.first);
+                            }
+                            if (free_times) unique_free.emplace_back(
+                                std::make_pair(region_fds.first, free_times)
+                            );
+                        }
+                        for (auto& region_meta_pair : unique_free) {
+                            if (thread_ids.empty())
+                                throw std::runtime_error("A process must have thread");
+                            auto& region_meta = region_meta_pair.first;
+                            auto& region_times = region_meta_pair.second;
+                            if (region_meta->ref_cnt > region_times && region_meta->type == RegionType::kMempool) {
+                                /// TODO: check all the chunk 
+                            }
+                        }
+                        for (auto& region_meta : need_free) {
+                            switch (region_meta->type)
+                            {
+                            case RegionType::kMempool: {
+                                RpcRequest request = {
+                                    .type = RpcRequestType::kFreeMemoryPool,
+                                    .free_memory_pool = {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                                        .addr = region_meta
+#else
+                                        .offset = static_cast<uint64_t>(reinterpret_cast<uint8_t*>(region_meta) - virt_shared_region)
+#endif
+                                    }
+                                };
+                                auto status = ControlPlaneFreeMemoryPool(fd, request).status;
+                                if (status != RpcResponseStatus::kSuccess)
+                                    throw std::runtime_error("Failed to recycle mempool when process crash " + std::to_string((int)status));
+                                break;
+                            }
+                            case RegionType::kNamedShared: {
+                                RpcRequest request = {
+                                    .type = RpcRequestType::kFreeMemory,
+                                    .free_memory = {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                                        .addr = region_meta
+#else
+                                        .offset = static_cast<uint64_t>(reinterpret_cast<uint8_t*>(region_meta) - virt_shared_region)
+#endif
+                                    }
+                                };
+                                if (ControlPlaneFreeShared(fd, request).status != RpcResponseStatus::kSuccess)
+                                    throw std::runtime_error("Failed to recycle shared when process crash");
+                                break;
+                            }
+                            default:
+                                throw std::runtime_error("Failed to recycle resources when process crash");
+                                break;
+                            }
+                        }
+#if !defined(OMNIMEM_BACKEND_DPDK)
+                        for (auto& tid : thread_ids)
+                            virt_base_addrs[tid] = nullptr;
+#endif
                         close(fd);
                     }
                 }
@@ -1137,6 +1230,7 @@ namespace omnistack::memory {
             container_ptr->used = container_ptr->cnt = 0;
         }
         if (cache) [[likely]] {
+            reinterpret_cast<RegionMeta*>(real_ptr)->ref_cnt = 0;
 #if defined(OMNIMEM_BACKEND_DPDK)
             cache->addrs[cache->cnt++] = real_ptr;
 #else
@@ -1222,6 +1316,7 @@ namespace omnistack::memory {
             meta->size = chunk_size_;
             meta->process_id = process_id;
             meta->type = RegionType::kMempoolChunk;
+            meta->ref_cnt = 1;
             return (char*)ret + kMetaHeadroomSize;
         }
         return nullptr;
@@ -1232,6 +1327,7 @@ namespace omnistack::memory {
         if (name.length() >= kMaxNameLength) throw std::runtime_error("Name too long");
         local_rpc_request.get_memory_pool.chunk_size = chunk_size;
         local_rpc_request.get_memory_pool.chunk_count = chunk_count;
+        local_rpc_request.get_memory_pool.thread_id = thread_id;
         strcpy(local_rpc_request.get_memory_pool.name, name.c_str());
         auto resp = SendLocalRpcRequest();
         if (resp.status == RpcResponseStatus::kSuccess) {
@@ -1247,5 +1343,17 @@ namespace omnistack::memory {
 
     ControlPlaneStatus GetControlPlaneStatus() {
         return control_plane_status;
+    }
+
+    void FreeMemoryPool(MemoryPool* mempool) {
+        local_rpc_request.type = RpcRequestType::kFreeMemoryPool;
+#if defined(OMNIMEM_BACKEND_DPDK)
+        local_rpc_request.free_memory.addr = (uint8_t*)mempool - kMetaHeadroomSize;
+#else
+        local_rpc_request.free_memory.offset = reinterpret_cast<uint8_t*>(mempool) - virt_base_addrs[process_id] - kMetaHeadroomSize;
+#endif
+        auto resp = SendLocalRpcRequest();
+        if (resp.status != RpcResponseStatus::kSuccess)
+            throw std::runtime_error("Failed to free shared memory");
     }
 }
