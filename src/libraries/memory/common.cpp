@@ -812,6 +812,8 @@ namespace omnistack::memory {
     ) {
         control_plane_status = ControlPlaneStatus::kStarting;
         std::unique_lock<std::mutex> _(control_plane_state_lock);
+        if (control_plane_started)
+            throw std::runtime_error("There is multiple control plane");
 #if defined(OMNIMEM_BACKEND_DPDK)
         if (init_dpdk) {
             constexpr int argc = 4;
@@ -1355,5 +1357,9 @@ namespace omnistack::memory {
         auto resp = SendLocalRpcRequest();
         if (resp.status != RpcResponseStatus::kSuccess)
             throw std::runtime_error("Failed to free shared memory");
+    }
+
+    int GetControlPlaneId() {
+        return sock_id;
     }
 }

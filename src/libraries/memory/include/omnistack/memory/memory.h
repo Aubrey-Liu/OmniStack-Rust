@@ -204,6 +204,8 @@ namespace omnistack {
             kStopped
         };
         ControlPlaneStatus GetControlPlaneStatus();
+
+        int GetControlPlaneId();
     }
 }
 
