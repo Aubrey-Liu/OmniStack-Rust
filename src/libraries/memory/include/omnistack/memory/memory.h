@@ -206,6 +206,10 @@ namespace omnistack {
         ControlPlaneStatus GetControlPlaneStatus();
 
         int GetControlPlaneId();
+
+#if !defined(OMNIMEM_BACKEND_DPDK)
+        uint8_t** GetVirtBaseAddrs();
+#endif
     }
 }
 

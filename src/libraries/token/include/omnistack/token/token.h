@@ -19,7 +19,9 @@ namespace omnistack {
 
         enum class RpcRequestType {
             kReturn = 0,
-            kAcquire
+            kAcquire,
+            kCreateToken,
+            kDestroyToken
         };
 
         enum class RpcResponseStatus {
