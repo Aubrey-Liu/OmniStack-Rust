@@ -15,6 +15,9 @@ target_include_directories(${OMNI_DATA_PLANE_LIB} PUBLIC include)
 message(STATUS "${OMNI_LIBRARIES}")
 target_link_libraries(${OMNI_DATA_PLANE_LIB} PUBLIC ${OMNI_LIBRARIES})
 
+add_library(omni_data_plane_sample_module SHARED module/sample_module.cpp)
+target_link_libraries(omni_data_plane_sample_module PUBLIC ${OMNI_DATA_PLANE_LIB} -rdynamic)
+
 add_subdirectory(modules)
 
 set(ENGINE_SRCS ${OLD_ENGINE_SRCS})
@@ -22,3 +25,4 @@ set(GRAPH_SRCS ${OLD_GRAPH_SRCS})
 set(IO_SRCS ${OLD_IO_SRCS})
 set(MODULE_SRCS ${OLD_MODULE_SRCS})
 
+set(OMNI_DATA_PLANE_LIB ${OMNI_DATA_PLANE_LIB} PARENT_SCOPE)

@@ -17,6 +17,6 @@ set(OMNISTACK_EXEC omnistack)
 set(OMNISTACK_USERLIB omniuser)
 
 add_subdirectory(tool)
-add_subdirectory(application)
 add_subdirectory(src)
+add_subdirectory(application)
 add_subdirectory(tests)
