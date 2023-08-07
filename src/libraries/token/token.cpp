@@ -11,6 +11,10 @@
 #include <sys/socket.h>
 #include <iostream>
 #include <map>
+#include <set>
+#include <sys/time.h>
+#include <vector>
+#include <queue>
 
 #if defined(__APPLE__)
 #include <sys/event.h>
@@ -63,6 +67,12 @@ void writeAll(int sockfd, const char* buf, size_t len, const bool* stopped = nul
 
 namespace omnistack::token
 {
+    static uint64_t GetCurrentTick() {
+        struct timeval tv{};
+        gettimeofday(&tv, nullptr);
+        return tv.tv_sec * 1000000ll + tv.tv_usec;
+    }
+
     struct RpcRequest {
         RpcRequestType type;
         char padding[64 - sizeof(RpcRequestType)];
@@ -74,6 +84,15 @@ namespace omnistack::token
     struct RpcResponse {
         uint64_t id;
         RpcResponseStatus status;
+        union {
+            struct {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                Token* token_ptr;
+#else
+                uint64_t token_offset;
+#endif
+            } new_token;
+        };
     };
 
     struct RpcRequestMeta {
@@ -100,12 +119,40 @@ namespace omnistack::token
     static volatile bool stop_control_plane = false;
     static ControlPlaneStatus control_plane_status = ControlPlaneStatus::kStopped;
 
+#if !defined(OMNIMEM_BACKEND_DPDK)
+    static uint8_t** virt_base_addrs = nullptr;
+#endif
+
+    class Peer {
+    public:
+        Peer(int fd) : fd_(fd) {
+        }
+
+        void WriteResponse(const RpcResponse& resp) {
+            if (!closed) {
+                writeAll(fd_, (const char*) &resp, sizeof(resp));
+            }
+        }
+
+        void Close() {
+            closed = true;
+            if (!closed) {
+                close(fd_);
+            }
+        }
+
+        int fd_;
+        bool closed = false;
+    };
+
     static void ControlPlane() {
         {
             std::unique_lock _(control_plane_state_lock);
             control_plane_started = true;
             cond_control_plane_started.notify_all();
         }
+        memory::InitializeSubsystemThread();
+        virt_base_addrs = memory::GetVirtBaseAddrs();
 
         int epfd;
         constexpr int kMaxEvents = 16;
@@ -140,18 +187,65 @@ namespace omnistack::token
             return ;
         }
         control_plane_status = ControlPlaneStatus::kRunning;
+        static std::set<std::pair<uint64_t, Token*>> token_tick;
+        static std::map<typeof(Token::token_id), Token*> id_to_token;
+        static std::set<typeof(Token::token_id)> used_token_id;
+        static std::map<int, std::shared_ptr<Peer>> fd_to_peer;
+        static std::map<Token*, std::queue<
+            std::pair<typeof(Token::token), std::pair<
+            std::shared_ptr<Peer>, typeof(RpcResponse::id)>>
+        >> token_queue;
 
         try {
             while (!stop_control_plane) {
+                uint64_t min_wait_usec = 1000000;
+                uint64_t now = GetCurrentTick();
+                std::vector<typeof(Token::token_id)> tokens_to_remove;
+                while (!token_tick.empty() && token_tick.begin()->first <= now) {
+                    auto token = token_tick.begin()->second;
+                    token_tick.erase(token_tick.begin());
+
+                    token->token = 0;
+                    token->return_tick = 0;
+
+                    bool assigned = false;
+                    while (!assigned && token_queue[token].size()) {
+                        auto frt = token_queue[token].front();
+                        token_queue[token].pop();
+                        if (!frt.second.first->closed) {
+                            token->token = frt.first;
+                            RpcResponse succ = {
+                                .id = frt.second.second,
+                                .status = RpcResponseStatus::kSuccess
+                            };
+                            
+                            try {
+                                frt.second.first->WriteResponse(succ);
+                            } catch (std::runtime_error& err_info) {
+                                token->token = 0;
+                                continue;
+                            }
+                            assigned = true;
+                        }
+                    }
+
+                    if (token_queue[token].size()) {
+                        token->return_tick = 1;
+                        token_tick.insert({now + 1000000, token});
+                    }
+                }
+                for (auto& [tick, token] : token_tick) {
+                    min_wait_usec = std::min(min_wait_usec, tick - now);
+                }
                 int nevents;
 #if defined(__APPLE__)
                 struct timespec timeout = {
                         .tv_sec = 1,
-                        .tv_nsec = 0
+                        .tv_nsec = min_wait_usec * 1000
                 };
                 nevents = kevent(epfd, nullptr, 0, events, kMaxEvents, &timeout);
 #else
-                nevents = epoll_wait(epfd, events, kMaxEvents, 1000);
+                nevents = epoll_wait(epfd, events, kMaxEvents, min_wait_usec / 1000 + 1);
 #endif
                 for (int eidx = 0; eidx < nevents; eidx ++) {
                     auto& evt = events[eidx];
@@ -161,8 +255,165 @@ namespace omnistack::token
                     auto fd = evt.data.fd;
 #endif
                     if (fd == control_plane_sock) {
-                    } else {
+                        int new_fd;
+                        do {
+                            new_fd = accept(control_plane_sock, nullptr, nullptr);
+                            if (new_fd > 0) {
+                                /** SET EVENT DRIVEN **/
+                                {
+                                    auto flags = fcntl(new_fd, F_GETFL);
+                                    if (flags == -1) {
+                                        std::cerr << "Failed to get new fd's flags\n";
+                                        return ;
+                                    }
+                                    auto ret = fcntl(new_fd, F_SETFL, flags | O_NONBLOCK);
+                                    if (ret == -1) {
+                                        std::cerr << "Failed to set new fd's flags\n";
+                                        return ;
+                                    }
+                                }
+    #if defined(__APPLE__)
+                                struct kevent ev{};
+                                EV_SET(&ev, new_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void *) (intptr_t) new_fd);
+                                if (kevent(epfd, &ev, 1, nullptr, 0, nullptr)) {
+                                    std::cerr << "Failed to set kevent for new process\n";
+                                    return ;
+                                }
+    #else
+                                struct epoll_event ev{};
+                                ev.events = EPOLLIN | EPOLLET;
+                                ev.data.fd = new_fd;
+                                if (epoll_ctl(epfd, EPOLL_CTL_ADD, new_fd, &ev)) {
+                                    std::cerr << "Failed to set epoll for new process\n";
+                                    return ;
+                                }
+    #endif
+                                fd_to_peer[new_fd] = std::make_shared<Peer>(new_fd);
+                            }
+                        } while (new_fd > 0);
 
+                        if (new_fd == 0) {
+                            std::cerr << "Unix socket close unexpectedly\n";
+                            return ;
+                        }
+
+                        if (errno != EAGAIN) {
+                            std::cerr << "Unix socket error not caused by EAGAIN\n";
+                            return ;
+                        }
+                    } else {
+                        bool peer_closed = false;
+                        RpcRequest request;
+                        RpcResponse resp;
+                        bool send_resp = true;
+                        try {
+                            readAll(fd, reinterpret_cast<char*>(&request), sizeof(request));
+                        } catch (std::runtime_error& err_info) {
+                            peer_closed = true;
+                        }
+                        auto peer = fd_to_peer[fd];
+                        if (!peer)
+                            throw std::runtime_error("This should not happen");
+
+                        if (!peer_closed) {
+                            switch (request.type) {
+                                case RpcRequestType::kCreateToken: {
+                                    auto token = reinterpret_cast<Token*>(memory::AllocateNamedShared("", sizeof(Token)));
+                                    token->token_id = 1;
+                                    while (used_token_id.count(token->token_id))
+                                        token->token_id ++;
+                                    used_token_id.insert(token->token_id);
+                                    token->return_tick = 0;
+                                    token->token = 0;
+                                    id_to_token[token->token_id] = token;
+
+                                    resp.status = RpcResponseStatus::kSuccess;
+#if defined(OMNIMEM_BACKEND_DPDK)
+                                    resp.new_token.token_ptr = token;
+#else
+                                    resp.new_token.token_offset = reinterpret_cast<uint8_t*>(token) - virt_base_addrs[memory::process_id];
+#endif
+                                    break;
+                                }
+                                case RpcRequestType::kAcquire: {
+                                    auto token = id_to_token[request.token_id];
+                                    if (token->token == 0) {
+                                        token->token = request.thread_id;
+                                        resp.status = RpcResponseStatus::kSuccess;
+                                    } else if(token->token != request.thread_id) {
+                                        send_resp = false;
+                                        token_queue[token].push(
+                                            std::make_pair(
+                                                request.thread_id,
+                                                std::make_pair(peer, request.id)
+                                            )
+                                        );
+                                        if (token->return_tick == 0) {
+                                            token->return_tick = 1;
+                                            token_tick.insert({now + 1000000, token});
+                                        }
+                                    } else {
+                                        resp.status = RpcResponseStatus::kSuccess;
+                                    }
+                                    break;
+                                }
+                                case RpcRequestType::kReturn: {
+                                    resp.status = RpcResponseStatus::kSuccess;
+                                    auto token = id_to_token[request.token_id];
+                                    if (token->token == request.thread_id) {
+                                        for (auto& iter : token_tick) {
+                                            if (iter.second == token) {
+                                                token_tick.erase(iter);
+                                                break;
+                                            }
+                                        }
+                                        token->token = 0;
+                                        token->return_tick = 0;
+
+                                        bool assigned = false;
+                                        while (!assigned && token_queue[token].size()) {
+                                            auto frt = token_queue[token].front();
+                                            token_queue[token].pop();
+                                            if (!frt.second.first->closed) {
+                                                token->token = frt.first;
+                                                RpcResponse succ = {
+                                                    .id = frt.second.second,
+                                                    .status = RpcResponseStatus::kSuccess
+                                                };
+                                                
+                                                try {
+                                                    frt.second.first->WriteResponse(succ);
+                                                } catch (std::runtime_error& err_info) {
+                                                    token->token = 0;
+                                                    continue;
+                                                }
+                                                assigned = true;
+                                            }
+                                        }
+
+                                        if (token_queue[token].size()) {
+                                            token->return_tick = 1;
+                                            token_tick.insert({now + 1000000, token});
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            resp.id = request.id;
+                        }
+
+                        try {
+                            if (send_resp) {
+                                peer->WriteResponse(resp);
+                            }
+                        } catch (std::runtime_error& err_info) {
+                            peer_closed = true;
+                        }
+
+                        if (peer_closed) {
+                            peer->Close();
+                            fd_to_peer.erase(fd);
+                        }
                     }
                 }
             }

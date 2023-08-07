@@ -1125,6 +1125,8 @@ namespace omnistack::memory {
                 if (!virt_base_addrs[process_id])
                     throw std::runtime_error("Failed to get virt_shared_region");
             }
+        } else {
+            virt_base_addrs[process_id] = reinterpret_cast<uint8_t *>(virt_shared_region);
         }
 #endif
     }
@@ -1362,4 +1364,10 @@ namespace omnistack::memory {
     int GetControlPlaneId() {
         return sock_id;
     }
+
+#if !defined(OMNIMEM_BACKEND_DPDK)
+    uint8_t** GetVirtBaseAddrs() {
+        return virt_base_addrs;
+    }
+#endif
 }
