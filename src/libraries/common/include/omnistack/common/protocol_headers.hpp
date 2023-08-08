@@ -3,6 +3,7 @@
 #define __OMNISTACK_PROTOCOL_HEADERS_HPP
 
 #include <cstdint>
+#include <arpa/inet.h>
 
 namespace omnistack::common {
 

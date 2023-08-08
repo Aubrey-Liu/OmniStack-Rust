@@ -9,3 +9,4 @@ enable_testing()
 include(GoogleTest)
 
 add_subdirectory(libraries)
+add_subdirectory(data_plane)

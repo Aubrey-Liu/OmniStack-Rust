@@ -5,6 +5,7 @@
 #ifndef OMNISTACK_MODULE_HPP
 #define OMNISTACK_MODULE_HPP
 
+#include <iostream>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -34,7 +35,8 @@ namespace omnistack::data_plane {
             kEqual
         };
 
-        BaseModule() = default;
+        BaseModule() {};
+        virtual ~BaseModule() {};
 
         static constexpr bool DefaultFilter(DataPlanePacket* packet){ return true; }
 
@@ -88,12 +90,17 @@ namespace omnistack::data_plane {
         void Register(const std::string& name, const CreateFunction& func) {
             if(module_list_.find(name) != module_list_.end()) {
                 /* TODO: report error */
+                return;
             }
             if(func == nullptr) {
                 /* TODO: report error */
+                return;
             }
             if(!module_list_.insert(std::make_pair(name, func)).second) {
                 /* TODO: report error */
+                return;
+            }
+            else {
             }
         }
 
@@ -114,19 +121,26 @@ namespace omnistack::data_plane {
     class Module : public BaseModule {
     public:
         static std::unique_ptr<BaseModule> CreateModuleObject() {
-            return std::make_unique<BaseModule>(new T());
+            return std::make_unique<T>();
         }
 
         constexpr std::string_view name_() override { return std::string_view(name); }
 
-    private:
         struct FactoryEntry {
             FactoryEntry() {
                 ModuleFactory::instance().Register(std::string(name), CreateModuleObject);
             }
+            inline void DoNothing() const {}
         };
 
         static const FactoryEntry factory_entry_;
+
+        Module() {
+            factory_entry_.DoNothing();
+        }
+        virtual ~Module() {
+            factory_entry_.DoNothing();
+        }
     };
 
     template<typename T, const char name[]>
