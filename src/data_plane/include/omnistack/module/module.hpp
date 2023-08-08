@@ -15,42 +15,43 @@
 #include <array>
 #include <map>
 #include <set>
-#include <omnistack/graph/steer_info.hpp>
+#include <omnistack/packet/packet.hpp>
 
 namespace omnistack::data_plane {
-    class PacketPool;
 
+    using namespace omnistack::packet;
+    
     class BaseModule {
     public:
-        typedef std::function<bool(DataPlanePacket* packet)> Filter;
+        typedef std::function<bool(Packet* packet)> Filter;
 
         enum class ModuleType {
-            kReadOnly = 0,
+            kReadOnly,
             kReadWrite,
             kOccupy
         };
 
         enum class FilterGroupType {
-            kMutex = 0,
+            kMutex,
             kEqual
         };
 
         BaseModule() {};
         virtual ~BaseModule() {};
 
-        static constexpr bool DefaultFilter(DataPlanePacket* packet){ return true; }
+        static constexpr bool DefaultFilter(Packet* packet){ return true; }
 
         void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
 
         void set_upstream_nodes_(const std::vector<std::pair<std::string, uint32_t>>& upstream_nodes);
 
-        void ApplyDownstreamFilters(DataPlanePacket* packet);
+        void ApplyDownstreamFilters(Packet* packet);
 
         virtual Filter GetFilter(std::string_view upstream_module, uint32_t global_id) { return DefaultFilter; };
 
-        virtual DataPlanePacket* MainLogic(DataPlanePacket* packet) { return packet; }
+        virtual Packet* MainLogic(Packet* packet) { return packet; }
 
-        virtual DataPlanePacket* TimerLogic(uint64_t tick) { return nullptr; }
+        virtual Packet* TimerLogic(uint64_t tick) { return nullptr; }
 
         virtual void Init(std::string_view name_prefix, const PacketPool& packet_pool) {};
 

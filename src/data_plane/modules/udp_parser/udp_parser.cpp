@@ -8,6 +8,7 @@
 namespace omnistack::data_plane::udp_parser {
     
     using namespace omnistack::common;
+    using namespace omnistack::packet;
 
     inline constexpr char kName[] = "UdpParser";
 
@@ -15,18 +16,18 @@ namespace omnistack::data_plane::udp_parser {
     public:
         UdpParser() {}
 
-        static bool DefaultFilter(DataPlanePacket* packet);
+        static bool DefaultFilter(Packet* packet);
 
         Filter GetFilter(std::string_view upstream_module, uint32_t global_id) override { return DefaultFilter; }
 
-        DataPlanePacket* MainLogic(DataPlanePacket* packet) override;
+        Packet* MainLogic(Packet* packet) override;
 
         constexpr bool allow_duplication_() override { return true; }
 
         constexpr ModuleType type_() override { return ModuleType::kReadWrite; }
     };
 
-    bool UdpParser::DefaultFilter(DataPlanePacket* packet) {
+    bool UdpParser::DefaultFilter(Packet* packet) {
         PacketHeader &ip = *(packet->header_tail_ - 1);
         Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(ip.data_);
         if(ipv4_header->version == 4) [[likely]] return ipv4_header->proto == IP_PROTO_TYPE_UDP;
@@ -35,7 +36,7 @@ namespace omnistack::data_plane::udp_parser {
         return false;
     }
 
-    DataPlanePacket* UdpParser::MainLogic(DataPlanePacket* packet) {
+    Packet* UdpParser::MainLogic(Packet* packet) {
         UdpHeader* udp_header = reinterpret_cast<UdpHeader*>(packet->data_ + packet->offset_);
         PacketHeader &udp = *(packet->header_tail_ ++);
         udp.length_ = sizeof(UdpHeader);

@@ -8,6 +8,7 @@
 namespace omnistack::data_plane::tcp_parser {
         
     using namespace omnistack::common;
+    using namespace omnistack::packet;
 
     inline constexpr char kName[] = "TcpParser";
 
@@ -15,18 +16,18 @@ namespace omnistack::data_plane::tcp_parser {
     public:
         TcpParser() {}
 
-        static bool DefaultFilter(DataPlanePacket* packet);
+        static bool DefaultFilter(Packet* packet);
 
         Filter GetFilter(std::string_view upstream_module, uint32_t global_id) override { return DefaultFilter; }
 
-        DataPlanePacket* MainLogic(DataPlanePacket* packet) override;
+        Packet* MainLogic(Packet* packet) override;
 
         constexpr bool allow_duplication_() override { return true; }
 
         constexpr ModuleType type_() override { return ModuleType::kReadWrite; }
     };
 
-    bool TcpParser::DefaultFilter(DataPlanePacket* packet) {
+    bool TcpParser::DefaultFilter(Packet* packet) {
         PacketHeader &ip = *(packet->header_tail_ - 1);
         Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(ip.data_);
         if(ipv4_header->version == 4) [[likely]] return ipv4_header->proto == IP_PROTO_TYPE_TCP;
@@ -35,7 +36,7 @@ namespace omnistack::data_plane::tcp_parser {
         return false;
     }
 
-    DataPlanePacket* TcpParser::MainLogic(DataPlanePacket* packet) {
+    Packet* TcpParser::MainLogic(Packet* packet) {
         TcpHeader* tcp_header = reinterpret_cast<TcpHeader*>(packet->data_ + packet->offset_);
         PacketHeader &tcp = *(packet->header_tail_ ++);
         tcp.length_ = tcp_header->dataofs << 2;

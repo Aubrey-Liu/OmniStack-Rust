@@ -8,6 +8,7 @@
 namespace omnistack::data_plane::eth_parser {
 
     using namespace omnistack::common;
+    using namespace omnistack::packet;
 
     inline constexpr char kName[] = "EthParser";
 
@@ -15,14 +16,14 @@ namespace omnistack::data_plane::eth_parser {
     public:
         EthParser() {}
 
-        DataPlanePacket* MainLogic(DataPlanePacket* packet) override;
+        Packet* MainLogic(Packet* packet) override;
 
         constexpr bool allow_duplication_() override { return true; }
 
         constexpr ModuleType type_() override { return ModuleType::kReadWrite; }
     };
 
-    DataPlanePacket* EthParser::MainLogic(DataPlanePacket* packet) {
+    Packet* EthParser::MainLogic(Packet* packet) {
         EthernetHeader* eth_header = reinterpret_cast<EthernetHeader*>(packet->data_ + packet->offset_);
         PacketHeader &eth = *(packet->header_tail_ ++);
         eth.length_ = sizeof(EthernetHeader);

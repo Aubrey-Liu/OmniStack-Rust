@@ -8,6 +8,7 @@
 namespace omnistack::data_plane::ipv4_parser {
 
     using namespace omnistack::common;
+    using namespace omnistack::packet;
 
     inline constexpr char kName[] = "Ipv4Parser";
 
@@ -15,11 +16,11 @@ namespace omnistack::data_plane::ipv4_parser {
     public:
         Ipv4Parser() {}
 
-        static bool DefaultFilter(DataPlanePacket* packet);
+        static bool DefaultFilter(Packet* packet);
 
         Filter GetFilter(std::string_view upstream_node, uint32_t global_id) override { return DefaultFilter; };
 
-        DataPlanePacket* MainLogic(DataPlanePacket* packet) override;
+        Packet* MainLogic(Packet* packet) override;
 
         constexpr bool allow_duplication_() override { return true; }
 
@@ -30,13 +31,13 @@ namespace omnistack::data_plane::ipv4_parser {
         printf("%s%d.%d.%d.%d\n", message, ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff, (ip >> 24) & 0xff);
     }
 
-    bool Ipv4Parser::DefaultFilter(DataPlanePacket* packet) {
+    bool Ipv4Parser::DefaultFilter(Packet* packet) {
         PacketHeader &eth = packet->packet_headers_[0];
         EthernetHeader* eth_header = reinterpret_cast<EthernetHeader*>(eth.data_);
         return eth_header->type == ETH_PROTO_TYPE_IPV4;
     }
 
-    DataPlanePacket* Ipv4Parser::MainLogic(DataPlanePacket* packet) {
+    Packet* Ipv4Parser::MainLogic(Packet* packet) {
         Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + packet->offset_);
         PacketHeader &ipv4 = *(packet->header_tail_ ++);
         ipv4.length_ = ipv4_header->ihl << 2;
