@@ -152,8 +152,9 @@ namespace omnistack::token
             cond_control_plane_started.notify_all();
         }
         memory::InitializeSubsystemThread();
+#if !defined(OMNIMEM_BACKEND_DPDK)
         virt_base_addrs = memory::GetVirtBaseAddrs();
-
+#endif
         int epfd;
         constexpr int kMaxEvents = 16;
 #if defined(__APPLE__)
