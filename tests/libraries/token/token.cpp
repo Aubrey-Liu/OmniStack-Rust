@@ -51,13 +51,22 @@ TEST(LibrariesToken, ConnectToControlPlane) {
         exit(0);
     }
 
-    usleep(1000000);
+    usleep(2000000);
 
     auto pid_client = fork();
     if (pid_client == 0) {
-        omnistack::memory::InitializeSubsystem();
-        omnistack::memory::InitializeSubsystemThread();
-        omnistack::token::InitializeSubsystem();
+        try {
+            omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+                , true
+#endif
+            );
+            omnistack::memory::InitializeSubsystemThread();
+            omnistack::token::InitializeSubsystem();
+        } catch (std::runtime_error& err_info) {
+            std::cerr << err_info.what() << std::endl;
+            exit(1);
+        }
         exit(0);
     }
     
@@ -74,9 +83,9 @@ TEST(LibrariesToken, CreateToken) {
     auto pid = fork();
     if (pid == 0) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+#if defined(OMNIMEM_BACKEND_DPDK)
             true
-    #endif
+#endif
         );
         usleep(10000);
         if (omnistack::memory::GetControlPlaneStatus() != omnistack::memory::ControlPlaneStatus::kRunning)
@@ -90,15 +99,29 @@ TEST(LibrariesToken, CreateToken) {
         exit(0);
     }
 
-    usleep(1000000);
+    usleep(2000000);
 
     auto pid_client = fork();
     if (pid_client == 0) {
-        omnistack::memory::InitializeSubsystem();
-        omnistack::memory::InitializeSubsystemThread();
-        omnistack::token::InitializeSubsystem();
+        try {
+            omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+                , true
+#endif
+            );
+            omnistack::memory::InitializeSubsystemThread();
+            omnistack::token::InitializeSubsystem();
 
-        auto token = omnistack::token::CreateToken();
+            auto token = omnistack::token::CreateToken();
+            if (token->CheckToken())
+                exit(1);
+            token->AcquireToken();
+            if (!token->CheckToken())
+                exit(1);
+        } catch (std::runtime_error& err_info) {
+            std::cerr << err_info.what() << std::endl;
+            exit(1);
+        }
         exit(0);
     }
     

@@ -201,13 +201,11 @@ namespace omnistack::token
             while (!stop_control_plane) {
                 uint64_t min_wait_usec = 1000000;
                 uint64_t now = GetCurrentTick();
-                std::vector<typeof(Token::token_id)> tokens_to_remove;
                 while (!token_tick.empty() && token_tick.begin()->first <= now) {
                     auto token = token_tick.begin()->second;
                     token_tick.erase(token_tick.begin());
-
+                    token->returning = 0;
                     token->token = 0;
-                    token->return_tick = 0;
 
                     bool assigned = false;
                     while (!assigned && token_queue[token].size()) {
@@ -231,7 +229,8 @@ namespace omnistack::token
                     }
 
                     if (token_queue[token].size()) {
-                        token->return_tick = 1;
+                        token->need_return[token->token] = true;
+                        token->returning = 1;
                         token_tick.insert({now + 1000000, token});
                     }
                 }
@@ -328,8 +327,9 @@ namespace omnistack::token
                                     while (used_token_id.count(token->token_id))
                                         token->token_id ++;
                                     used_token_id.insert(token->token_id);
-                                    token->return_tick = 0;
+                                    token->returning = 0;
                                     token->token = 0;
+                                    memset(token->need_return, 0, sizeof(token->need_return));
                                     id_to_token[token->token_id] = token;
 
                                     resp.status = RpcResponseStatus::kSuccess;
@@ -353,8 +353,9 @@ namespace omnistack::token
                                                 std::make_pair(peer, request.id)
                                             )
                                         );
-                                        if (token->return_tick == 0) {
-                                            token->return_tick = 1;
+                                        if (token->returning == 0) {
+                                            token->returning = 1;
+                                            token->need_return[token->token] = true;
                                             token_tick.insert({now + 1000000, token});
                                         }
                                     } else {
@@ -365,7 +366,8 @@ namespace omnistack::token
                                 case RpcRequestType::kReturn: {
                                     resp.status = RpcResponseStatus::kSuccess;
                                     auto token = id_to_token[request.token_id];
-                                    if (token->token == request.thread_id) {
+                                    token->need_return[request.thread_id] = false;
+                                    if (token->token == request.thread_id) { // Valid Return
                                         for (auto& iter : token_tick) {
                                             if (iter.second == token) {
                                                 token_tick.erase(iter);
@@ -373,7 +375,7 @@ namespace omnistack::token
                                             }
                                         }
                                         token->token = 0;
-                                        token->return_tick = 0;
+                                        token->returning = 0;
 
                                         bool assigned = false;
                                         while (!assigned && token_queue[token].size()) {
@@ -397,7 +399,8 @@ namespace omnistack::token
                                         }
 
                                         if (token_queue[token].size()) {
-                                            token->return_tick = 1;
+                                            token->returning = 1;
+                                            token->need_return[token->token] = true;
                                             token_tick.insert({now + 1000000, token});
                                         }
                                     }
@@ -510,7 +513,7 @@ namespace omnistack::token
         sock_to_control_plane = socket(AF_UNIX, SOCK_STREAM, 0);
 
         if (connect(sock_to_control_plane, (struct sockaddr*)&addr, sizeof(addr.sun_family) + control_plane_sock_name.length()))
-            throw std::runtime_error("Failed to connect to control plane");
+            throw std::runtime_error("Failed to connect to control plane " + std::to_string(errno));
 
         rpc_response_receiver = new std::thread(RpcResponseReceiver);
     }

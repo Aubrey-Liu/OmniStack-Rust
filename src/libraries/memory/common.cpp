@@ -1067,7 +1067,7 @@ namespace omnistack::memory {
         sock_to_control_plane = socket(AF_UNIX, SOCK_STREAM, 0);
 
         if (connect(sock_to_control_plane, (struct sockaddr*)&addr, sizeof(addr.sun_family) + sock_name.length()))
-            throw std::runtime_error("Failed to connect to control plane");
+            throw std::runtime_error("Failed to connect to control plane " + std::to_string(errno));
 
         rpc_response_receiver = new std::thread(RpcResponseReceiver);
 

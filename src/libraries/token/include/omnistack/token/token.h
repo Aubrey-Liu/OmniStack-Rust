@@ -38,20 +38,18 @@ namespace omnistack {
             ~Token();
             
             uint64_t token_id;
-            volatile uint64_t token;
-            volatile uint64_t return_tick;
+            uint64_t token;
+            uint64_t returning;
+            bool need_return[memory::kMaxThread + 1];
 
             inline bool CheckToken() {
                 if (token != memory::thread_id) [[unlikely]]
                     return false;
-                if (return_tick == 0) [[likely]]
-                    return true;
-                else if (return_tick == 1)
-                    return false;
-                else if (return_tick == 2) {
+                if (need_return[memory::thread_id] == false) [[unlikely]] {
                     SendTokenMessage(RpcRequestType::kReturn, this);
                     return false;
                 }
+                return true;
             }
             inline void AcquireToken() {
                 if (CheckToken()) return;
