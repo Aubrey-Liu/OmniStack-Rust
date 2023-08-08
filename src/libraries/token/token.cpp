@@ -307,19 +307,23 @@ namespace omnistack::token
                         RpcRequest request;
                         RpcResponse resp;
                         bool send_resp = true;
+
+                        auto peer = fd_to_peer[fd];
+                        if (!peer)
+                            throw std::runtime_error("This should not happen");
+
                         try {
                             readAll(fd, reinterpret_cast<char*>(&request), sizeof(request));
                         } catch (std::runtime_error& err_info) {
                             peer_closed = true;
                         }
-                        auto peer = fd_to_peer[fd];
-                        if (!peer)
-                            throw std::runtime_error("This should not happen");
 
                         if (!peer_closed) {
                             switch (request.type) {
                                 case RpcRequestType::kCreateToken: {
                                     auto token = reinterpret_cast<Token*>(memory::AllocateNamedShared("", sizeof(Token)));
+                                    if (token == nullptr)
+                                        throw std::runtime_error("Failed to create token");
                                     token->token_id = 1;
                                     while (used_token_id.count(token->token_id))
                                         token->token_id ++;
@@ -401,14 +405,13 @@ namespace omnistack::token
                                 }
                             }
                             resp.id = request.id;
-                        }
-
-                        try {
-                            if (send_resp) {
-                                peer->WriteResponse(resp);
+                            try {
+                                if (send_resp) {
+                                    peer->WriteResponse(resp);
+                                }
+                            } catch (std::runtime_error& err_info) {
+                                peer_closed = true;
                             }
-                        } catch (std::runtime_error& err_info) {
-                            peer_closed = true;
                         }
 
                         if (peer_closed) {
@@ -433,7 +436,7 @@ namespace omnistack::token
 
         std::string control_plane_sock_name = "";
         system_id = memory::GetControlPlaneId();
-        control_plane_sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_memory_sock" +
+        control_plane_sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_token_sock" +
             std::to_string(system_id) + ".socket";
         
         sockaddr_un addr{};
@@ -492,8 +495,13 @@ namespace omnistack::token
 
     void InitializeSubsystem() {
         control_plane_id = memory::GetControlPlaneId();
-        auto control_plane_sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_memory_sock" +
+        auto control_plane_sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_token_sock" +
             std::to_string(control_plane_id) + ".socket";
+
+#if !defined(OMNIMEM_BACKEND_DPDK)
+        virt_base_addrs = memory::GetVirtBaseAddrs();
+#endif
+
         sockaddr_un addr{};
         addr.sun_family = AF_UNIX;
         if (control_plane_sock_name.length() >= sizeof(addr.sun_path))
@@ -511,7 +519,7 @@ namespace omnistack::token
         local_rpc_meta.cond_rpc_finished = false;
         static RpcRequest local_req = {
             .type = type,
-            .token_id = token->token_id,
+            .token_id = token ? token->token_id : ~0,
             .thread_id = memory::thread_id
         };
 
@@ -524,7 +532,7 @@ namespace omnistack::token
             local_rpc_meta.cond_rpc_finished = false;
             writeAll(sock_to_control_plane, reinterpret_cast<char*>(&local_req), sizeof(RpcRequest));
         }
-
+        
         {
             std::unique_lock<std::mutex> _(local_rpc_meta.cond_rpc_lock);
             local_rpc_meta.cond_rpc_changed.wait(_, [](){
@@ -535,5 +543,21 @@ namespace omnistack::token
         if (local_rpc_meta.resp.status != RpcResponseStatus::kSuccess) {
             throw std::runtime_error("Rpc execution failed");
         }
+    }
+
+    ControlPlaneStatus GetControlPlaneStatus() {
+        return control_plane_status;
+    }
+
+    Token* CreateToken() {
+        SendTokenMessage(RpcRequestType::kCreateToken, nullptr);
+        auto& resp = local_rpc_meta.resp;
+        if (resp.status != RpcResponseStatus::kSuccess)
+            throw std::runtime_error("Failed to create token");
+#if defined(OMNIMEM_BACKEND_DPDK)
+        return resp.new_token.token_ptr;
+#else
+        return reinterpret_cast<Token*>(virt_base_addrs[memory::process_id] + resp.new_token.token_offset);
+#endif
     }
 } // namespace omnistack::token

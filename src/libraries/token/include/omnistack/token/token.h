@@ -66,7 +66,11 @@ namespace omnistack {
         
         void InitializeSubsystem();
 
-        void InitializeSubsystemThread();
+        // void InitializeSubsystemThread();
+
+        Token* CreateToken();
+
+        ControlPlaneStatus GetControlPlaneStatus();
     }
 }
 

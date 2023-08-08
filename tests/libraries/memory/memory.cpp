@@ -29,13 +29,13 @@ TEST(LibrariesMemory, ConnectToControlPlane) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+#if defined(OMNIMEM_BACKEND_DPDK)
             true
-    #endif
+#endif
         );
         usleep(3000000);
         exit(0);
-    }
+    } 
     usleep(2000000);
     auto client_pid = fork();
     if (!client_pid) {

@@ -191,6 +191,7 @@ namespace omnistack::memory {
     static volatile bool stop_control_plane = false;
 
     static int sock_client = 0;
+    static int sock_to_control_plane = 0;
     static std::string sock_name;
     static std::string sock_lock_name;
     static int sock_lock_fd = 0;
@@ -998,7 +999,7 @@ namespace omnistack::memory {
     static void RpcResponseReceiver() {
         RpcResponse resp{};
         while (true) {
-            readAll(sock_client, reinterpret_cast<char*>(&resp), sizeof(RpcResponse));
+            readAll(sock_to_control_plane, reinterpret_cast<char*>(&resp), sizeof(RpcResponse));
             {
                 std::unique_lock<std::mutex> _1(rpc_request_lock);
                 if (id_to_rpc_meta.count(resp.id)) {
@@ -1022,7 +1023,7 @@ namespace omnistack::memory {
                 local_rpc_request.id = ++rpc_id;
             id_to_rpc_meta[local_rpc_request.id] = &local_rpc_meta;
             local_rpc_meta.cond_rpc_finished = false;
-            writeAll(sock_client, reinterpret_cast<char*>(&local_rpc_request), sizeof(RpcRequest));
+            writeAll(sock_to_control_plane, reinterpret_cast<char*>(&local_rpc_request), sizeof(RpcRequest));
         }
 
         {
@@ -1063,9 +1064,9 @@ namespace omnistack::memory {
         if (sock_name.length() >= sizeof(addr.sun_path))
             throw std::runtime_error("Failed to assign sock path to unix domain addr");
         strcpy(addr.sun_path, sock_name.c_str());
-        sock_client = socket(AF_UNIX, SOCK_STREAM, 0);
+        sock_to_control_plane = socket(AF_UNIX, SOCK_STREAM, 0);
 
-        if (connect(sock_client, (struct sockaddr*)&addr, sizeof(addr.sun_family) + sock_name.length()))
+        if (connect(sock_to_control_plane, (struct sockaddr*)&addr, sizeof(addr.sun_family) + sock_name.length()))
             throw std::runtime_error("Failed to connect to control plane");
 
         rpc_response_receiver = new std::thread(RpcResponseReceiver);
