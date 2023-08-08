@@ -23,7 +23,7 @@ namespace omnistack::data_plane {
         static void SigintHandler(int sig) { stop_ = true; }
 
     private:
-        typedef std::pair<uint32_t, DataPlanePacket*> QueueItem;
+        typedef std::pair<uint32_t, Packet*> QueueItem;
 
         /* graph info */
         uint32_t module_num_;
@@ -43,7 +43,7 @@ namespace omnistack::data_plane {
 
         static thread_local volatile bool stop_;
 
-        void ForwardPacket(std::vector<QueueItem>& packet_queue, DataPlanePacket* &packet, uint32_t node_idx);
+        void ForwardPacket(std::vector<QueueItem>& packet_queue, Packet* &packet, uint32_t node_idx);
 
         bool CompareLinks(uint32_t x, uint32_t y);
 

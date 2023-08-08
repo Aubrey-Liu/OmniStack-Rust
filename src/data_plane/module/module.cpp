@@ -30,7 +30,7 @@ namespace omnistack::data_plane {
         upstream_nodes_ = upstream_nodes;
     }
 
-    void BaseModule::ApplyDownstreamFilters(omnistack::data_plane::DataPlanePacket *packet) {
+    void BaseModule::ApplyDownstreamFilters(omnistack::data_plane::Packet *packet) {
         auto& mask = packet->next_hop_filter_;
         for(auto& group : filter_groups_) {
             auto& idx = group.last_apply_;

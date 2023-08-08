@@ -20,7 +20,7 @@ namespace omnistack::data_plane::sample_module {
     public:
         SampleModule() {}
 
-        static bool DefaultFilter(DataPlanePacket*) {
+        static bool DefaultFilter(Packet*) {
             Message("DefaultFilter\n");
             return true;
         }
@@ -30,12 +30,12 @@ namespace omnistack::data_plane::sample_module {
             return DefaultFilter;
         }
 
-        DataPlanePacket* MainLogic(DataPlanePacket* packet) override {
+        Packet* MainLogic(Packet* packet) override {
             Message("MainLogic\n");
             return packet;
         }
         
-        DataPlanePacket* TimerLogic(uint64_t tick) override {
+        Packet* TimerLogic(uint64_t tick) override {
             Message("TimerLogic\n");
             return nullptr;
         }

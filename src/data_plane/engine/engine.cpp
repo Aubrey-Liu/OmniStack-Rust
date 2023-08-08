@@ -171,16 +171,14 @@ namespace omnistack::data_plane {
     }
 
 
-    inline void Engine::ForwardPacket(std::vector<QueueItem>& packet_queue, DataPlanePacket* &packet, uint32_t node_idx) {
-        uint32_t reference_count = -- packet->reference_count_;
+    inline void Engine::ForwardPacket(std::vector<QueueItem>& packet_queue, Packet* &packet, uint32_t node_idx) {
         auto forward_mask = packet->next_hop_filter_;
         if(forward_mask == 0) [[unlikely]] {
-            if(packet->reference_count_ == 0) {
-                /* TODO: free this packet */
-            }
+            packet->Release();
             return;
         }
 
+        uint32_t reference_count = packet->reference_count_ - 1;
         packet->upstream_node_ = local_to_global[node_idx];
         do [[unlikely]] {
             auto idx = std::countr_zero(forward_mask);
@@ -237,8 +235,10 @@ namespace omnistack::data_plane {
                     modules_[node_idx]->ApplyDownstreamFilters(return_packet);
                     ForwardPacket(packet_queue, return_packet, node_idx);
                 }
-                while (return_packet != nullptr) [[unlikely]]
+                while (return_packet != nullptr) [[unlikely]] {
+                    modules_[node_idx]->ApplyDownstreamFilters(return_packet);
                     ForwardPacket(packet_queue, return_packet, node_idx);
+                }
             }
         }
     }
