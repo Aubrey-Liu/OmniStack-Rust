@@ -5,8 +5,6 @@
 #include <omnistack/module/module.hpp>
 #include <omnistack/common/protocol_headers.hpp>
 
-#include <arpa/inet.h>
-
 namespace omnistack::data_plane::ipv4_parser {
 
     using namespace omnistack::common;
@@ -28,6 +26,10 @@ namespace omnistack::data_plane::ipv4_parser {
         constexpr ModuleType type_() override { return ModuleType::kReadWrite; }
     };
 
+    static inline void LogIpv4Address(const char* message, uint32_t ip) {
+        printf("%s%d.%d.%d.%d\n", message, ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff, (ip >> 24) & 0xff);
+    }
+
     bool Ipv4Parser::DefaultFilter(DataPlanePacket* packet) {
         PacketHeader &eth = packet->packet_headers_[0];
         EthernetHeader* eth_header = reinterpret_cast<EthernetHeader*>(eth.data_);
@@ -41,6 +43,13 @@ namespace omnistack::data_plane::ipv4_parser {
         ipv4.data_ = reinterpret_cast<unsigned char*>(ipv4_header);
         packet->length_ = ntohs(ipv4_header->len) + packet->offset_;
         packet->offset_ += ipv4.length_;
+
+        /* TODO: define a set of log helper */
+#ifdef OMNI_DEBUG
+        LogIpv4Address("[Ipv4Parser] src = ", ipv4_header->src);
+        LogIpv4Address("[Ipv4Parser] dst = ", ipv4_header->dst);
+#endif
+
         return packet;
     }
 
