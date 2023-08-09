@@ -45,7 +45,7 @@ namespace omnistack {
             inline bool CheckToken() {
                 if (token != memory::thread_id) [[unlikely]]
                     return false;
-                if (need_return[memory::thread_id] == false) [[unlikely]] {
+                if (need_return[memory::thread_id]) [[unlikely]] {
                     SendTokenMessage(RpcRequestType::kReturn, this);
                     return false;
                 }

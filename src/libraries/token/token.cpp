@@ -520,11 +520,10 @@ namespace omnistack::token
 
     void SendTokenMessage(RpcRequestType type, Token* token) {
         local_rpc_meta.cond_rpc_finished = false;
-        static RpcRequest local_req = {
-            .type = type,
-            .token_id = token ? token->token_id : ~0,
-            .thread_id = memory::thread_id
-        };
+        static thread_local RpcRequest local_req;
+        local_req.type = type;
+        local_req.token_id = token ? token->token_id : ~0;
+        local_req.thread_id = memory::thread_id;
 
         {
             std::unique_lock<std::mutex> _(rpc_request_lock);
