@@ -40,7 +40,7 @@ namespace omnistack::data_plane::tcp_parser {
         TcpHeader* tcp_header = reinterpret_cast<TcpHeader*>(packet->data_ + packet->offset_);
         PacketHeader &tcp = *(packet->header_tail_ ++);
         tcp.length_ = tcp_header->dataofs << 2;
-        tcp.data_ = reinterpret_cast<unsigned char*>(tcp_header);
+        tcp.data_ = reinterpret_cast<char*>(tcp_header);
         packet->offset_ += tcp.length_;
         return packet;
     }

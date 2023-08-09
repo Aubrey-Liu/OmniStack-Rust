@@ -26,7 +26,7 @@ namespace omnistack::packet {
 
     struct PacketHeader {
         uint8_t length_;
-        unsigned char* data_;
+        char* data_;
     };
 
     class PacketPool;
@@ -55,7 +55,7 @@ namespace omnistack::packet {
         uint32_t custom_mask_;      // bitmask, module can use for transferring infomation
         uint64_t custom_value_;     // value, module can use for transferring data
         PacketHeader* header_tail_; // pointer to decoded headers' tail
-        unsigned char* data_;       // pointer to packet data
+        char* data_;                // pointer to packet data
         uint64_t iova_;             // IO address for DMA
         uint32_t flow_hash_;
         uint16_t header_offset_;    // offset of packet_header_data_
@@ -66,9 +66,9 @@ namespace omnistack::packet {
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         uint32_t upstream_node_;        /* identify the upstream node of current packet */
 
-        unsigned char mbuf_[kPacketMbufSize];
+        char mbuf_[kPacketMbufSize];
         PacketHeader packet_headers_[kPacketMaxHeaderNum];
-        unsigned char packet_header_data_[kPacketMaxHeaderNum * kPacketMaxHeaderLength];
+        char packet_header_data_[kPacketMaxHeaderNum * kPacketMaxHeaderLength];
     };
 
     class PacketPool {
@@ -144,6 +144,7 @@ namespace omnistack::packet {
     }
 
     inline void PacketPool::Free(Packet* packet) {
+        printf("free packet\n");
         memory_pool_->Put(packet);
     }
 
