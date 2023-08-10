@@ -40,7 +40,7 @@ namespace omnistack::data_plane::udp_parser {
         UdpHeader* udp_header = reinterpret_cast<UdpHeader*>(packet->data_ + packet->offset_);
         PacketHeader &udp = *(packet->header_tail_ ++);
         udp.length_ = sizeof(UdpHeader);
-        udp.data_ = reinterpret_cast<unsigned char*>(udp_header);
+        udp.data_ = reinterpret_cast<char*>(udp_header);
         packet->offset_ += udp.length_;
         return packet;
     }

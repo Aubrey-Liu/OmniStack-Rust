@@ -41,7 +41,7 @@ namespace omnistack::data_plane::ipv4_parser {
         Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + packet->offset_);
         PacketHeader &ipv4 = *(packet->header_tail_ ++);
         ipv4.length_ = ipv4_header->ihl << 2;
-        ipv4.data_ = reinterpret_cast<unsigned char*>(ipv4_header);
+        ipv4.data_ = reinterpret_cast<char*>(ipv4_header);
         packet->length_ = ntohs(ipv4_header->len) + packet->offset_;
         packet->offset_ += ipv4.length_;
 
