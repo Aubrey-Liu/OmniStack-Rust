@@ -1,3 +1,6 @@
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_OLD ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+
 include(FetchContent)
 FetchContent_Declare(
     googletest
@@ -10,3 +13,5 @@ include(GoogleTest)
 
 add_subdirectory(libraries)
 add_subdirectory(data_plane)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_OLD})
