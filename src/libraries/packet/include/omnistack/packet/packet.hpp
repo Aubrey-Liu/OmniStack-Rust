@@ -2,8 +2,8 @@
 // Created by liuhao on 23-6-3.
 //
 
-#ifndef OMNISTACK_PACKET_H
-#define OMNISTACK_PACKET_H
+#ifndef OMNISTACK_PACKET_HPP
+#define OMNISTACK_PACKET_HPP
 
 #include <string>
 
@@ -215,4 +215,4 @@ namespace omnistack::packet {
     }
 }
 
-#endif //OMNISTACK_PACKET_H
+#endif //OMNISTACK_PACKET_HPP

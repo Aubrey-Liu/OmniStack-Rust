@@ -1,0 +1,7 @@
+add_library(omni_hashtable STATIC include/omnistack/hashtable/hashtable.hpp)
+set_target_properties(omni_hashtable PROPERTIES LINKER_LANGUAGE CXX)
+target_include_directories(omni_hashtable PUBLIC include)
+if (OMNI_HASHTABLE_BACKEND_DPDK)
+    target_link_libraries(omni_hashtable PUBLIC PkgConfig::DPDK)
+endif()
+set(OMNI_LIBRARIES ${OMNI_LIBRARIES} omni_hashtable PARENT_SCOPE)
