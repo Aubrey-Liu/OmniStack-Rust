@@ -1,0 +1,3 @@
+add_library(omni_data_plane_tcp_flow_cache SHARED tcp_flow_cache.cpp)
+target_include_directories(omni_data_plane_tcp_flow_cache PRIVATE include)
+target_link_libraries(omni_data_plane_tcp_flow_cache PUBLIC ${OMNI_DATA_PLANE_LIB})

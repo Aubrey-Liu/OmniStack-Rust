@@ -23,7 +23,7 @@ namespace omnistack::data_plane::tcp_shared {
 
         TcpFlow* CreateFlow(uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port);
 
-        TcpFlow* FindFlow(uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port);
+        TcpFlow* GetFlow(uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port);
 
         void AcquireFlow(TcpFlow* flow);
 
@@ -77,7 +77,7 @@ namespace omnistack::data_plane::tcp_shared {
         return flow;
     }
 
-    inline TcpFlow* TcpSharedHandle::FindFlow(uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port) {
+    inline TcpFlow* TcpSharedHandle::GetFlow(uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port) {
         static thread_local TcpFlow* key;
         key->local_ip_ = local_ip;
         key->remote_ip_ = remote_ip;

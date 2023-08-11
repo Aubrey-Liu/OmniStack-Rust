@@ -52,6 +52,7 @@ namespace omnistack::packet {
         uint16_t offset_;           // current decoded data offset
         uint16_t nic_;              // id of source or target NIC
         MbufType mbuf_type_;        // Origin, DPDK, Indirect
+        /* TODO: change this to register mechanism */
         uint32_t custom_mask_;      // bitmask, module can use for transferring infomation
         uint64_t custom_value_;     // value, module can use for transferring data
         PacketHeader* header_tail_; // pointer to decoded headers' tail
