@@ -25,7 +25,7 @@ namespace omnistack::packet {
     PacketPool* PacketPool::CreatePacketPool(std::string_view name_prefix, uint32_t packet_count) {
         auto packet_pool = new PacketPool();
         std::string name(name_prefix.data());
-        name += "_packet_pool";
+        name += "_PacketPool";
         packet_pool->memory_pool_ = omnistack::memory::AllocateMemoryPool(name.data(), sizeof(Packet), packet_count);
         return packet_pool;
     }
