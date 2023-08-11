@@ -7,7 +7,7 @@
 #include <omnistack/module/module.hpp>
 
 namespace omnistack::data_plane::tcp_flow_cache {
-    using namespace tcp_shared;
+    using namespace tcp_common;
 
     inline constexpr char kName[] = "TcpFlowCache";
 
@@ -24,7 +24,7 @@ namespace omnistack::data_plane::tcp_flow_cache {
 
         Packet* MainLogic(Packet* packet) override;
 
-        void Init(std::string_view name_prefix, const PacketPool& packet_pool) override;
+        void Initialize(std::string_view name_prefix, PacketPool* packet_pool) override;
 
         void Destroy() override;
 
@@ -58,15 +58,15 @@ namespace omnistack::data_plane::tcp_flow_cache {
         uint16_t local_port = tcp_header->dport;
         uint16_t remote_port = tcp_header->sport;
 
-        if(flow != nullptr) {
+        if(flow != nullptr) [[likely]] {
             bool is_same = flow->local_ip_ == local_ip && flow->remote_ip_ == remote_ip && flow->local_port_ == local_port && flow->remote_port_ == remote_port;
-            if(!is_same) {
+            if(!is_same) [[unlikely]] {
                 tcp_shared_handle_->ReleaseFlow(flow);
                 flow = nullptr;
             }
         }
 
-        if(flow == nullptr) {
+        if(flow == nullptr) [[unlikely]] {
             flow = tcp_shared_handle_->GetFlow(local_ip, remote_ip, local_port, remote_port);
             if(flow == nullptr) return packet;
             flow_cache_[packet->flow_hash_ & kTcpFlowCacheMask] = flow;
@@ -78,7 +78,7 @@ namespace omnistack::data_plane::tcp_flow_cache {
         return packet;
     }
 
-    void TcpFlowCache::Init(std::string_view name_prefix, const PacketPool& packet_pool) {
+    void TcpFlowCache::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
         tcp_shared_handle_ = TcpSharedHandle::Create(name_prefix);
         for(auto &i : flow_cache_) i = nullptr;
     }

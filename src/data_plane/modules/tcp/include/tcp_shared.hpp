@@ -9,7 +9,7 @@
 #include <tcp_constant.hpp>
 #include <omnistack/hashtable/hashtable.hpp>
 
-namespace omnistack::data_plane::tcp_shared {
+namespace omnistack::data_plane::tcp_common {
 
     class TcpSharedHandle {
     public:

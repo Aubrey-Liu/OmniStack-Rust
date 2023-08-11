@@ -40,7 +40,7 @@ namespace omnistack::data_plane::sample_module {
             return nullptr;
         }
 
-        void Init(std::string_view name_prefix, const PacketPool& packet_pool) override {
+        void Initialize(std::string_view name_prefix, PacketPool* packet_pool) override {
             Message("Init\n");
         }
 

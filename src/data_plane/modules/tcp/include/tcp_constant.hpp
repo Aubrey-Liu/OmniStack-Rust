@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-namespace omnistack::data_plane::tcp_shared {
+namespace omnistack::data_plane::tcp_common {
     constexpr uint32_t kTcpMaxFlowCount = 65536;
     constexpr uint32_t kTcpFlowTableSize = kTcpMaxFlowCount * 2;
 }

@@ -7,7 +7,7 @@
 
 #include <omnistack/memory/memory.h>
 
-namespace omnistack::data_plane::tcp_shared {
+namespace omnistack::data_plane::tcp_common {
 
     class TcpReceiveBuffer {
     public:

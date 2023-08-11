@@ -37,11 +37,11 @@ namespace omnistack::data_plane {
             /* create modules and init them */
             for(auto idx : sub_graph.node_ids_) {
                 auto& module_name = graph.node_names_[idx];
-                modules_.push_back(ModuleFactory::instance().Create(module_name));
+                modules_.push_back(ModuleFactory::instance_().Create(module_name));
                 uint32_t module_id = modules_.size() - 1;
                 global_to_local.emplace(idx, module_id);
                 local_to_global.emplace(module_id, idx);
-                modules_.at(module_id)->Init(name_prefix, *packet_pool);
+                modules_.at(module_id)->Initialize(name_prefix, packet_pool);
             }
 
             module_num_ = modules_.size();

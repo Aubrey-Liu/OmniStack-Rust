@@ -53,7 +53,7 @@ namespace omnistack::data_plane {
 
         virtual Packet* TimerLogic(uint64_t tick) { return nullptr; }
 
-        virtual void Init(std::string_view name_prefix, const PacketPool& packet_pool) {};
+        virtual void Initialize(std::string_view name_prefix, PacketPool* packet_pool) {};
 
         virtual void Destroy() {};
 
@@ -83,7 +83,7 @@ namespace omnistack::data_plane {
     public:
         typedef std::function<std::unique_ptr<BaseModule>()> CreateFunction;
 
-        static ModuleFactory& instance() {
+        static ModuleFactory& instance_() {
             static ModuleFactory factory;
             return factory;
         }
@@ -100,8 +100,6 @@ namespace omnistack::data_plane {
             if(!module_list_.insert(std::make_pair(name, func)).second) {
                 /* TODO: report error */
                 return;
-            }
-            else {
             }
         }
 
@@ -129,7 +127,7 @@ namespace omnistack::data_plane {
 
         struct FactoryEntry {
             FactoryEntry() {
-                ModuleFactory::instance().Register(std::string(name), CreateModuleObject);
+                ModuleFactory::instance_().Register(std::string(name), CreateModuleObject);
             }
             inline void DoNothing() const {}
         };

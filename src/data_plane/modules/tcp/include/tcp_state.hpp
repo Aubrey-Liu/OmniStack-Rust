@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <tcp_buffer.hpp>
 
-namespace omnistack::data_plane::tcp_shared {
+namespace omnistack::data_plane::tcp_common {
 
     enum class TcpFlowState {
         kClosed,
