@@ -2,8 +2,8 @@
 // Created by liuhao on 23-5-30.
 //
 
-#ifndef OMNISTACK_ENGINE_HPP
-#define OMNISTACK_ENGINE_HPP
+#ifndef OMNISTACK_ENGINE_ENGINE_HPP
+#define OMNISTACK_ENGINE_ENGINE_HPP
 
 #include <omnistack/graph/graph.hpp>
 #include <omnistack/module/module.hpp>
@@ -12,6 +12,9 @@ class Channel;
 
 namespace omnistack::data_plane {
     /* Engine receives a SubGraph and runs it */
+
+    /* TODO: add functionality to link to any module in graph */
+
     class Engine {
     public:
         void Init(SubGraph& sub_graph, uint32_t core, std::string_view name_prefix);
@@ -20,10 +23,13 @@ namespace omnistack::data_plane {
 
         void Destroy();
 
+        void RaiseEvent(Event* event);
+
         static void SigintHandler(int sig) { stop_ = true; }
 
     private:
         typedef std::pair<uint32_t, Packet*> QueueItem;
+        std::vector<QueueItem> packet_queue_;
 
         /* graph info */
         uint32_t module_num_;
@@ -43,7 +49,7 @@ namespace omnistack::data_plane {
 
         static thread_local volatile bool stop_;
 
-        void ForwardPacket(std::vector<QueueItem>& packet_queue, Packet* &packet, uint32_t node_idx);
+        void ForwardPacket(Packet* &packet, uint32_t node_idx);
 
         bool CompareLinks(uint32_t x, uint32_t y);
 
@@ -51,4 +57,4 @@ namespace omnistack::data_plane {
     };
 }
 
-#endif //OMNISTACK_ENGINE_HPP
+#endif //OMNISTACK_ENGINE_ENGINE_HPP

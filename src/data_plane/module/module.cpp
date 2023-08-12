@@ -5,7 +5,7 @@
 #include <omnistack/module/module.hpp>
 
 namespace omnistack::data_plane {
-    void BaseModule::RegisterDownstreamFilters(const std::vector<Filter> &filters,
+    inline void BaseModule::RegisterDownstreamFilters(const std::vector<Filter> &filters,
                                                const std::vector<uint32_t> &filter_masks,
                                                const std::vector<std::set<uint32_t>> &groups,
                                                const std::vector<FilterGroupType> &group_types) {
@@ -26,11 +26,15 @@ namespace omnistack::data_plane {
         }
     }
 
-    void BaseModule::set_upstream_nodes_(const std::vector<std::pair<std::string, uint32_t>> &upstream_nodes) {
+    inline void BaseModule::set_raise_event_(std::function<void(Event *event)> raise_event) {
+        raise_event_ = raise_event;
+    }
+
+    inline void BaseModule::set_upstream_nodes_(const std::vector<std::pair<std::string, uint32_t>> &upstream_nodes) {
         upstream_nodes_ = upstream_nodes;
     }
 
-    void BaseModule::ApplyDownstreamFilters(omnistack::data_plane::Packet *packet) {
+    inline void BaseModule::ApplyDownstreamFilters(omnistack::data_plane::Packet *packet) {
         auto& mask = packet->next_hop_filter_;
         for(auto& group : filter_groups_) {
             auto& idx = group.last_apply_;

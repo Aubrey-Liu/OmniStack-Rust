@@ -2,27 +2,13 @@
 // Created by liuhao on 23-8-10.
 //
 
-#ifndef OMNISTACK_TCP_STATE_HPP
-#define OMNISTACK_TCP_STATE_HPP
+#ifndef OMNISTACK_TCP_COMMON_TCP_STATE_HPP
+#define OMNISTACK_TCP_COMMON_TCP_STATE_HPP
 
 #include <cstdint>
-#include <tcp_buffer.hpp>
+#include <omnistack/tcp_common/tcp_buffer.hpp>
 
 namespace omnistack::data_plane::tcp_common {
-
-    enum class TcpFlowState {
-        kClosed,
-        kListen,
-        kSynSent,
-        kSynReceived,
-        kEstablished,
-        kFinWait1,
-        kFinWait2,  
-        kCloseWait,
-        kClosing,
-        kLastAck,
-        kTimeWait
-    };
 
     class TcpReceiveVariables {
     public:
@@ -46,12 +32,26 @@ namespace omnistack::data_plane::tcp_common {
 
     class TcpFlow {
     public:
+        enum class State {
+            kClosed,
+            kListen,
+            kSynSent,
+            kSynReceived,
+            kEstablished,
+            kFinWait1,
+            kFinWait2,  
+            kCloseWait,
+            kClosing,
+            kLastAck,
+            kTimeWait
+        };
+
         uint32_t local_ip_;
         uint32_t remote_ip_;
         uint16_t local_port_;
         uint16_t remote_port_;
 
-        TcpFlowState state_;
+        State state_;
 
         uint32_t reference_count_;  // reference count for this flow
         uint16_t mss;               // maximum segment size
@@ -110,4 +110,4 @@ namespace omnistack::data_plane::tcp_common {
 
 }
 
-#endif //OMNISTACK_TCP_STATE_HPP
+#endif //OMNISTACK_TCP_COMMON_TCP_STATE_HPP

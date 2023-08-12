@@ -34,6 +34,8 @@ namespace omnistack::data_plane {
 
         /* initialize forward structure from graph info */
         {
+            packet_queue_.clear();
+
             /* create modules and init them */
             for(auto idx : sub_graph.node_ids_) {
                 auto& module_name = graph.node_names_[idx];
@@ -163,6 +165,8 @@ namespace omnistack::data_plane {
     }
 
     void Engine::Destroy() {
+        packet_queue_.clear();
+
         /* destroy modules */
         for(auto& module : modules_)
             module->Destroy();
@@ -171,7 +175,7 @@ namespace omnistack::data_plane {
     }
 
 
-    inline void Engine::ForwardPacket(std::vector<QueueItem>& packet_queue, Packet* &packet, uint32_t node_idx) {
+    inline void Engine::ForwardPacket(Packet* &packet, uint32_t node_idx) {
         auto forward_mask = packet->next_hop_filter_;
         if(forward_mask == 0) [[unlikely]] {
             packet->Release();
@@ -186,7 +190,7 @@ namespace omnistack::data_plane {
             auto downstream_node = downstream_links_[node_idx][idx];
 
             if(module_read_only_[downstream_node]) {
-                packet_queue.emplace_back(downstream_node, packet);
+                packet_queue_.emplace_back(downstream_node, packet);
                 reference_count ++;
             }
             else if(downstream_node < module_num_) {
@@ -194,7 +198,7 @@ namespace omnistack::data_plane {
                     /* TODO: duplicate the packet and enqueue it */
                 }
                 else {
-                    packet_queue.emplace_back(downstream_node, packet);
+                    packet_queue_.emplace_back(downstream_node, packet);
                     reference_count ++;
                 }
             }
@@ -208,8 +212,6 @@ namespace omnistack::data_plane {
     }
 
     void Engine::Run() {
-        std::vector<QueueItem> packet_queue;
-
         next_hop_filter_default_.resize(module_num_);
         module_read_only_.resize(assigned_module_idx_, false);
         for(int i = 0; i < module_num_; i ++) {
@@ -224,20 +226,20 @@ namespace omnistack::data_plane {
             /* TODO: handle timer logic */
 
             /* process packets in queue */
-            while(!packet_queue.empty()) [[likely]] {
-                auto node_idx = packet_queue.back().first;
-                auto packet = packet_queue.back().second;
-                packet_queue.pop_back();
+            while(!packet_queue_.empty()) [[likely]] {
+                auto node_idx = packet_queue_.back().first;
+                auto packet = packet_queue_.back().second;
+                packet_queue_.pop_back();
 
                 packet->next_hop_filter_ = next_hop_filter_default_[node_idx];
                 auto return_packet = modules_[node_idx]->MainLogic(packet);
                 if(return_packet != nullptr) [[likely]] {
                     modules_[node_idx]->ApplyDownstreamFilters(return_packet);
-                    ForwardPacket(packet_queue, return_packet, node_idx);
+                    ForwardPacket(return_packet, node_idx);
                 }
                 while (return_packet != nullptr) [[unlikely]] {
                     modules_[node_idx]->ApplyDownstreamFilters(return_packet);
-                    ForwardPacket(packet_queue, return_packet, node_idx);
+                    ForwardPacket(return_packet, node_idx);
                 }
             }
         }

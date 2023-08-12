@@ -2,8 +2,8 @@
 // Created by liuhao on 23-5-30.
 //
 
-#ifndef OMNISTACK_GRAPH_H
-#define OMNISTACK_GRAPH_H
+#ifndef OMNISTACK_GRAPH_GRAPH_H
+#define OMNISTACK_GRAPH_GRAPH_H
 
 #include <vector>
 #include <cstdint>
@@ -57,4 +57,4 @@ namespace omnistack::data_plane {
         std::map<uint32_t, SubGraph> sub_graphs_;
     };
 }
-#endif //OMNISTACK_GRAPH_H
+#endif //OMNISTACK_GRAPH_GRAPH_H

@@ -2,11 +2,11 @@
 // Created by liuhao on 23-8-10.
 //
 
-#ifndef OMNISTACK_TCP_SHARED_HPP
-#define OMNISTACK_TCP_SHARED_HPP
+#ifndef OMNISTACK_TCP_COMMON_TCP_SHARED_HPP
+#define OMNISTACK_TCP_COMMON_TCP_SHARED_HPP
 
-#include <tcp_state.hpp>
-#include <tcp_constant.hpp>
+#include <omnistack/tcp_common/tcp_state.hpp>
+#include <omnistack/tcp_common/tcp_constant.hpp>
 #include <omnistack/hashtable/hashtable.hpp>
 
 namespace omnistack::data_plane::tcp_common {
@@ -31,6 +31,7 @@ namespace omnistack::data_plane::tcp_common {
 
     private:
         hashtable::Hashtable* flow_table_;
+        hashtable::Hashtable* listen_table_;
         memory::MemoryPool* flow_pool_;
         memory::MemoryPool* receive_buffer_pool_;
         memory::MemoryPool* send_buffer_pool_;
@@ -100,4 +101,4 @@ namespace omnistack::data_plane::tcp_common {
 
 }
 
-#endif //OMNISTACK_TCP_SHARED_HPP
+#endif //OMNISTACK_TCP_COMMON_TCP_SHARED_HPP

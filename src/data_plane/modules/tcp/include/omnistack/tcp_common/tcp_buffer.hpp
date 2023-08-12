@@ -2,8 +2,8 @@
 // Created by liuhao on 23-8-10.
 //
 
-#ifndef OMNISTACK_TCP_BUFFER_HPP
-#define OMNISTACK_TCP_BUFFER_HPP
+#ifndef OMNISTACK_TCP_COMMON_TCP_BUFFER_HPP
+#define OMNISTACK_TCP_COMMON_TCP_BUFFER_HPP
 
 #include <omnistack/memory/memory.h>
 
@@ -33,4 +33,4 @@ namespace omnistack::data_plane::tcp_common {
 
 }
 
-#endif //OMNISTACK_TCP_BUFFER_HPP
+#endif //OMNISTACK_TCP_COMMON_TCP_BUFFER_HPP

@@ -2,8 +2,8 @@
 // Created by liuhao on 23-5-30.
 //
 
-#ifndef OMNISTACK_MODULE_HPP
-#define OMNISTACK_MODULE_HPP
+#ifndef OMNISTACK_MODULE_MODULE_HPP
+#define OMNISTACK_MODULE_MODULE_HPP
 
 #include <iostream>
 #include <cstdint>
@@ -16,6 +16,7 @@
 #include <map>
 #include <set>
 #include <omnistack/packet/packet.hpp>
+#include <omnistack/module/event.hpp>
 
 namespace omnistack::data_plane {
 
@@ -43,6 +44,8 @@ namespace omnistack::data_plane {
 
         void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
 
+        void set_raise_event_(std::function<void(Event* event)> raise_event);
+
         void set_upstream_nodes_(const std::vector<std::pair<std::string, uint32_t>>& upstream_nodes);
 
         void ApplyDownstreamFilters(Packet* packet);
@@ -56,6 +59,10 @@ namespace omnistack::data_plane {
         virtual void Initialize(std::string_view name_prefix, PacketPool* packet_pool) {};
 
         virtual void Destroy() {};
+
+        virtual std::vector<EventRegisterEntry> RegisterEventCallback() { return {}; }
+
+        virtual void EventCallback(Event* event) {};
 
         virtual constexpr bool allow_duplication_() { return false; }
 
@@ -75,6 +82,7 @@ namespace omnistack::data_plane {
             uint8_t last_apply_;
         };
 
+        std::function<void(Event* event)> raise_event_;
         std::vector<FilterGroup> filter_groups_;
         std::vector<std::pair<std::string, uint32_t>> upstream_nodes_;
     };
@@ -146,4 +154,4 @@ namespace omnistack::data_plane {
     const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;
 }
 
-#endif //OMNISTACK_MODULE_HPP
+#endif //OMNISTACK_MODULE_MODULE_HPP

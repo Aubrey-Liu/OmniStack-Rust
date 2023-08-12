@@ -2,8 +2,8 @@
 // Created by liuhao on 23-8-11.
 //
 
-#ifndef OMNISTACK_TCP_CONGESTION_CONTROL_HPP
-#define OMNISTACK_TCP_CONGESTION_CONTROL_HPP
+#ifndef OMNISTACK_TCP_COMMON_TCP_CONGESTION_CONTROL_HPP
+#define OMNISTACK_TCP_COMMON_TCP_CONGESTION_CONTROL_HPP
 
 #include <cstdint>
 #include <functional>
@@ -103,4 +103,4 @@ namespace omnistack::data_plane::tcp_common {
     typename TcpCongestionControl<T, name>::FactoryEntry const TcpCongestionControl<T, name>::factory_entry_;
 }
 
-#endif //OMNISTACK_TCP_CONGESTION_CONTROL_HPP
+#endif //OMNISTACK_TCP_COMMON_TCP_CONGESTION_CONTROL_HPP
