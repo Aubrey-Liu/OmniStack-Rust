@@ -27,7 +27,7 @@ namespace omnistack::data_plane::ipv4_parser {
         constexpr ModuleType type_() override { return ModuleType::kReadWrite; }
     };
 
-    static inline void LogIpv4Address(const char* message, uint32_t ip) {
+    inline void LogIpv4Address(const char* message, uint32_t ip) {
         printf("%s%d.%d.%d.%d\n", message, ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff, (ip >> 24) & 0xff);
     }
 

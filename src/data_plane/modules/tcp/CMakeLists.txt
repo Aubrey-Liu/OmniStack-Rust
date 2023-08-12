@@ -1,3 +1,17 @@
+SET(OMNI_TCP_OPTION_MSS ON CACHE BOOL "Enable TCP option MSS")
+SET(OMNI_TCP_OPTION_WSOPT ON CACHE BOOL "Enable TCP option WSOPT")
+SET(OMNI_TCP_OPTION_TSPOT ON CACHE BOOL "Enable TCP option TSPOT")
+
+if(OMNI_TCP_OPTION_MSS)
+    add_compile_definitions(OMNI_TCP_OPTION_MSS)
+endif()
+if(OMNI_TCP_OPTION_WSOPT)
+    add_compile_definitions(OMNI_TCP_OPTION_WSOPT)
+endif()
+if(OMNI_TCP_OPTION_TSPOT)
+    add_compile_definitions(OMNI_TCP_OPTION_TSPOT)
+endif()
+
 add_library(omni_data_plane_tcp_common 
 STATIC 
     include/omnistack/tcp_common/tcp_constant.hpp 

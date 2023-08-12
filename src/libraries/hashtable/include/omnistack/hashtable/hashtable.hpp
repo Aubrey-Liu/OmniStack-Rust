@@ -43,6 +43,10 @@ namespace omnistack::hashtable {
 
             void* Lookup(const void* key, HashValue hash_value);
 
+            bool LookupKey(const void* key);
+
+            bool LookupKey(const void* key, HashValue hash_value);
+
             void Foreach(ForeachCallback callback, void* param);
 
         private:
@@ -110,14 +114,22 @@ namespace omnistack::hashtable {
 
         inline void* Hashtable::Lookup(const void* key) {
             void* value;
-            rte_hash_lookup_data(hash_table_, key, &value);
+            if(rte_hash_lookup_data(hash_table_, key, &value) < 0) return nullptr;
             return value;
         }
 
         inline void* Hashtable::Lookup(const void* key, HashValue hash_value) {
             void* value;
-            rte_hash_lookup_with_hash_data(hash_table_, key, hash_value, &value);
+            if(rte_hash_lookup_with_hash_data(hash_table_, key, hash_value, &value) < 0) return nullptr;
             return value;
+        }
+
+        inline bool Hashtable::LookupKey(const void* key) {
+            return rte_hash_lookup(hash_table_, key) >= 0;
+        }
+
+        inline bool Hashtable::LookupKey(const void* key, HashValue hash_value) {
+            return rte_hash_lookup_with_hash(hash_table_, key, hash_value) >= 0;
         }
 
         inline void Hashtable::Foreach(ForeachCallback callback, void* param) {

@@ -9,7 +9,7 @@ namespace omnistack::data_plane::sample_module {
 
     inline constexpr char kName[] = "SampleModule";
 
-    static inline void Message(const char* format, ...) {
+    inline void Message(const char* format, ...) {
         va_list args;
         va_start(args, format);
         vprintf(format, args);

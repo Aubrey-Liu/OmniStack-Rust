@@ -10,6 +10,8 @@
 namespace omnistack::data_plane::tcp_common {
     constexpr uint32_t kTcpMaxFlowCount = 65536;
     constexpr uint32_t kTcpFlowTableSize = kTcpMaxFlowCount * 2;
+
+    constexpr uint16_t kTcpMaxSegmentSize = 1448;
 }
 
 #endif //OMNISTACK_TCP_COMMON_TCP_CONSTANT_HPP
