@@ -249,6 +249,15 @@ namespace omnistack {
 #endif
             }
 
+            inline T* operator+(const uint32_t& a) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                return ptr_ + a;
+#else
+                if (offset_ == ~0) [[unlikely]] return (T*)(a * sizeof(T));
+                return (T*)(virt_base_addrs[process_id] + offset_ + a * sizeof(T));
+#endif
+            }
+
             template<typename Type> friend inline Type& operator*(const Pointer<Type>& p);
 
             /**
