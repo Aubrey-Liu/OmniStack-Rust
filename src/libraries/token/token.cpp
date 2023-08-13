@@ -84,15 +84,9 @@ namespace omnistack::token
     struct RpcResponse {
         uint64_t id;
         RpcResponseStatus status;
-        union {
-            struct {
-#if defined(OMNIMEM_BACKEND_DPDK)
-                Token* token_ptr;
-#else
-                uint64_t token_offset;
-#endif
-            } new_token;
-        };
+        struct {
+            memory::Pointer<Token> token;
+        } new_token;
     };
 
     struct RpcRequestMeta {
@@ -152,9 +146,6 @@ namespace omnistack::token
             cond_control_plane_started.notify_all();
         }
         memory::InitializeSubsystemThread();
-#if !defined(OMNIMEM_BACKEND_DPDK)
-        virt_base_addrs = memory::GetVirtBaseAddrs();
-#endif
         int epfd;
         constexpr int kMaxEvents = 16;
 #if defined(__APPLE__)
@@ -333,11 +324,7 @@ namespace omnistack::token
                                     id_to_token[token->token_id] = token;
 
                                     resp.status = RpcResponseStatus::kSuccess;
-#if defined(OMNIMEM_BACKEND_DPDK)
-                                    resp.new_token.token_ptr = token;
-#else
-                                    resp.new_token.token_offset = reinterpret_cast<uint8_t*>(token) - virt_base_addrs[memory::process_id];
-#endif
+                                    resp.new_token.token = memory::Pointer(token);
                                     break;
                                 }
                                 case RpcRequestType::kAcquire: {
@@ -501,10 +488,6 @@ namespace omnistack::token
         auto control_plane_sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_token_sock" +
             std::to_string(control_plane_id) + ".socket";
 
-#if !defined(OMNIMEM_BACKEND_DPDK)
-        virt_base_addrs = memory::GetVirtBaseAddrs();
-#endif
-
         sockaddr_un addr{};
         addr.sun_family = AF_UNIX;
         if (control_plane_sock_name.length() >= sizeof(addr.sun_path))
@@ -556,10 +539,6 @@ namespace omnistack::token
         auto& resp = local_rpc_meta.resp;
         if (resp.status != RpcResponseStatus::kSuccess)
             throw std::runtime_error("Failed to create token");
-#if defined(OMNIMEM_BACKEND_DPDK)
-        return resp.new_token.token_ptr;
-#else
-        return reinterpret_cast<Token*>(virt_base_addrs[memory::process_id] + resp.new_token.token_offset);
-#endif
+        return resp.new_token.token.Get();
     }
 } // namespace omnistack::token

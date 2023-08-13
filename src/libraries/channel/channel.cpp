@@ -466,27 +466,17 @@ namespace omnistack::channel {
         auto region_meta = reinterpret_cast<memory::RegionMeta*>((uint8_t*)data - memory::kMetaHeadroomSize);
         region_meta->process_id = 0;
         if (!channel_ptrs_[memory::thread_id].Get()) [[unlikely]] {
-            auto channel = GetRawChannel(std::string(name) + "_raw_" + std::to_string(memory::thread_id));
-#if defined(OMNIMEM_BACKEND_DPDK)
-            channel_ptrs_[memory::thread_id] = channel;
-#else
-            channel_offsets[memory::thread_id] = (uint8_t*)channel - virt_base_addrs[memory::process_id];
-#endif
+            channel_ptrs_[memory::thread_id] = \
+                memory::Pointer(GetRawChannel(std::string(name) + "_raw_" + std::to_string(memory::thread_id)));
         }
-#if defined(OMNIMEM_BACKEND_DPDK)
-        auto channel = channel_ptrs_[memory::thread_id];
-#else
-        auto channel = reinterpret_cast<Channel*>(virt_base_addrs[memory::process_id] + channel_offsets[memory::thread_id]);
-#endif
+        auto& channel = channel_ptrs_[memory::thread_id];
         const auto ret_val = channel->Write(data);
         if (ret_val == 1) [[unlikely]] {
-            /// TODO: Update Binary Tree
             auto current_pos = memory::thread_id + (memory::kMaxThread - 1);
             while (current_pos) {
                 write_tick_[current_pos] = memory::thread_id;
                 current_pos >>= 1;
             }
-            write_tick_[memory::thread_id] ++;
         } else if (!ret_val) [[likely]] {
             return 0;
         }
@@ -510,20 +500,34 @@ namespace omnistack::channel {
         if (!reader_token_->CheckToken())
             reader_token_->AcquireToken();
 
-        uint64_t last_pos = 1;
+        uint64_t last_pos;
         if (current_channel_thread_id_ != 0) [[likely]] {
             auto& channel = current_channel_ptr_;
             auto ret = channel->Read();
             if (ret) [[likely]]
                 return ret;
             else {
+                last_pos = current_channel_thread_id_;
                 current_channel_ptr_ = nullptr;
                 current_channel_thread_id_ = 0;
             }
         }
 
-        /// TODO: Get a new channel from binary tree
-
+        last_pos += memory::kMaxThread - 1;
+        while (last_pos != 1) {
+            auto this_side_c = write_tick_[last_pos];
+            auto other_side_c = write_tick_[last_pos^1];
+            if (other_side_c && channel_ptrs_[other_side_c]->IsReadable()) [[likely]] {
+                current_channel_ptr_ = channel_ptrs_[other_side_c];
+                current_channel_thread_id_ = other_side_c;
+                break;
+            } else if (channel_ptrs_[this_side_c]->IsReadable()) {
+                current_channel_ptr_ = channel_ptrs_[this_side_c];
+                current_channel_thread_id_ = this_side_c;
+                break;
+            }
+            last_pos >>= 1;
+        }
 
         if (current_channel_thread_id_ != 0) [[likely]] {
             auto& channel = current_channel_ptr_;

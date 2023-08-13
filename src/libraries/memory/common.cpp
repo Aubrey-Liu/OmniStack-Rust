@@ -275,7 +275,6 @@ namespace omnistack::memory {
         region_meta->type = region_type;
         region_meta->process_id = 0;
         region_meta->ref_cnt = 1;
-        memset(region_meta, 0, aligned_size);
         return region_meta;
     }
 
