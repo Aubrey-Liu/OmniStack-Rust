@@ -32,16 +32,16 @@ namespace omnistack::data_plane::ipv4_parser {
     }
 
     bool Ipv4Parser::DefaultFilter(Packet* packet) {
-        PacketHeader &eth = packet->packet_headers_[0];
-        EthernetHeader* eth_header = reinterpret_cast<EthernetHeader*>(eth.data_);
+        auto& eth = packet->packet_headers_[0];
+        EthernetHeader* eth_header = reinterpret_cast<EthernetHeader*>(packet->data_ + eth.offset_);
         return eth_header->type == ETH_PROTO_TYPE_IPV4;
     }
 
     Packet* Ipv4Parser::MainLogic(Packet* packet) {
         Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + packet->offset_);
-        PacketHeader &ipv4 = *(packet->header_tail_ ++);
+        auto& ipv4 = packet->packet_headers_[packet->header_tail_ ++];
         ipv4.length_ = ipv4_header->ihl << 2;
-        ipv4.data_ = reinterpret_cast<char*>(ipv4_header);
+        ipv4.offset_ = packet->offset_;
         packet->length_ = ntohs(ipv4_header->len) + packet->offset_;
         packet->offset_ += ipv4.length_;
 

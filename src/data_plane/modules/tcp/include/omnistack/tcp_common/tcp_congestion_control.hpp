@@ -16,7 +16,7 @@ namespace omnistack::data_plane::tcp_common {
 
     class TcpCongestionControlBase {
     public:
-        TcpCongestionControlBase(TcpFlow*) : flow_(flow) {}
+        TcpCongestionControlBase(TcpFlow* flow) : flow_(flow) {}
         TcpCongestionControlBase(const TcpCongestionControlBase&) = delete;
         TcpCongestionControlBase(TcpCongestionControlBase&&) = delete;
         virtual ~TcpCongestionControlBase() {}
@@ -41,7 +41,7 @@ namespace omnistack::data_plane::tcp_common {
 
     class TcpCongestionControlFactory {
     public:
-        typedef std::function<TcpCongestionControlBase*()> CreateFunction;
+        typedef std::function<TcpCongestionControlBase*(TcpFlow*)> CreateFunction;
 
         static TcpCongestionControlFactory& instance_() {
             static TcpCongestionControlFactory factory;
@@ -63,10 +63,10 @@ namespace omnistack::data_plane::tcp_common {
             }
         }
 
-        [[nodiscard]] std::unique_ptr<TcpCongestionControlBase> Create(const std::string& name) const {
+        [[nodiscard]] TcpCongestionControlBase* Create(const std::string& name, TcpFlow* flow) const {
             auto it = congestion_control_algorithms_.find(name);
             if(it == congestion_control_algorithms_.end()) return nullptr;
-            return it->second();
+            return it->second(flow);
         }
 
     private:
@@ -76,8 +76,8 @@ namespace omnistack::data_plane::tcp_common {
     template<typename T, const char name[]>
     class TcpCongestionControl : public TcpCongestionControlBase {
     public:
-        static TcpCongestionControlBase* CreateCongestionControlObject() {
-            return new T();
+        static TcpCongestionControlBase* CreateCongestionControlObject(TcpFlow* flow) {
+            return new T(flow);
         }
 
         constexpr std::string_view name_() override { return std::string_view(name); }
@@ -101,6 +101,7 @@ namespace omnistack::data_plane::tcp_common {
 
     template<typename T, const char name[]>
     typename TcpCongestionControl<T, name>::FactoryEntry const TcpCongestionControl<T, name>::factory_entry_;
+
 }
 
 #endif //OMNISTACK_TCP_COMMON_TCP_CONGESTION_CONTROL_HPP

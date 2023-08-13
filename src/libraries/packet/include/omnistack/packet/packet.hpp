@@ -17,16 +17,15 @@
 
 namespace omnistack::packet {
     using namespace omnistack::common;
+    using omnistack::memory::Pointer;
 
-    /* TODO: explain what's the headroom for */
-    constexpr uint32_t kPacketMbufHeadroom = 128;
+    constexpr uint32_t kPacketMbufHeadroom = 128;   // headroom for mbuf to store packet header
     constexpr uint32_t kPacketMbufSize = ((kMtu + kPacketMbufHeadroom + 63)>>6)<<6;
     constexpr uint32_t kPacketMaxHeaderNum = 4;
-    constexpr uint32_t kPacketMaxHeaderLength = 128;
 
     struct PacketHeader {
         uint8_t length_;
-        char* data_;
+        int offset_;         // offset referred to data_ in packet
     };
 
     class PacketPool;
@@ -49,27 +48,24 @@ namespace omnistack::packet {
         uint16_t reference_count_;
         uint16_t length_;           // total length of data in mbuf
         uint16_t channel_;          // target channel
-        uint16_t offset_;           // current decoded data offset
+        int16_t offset_;            // current decoded data offset
         uint16_t nic_;              // id of source or target NIC
         MbufType mbuf_type_;        // Origin, DPDK, Indirect
         /* TODO: change this to register mechanism */
         uint32_t custom_mask_;      // bitmask, module can use for transferring infomation
         uint64_t custom_value_;     // value, module can use for transferring data
-        PacketHeader* header_tail_; // pointer to decoded headers' tail
-        char* data_;                // pointer to packet data
+        Pointer<char> data_;        // pointer to packet data
         uint64_t iova_;             // IO address for DMA
         uint32_t flow_hash_;
-        uint16_t header_offset_;    // offset of packet_header_data_
-        uint16_t padding_;
-        Packet* next_packet_;
-        /* a cache line ends here */
-        PacketPool* packet_pool_;
+        uint16_t header_tail_;      // index into packet_headers_
+        uint16_t padding;
+        Pointer<Packet> next_packet_;
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         uint32_t upstream_node_;        /* identify the upstream node of current packet */
+        /* a cache line ends here */
 
         char mbuf_[kPacketMbufSize];
         PacketHeader packet_headers_[kPacketMaxHeaderNum];
-        char packet_header_data_[kPacketMaxHeaderNum * kPacketMaxHeaderLength];
     };
 
     class PacketPool {
@@ -94,7 +90,7 @@ namespace omnistack::packet {
         /**
          * @brief free a packet, the reference count will be ignored
         */
-        inline void Free(Packet* packet);
+        static void Free(Packet* packet);
 
         inline Packet* Duplicate(Packet* packet);
     
@@ -113,26 +109,22 @@ namespace omnistack::packet {
         if (reference_count_ == 1) [[likely]] {
             switch (mbuf_type_) {
                 case MbufType::kOrigin:
-                    if (packet_pool_ != nullptr) [[likely]] packet_pool_->Free(this);
-                    else delete this;
                     break;
-                /* TODO: renew this */
 #if defined (OMNIMEM_BACKEND_DPDK)
                 case MbufType::kDpdk:
                     rte_pktmbuf_free(reinterpret_cast<rte_mbuf*>(data_ - RTE_PKTMBUF_HEADROOM - sizeof(rte_mbuf)));
                     break;
 #endif
                 case MbufType::kIndirect: {
-                    Packet* packet = reinterpret_cast<Packet*>(data_ - offsetof(Packet, mbuf_));
+                    auto packet = reinterpret_cast<Packet*>(data_ - kPacketMbufHeadroom - offsetof(Packet, mbuf_));
                     packet->Release();
-                    if (packet_pool_ != nullptr) [[likely]] packet_pool_->Free(this);
-                    else delete this;
                     break;
                 }
                 default:
                     /* TODO: report error */
                     break;
             }
+            PacketPool::Free(this);
         } else reference_count_--;
     }
 
@@ -140,13 +132,12 @@ namespace omnistack::packet {
         auto chunk = memory_pool_->Get();
         if(chunk == nullptr) return nullptr;
         auto packet = new(chunk) Packet;
-        packet->packet_pool_ = this;
         return packet;
     }
 
     inline void PacketPool::Free(Packet* packet) {
         printf("free packet\n");
-        memory_pool_->Put(packet);
+        memory::MemoryPool::PutBack(packet);
     }
 
     inline Packet* PacketPool::Duplicate(Packet* packet) {
@@ -160,31 +151,20 @@ namespace omnistack::packet {
         packet_copy->mbuf_type_ = Packet::MbufType::kOrigin;
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
-        packet_copy->header_tail_ = packet_copy->packet_headers_;
-        packet_copy->data_ = packet_copy->mbuf_;
+        packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom;
         packet_copy->iova_ = packet->iova_;
         packet_copy->next_packet_ = nullptr;
-        packet_copy->packet_pool_ = this;
 #if defined (OMNIMEM_BACKEND_DPDK)
-        rte_memcpy(packet_copy->mbuf_, packet->mbuf_, packet->length_);
+        rte_memcpy(packet_copy->data_ + packet->offset_, packet->mbuf_ + packet->offset_, packet->length_);
 #else 
-        memcpy(packet_copy->mbuf_, packet->mbuf_, packet->length_);
+        memcpy(packet_copy->data_ + packet->offset_, packet->mbuf_ + packet->offset_, packet->length_);
 #endif
-        auto packet_header = packet->packet_headers_;
-        auto dst_header_data = packet_copy->packet_header_data_;
-        while(packet_header != packet->header_tail_) {
-            packet_copy->header_tail_->length_ = packet_header->length_;
-            packet_copy->header_tail_->data_ = dst_header_data;
-#if defined (OMNIMEM_BACKEND_DPDK)
-            rte_memcpy(dst_header_data, packet_header->data_, packet_header->length_);
-#else
-            memcpy(dst_header_data, packet_header->data_, packet_header->length_);
-#endif
-            dst_header_data += packet_header->length_;
+        while(packet_copy->header_tail_ != packet->header_tail_) {
+            auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
+            header.length_ = packet->packet_headers_[packet_copy->header_tail_].length_;
+            header.offset_ = packet->packet_headers_[packet_copy->header_tail_].offset_;
             packet_copy->header_tail_ ++;
-            packet_header ++;
         }
-        packet_copy->header_offset_ = dst_header_data - packet_copy->packet_header_data_;
         return packet_copy;
     }
 
@@ -199,17 +179,14 @@ namespace omnistack::packet {
         packet_copy->mbuf_type_ = Packet::MbufType::kIndirect;
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
-        packet_copy->header_tail_ = packet_copy->packet_headers_;
         packet_copy->data_ = packet->data_;
         packet_copy->iova_ = packet->iova_;
         packet_copy->next_packet_ = nullptr;
-        packet_copy->packet_pool_ = this;
-        auto packet_header = packet->packet_headers_;
-        while(packet_header != packet->header_tail_) {
-            packet_copy->header_tail_->length_ = packet_header->length_;
-            packet_copy->header_tail_->data_ = packet_header->data_;
+        while(packet_copy->header_tail_ != packet->header_tail_) {
+            auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
+            header.length_ = packet->packet_headers_[packet_copy->header_tail_].length_;
+            header.offset_ = packet->packet_headers_[packet_copy->header_tail_].offset_;
             packet_copy->header_tail_ ++;
-            packet_header ++;
         }
         packet->reference_count_ ++;
         return packet_copy;

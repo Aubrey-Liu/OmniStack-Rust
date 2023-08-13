@@ -7,27 +7,45 @@
 
 #include <cstdint>
 #include <omnistack/tcp_common/tcp_buffer.hpp>
+#include <omnistack/tcp_common/tcp_congestion_control.hpp>
 
 namespace omnistack::data_plane::tcp_common {
 
     class TcpReceiveVariables {
     public:
-        uint32_t recv_wnd_;     // receive window
-        uint32_t recv_nxt_;     // next sequence number expected on an incoming segments, and is the left or lower edge of the receive window
-        uint32_t irs_;          // initial receive sequence number
+        uint32_t irs_;              // initial receive sequence number
+        uint32_t recv_nxt_;         // next sequence number expected on an incoming segments, and is the left or lower edge of the receive window
+        uint16_t recv_wnd_;         // receive window
+        uint8_t recv_wscale_;       // window scale
         uint8_t received_;
+        uint32_t timestamp_recent_; // timestamp recently received
         TcpReceiveBuffer* receive_buffer_;
     };
 
     class TcpSendVariables {
     public:
-        uint32_t send_una_;     // send unacknowledged
-        uint32_t send_nxt_;     // next to be sent
-        uint32_t send_wnd_;     // send window
-        uint32_t iss_;          // initial send sequence number
-        uint32_t send_wl1_;     // segment sequence number used for last window update
-        uint32_t send_wl2_;     // segment acknowledgment number used for last window update
+        uint32_t send_una_;             // send unacknowledged
+        uint32_t send_nxt_;             // next to be sent
+        uint32_t send_wnd_;             // send window
+        uint32_t iss_;                  // initial send sequence number
+        uint32_t send_wl1_;             // segment sequence number used for last window update
+        uint32_t send_wl2_;             // segment acknowledgment number used for last window update
         TcpSendBuffer* send_buffer_;
+
+        uint64_t rxtcur_;               // retransmission timeout currently
+        uint64_t srtt_;                 // smoothed round-trip time
+        uint64_t rttvar_;               // round-trip time variation
+        uint64_t rto_begin_;            // retransmission timeout begin
+        uint64_t rto_timeout_;          // retransmission timeout
+        uint8_t is_retransmission_;     // if last packet is retransmission
+    };
+
+    class TcpListenFlow {
+    public:
+        uint32_t local_ip_;
+        uint16_t local_port_;
+    
+        char* congestion_control_algorithm_;
     };
 
     class TcpFlow {
@@ -56,10 +74,11 @@ namespace omnistack::data_plane::tcp_common {
         uint32_t reference_count_;  // reference count for this flow
         uint16_t mss;               // maximum segment size
         uint8_t window_scale_;      // window scale factor, shift count to left after receive window scaling
-        uint32_t timestamp_recent_; // timestamp recently received
 
         TcpReceiveVariables receive_variables_;
         TcpSendVariables send_variables_;
+
+        TcpCongestionControlBase* congestion_control_;
         
     private:
         TcpFlow() = default;
