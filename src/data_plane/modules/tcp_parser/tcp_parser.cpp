@@ -28,19 +28,19 @@ namespace omnistack::data_plane::tcp_parser {
     };
 
     bool TcpParser::DefaultFilter(Packet* packet) {
-        PacketHeader &ip = *(packet->header_tail_ - 1);
-        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(ip.data_);
+        auto& ip = packet->packet_headers_[packet->header_tail_ - 1];
+        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + ip.offset_);
         if(ipv4_header->version == 4) [[likely]] return ipv4_header->proto == IP_PROTO_TYPE_TCP;
-        Ipv6Header* ipv6_header = reinterpret_cast<Ipv6Header*>(ip.data_);
+        Ipv6Header* ipv6_header = reinterpret_cast<Ipv6Header*>(packet->data_ + ip.offset_);
         if(ipv6_header->version == 6) [[likely]] return ipv6_header->nh == IP_PROTO_TYPE_TCP;
         return false;
     }
 
     Packet* TcpParser::MainLogic(Packet* packet) {
         TcpHeader* tcp_header = reinterpret_cast<TcpHeader*>(packet->data_ + packet->offset_);
-        PacketHeader &tcp = *(packet->header_tail_ ++);
+        PacketHeader &tcp = packet->packet_headers_[packet->header_tail_ ++];
         tcp.length_ = tcp_header->dataofs << 2;
-        tcp.data_ = reinterpret_cast<char*>(tcp_header);
+        tcp.offset_ = packet->offset_;
         packet->offset_ += tcp.length_;
         return packet;
     }

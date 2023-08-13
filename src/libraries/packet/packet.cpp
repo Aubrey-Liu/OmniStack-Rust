@@ -13,13 +13,11 @@ namespace omnistack::packet {
         mbuf_type_ = MbufType::kOrigin;
         custom_mask_ = 0;
         custom_value_ = 0;
-        header_tail_ = packet_headers_;
-        data_ = mbuf_;
+        data_ = mbuf_ + kPacketMbufHeadroom;
         /* TODO: set iova */
         iova_ = 0;
-        header_offset_ = 0;
+        header_tail_ = 0;
         next_packet_ = nullptr;
-        packet_pool_ = nullptr;
     }
 
     PacketPool* PacketPool::CreatePacketPool(std::string_view name_prefix, uint32_t packet_count) {

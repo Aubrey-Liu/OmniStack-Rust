@@ -1,6 +1,6 @@
 // 使用库里的头不太方便，自己实现一个
-#ifndef __OMNISTACK_PROTOCOL_HEADERS_HPP
-#define __OMNISTACK_PROTOCOL_HEADERS_HPP
+#ifndef __OMNISTACK_COMMON_PROTOCOL_HEADERS_HPP
+#define __OMNISTACK_COMMON_PROTOCOL_HEADERS_HPP
 
 #include <cstdint>
 #include <arpa/inet.h>

@@ -7,9 +7,9 @@
 
 #include <omnistack/tcp_common/tcp_state.hpp>
 #include <omnistack/tcp_common/tcp_constant.hpp>
+#include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/hashtable/hashtable.hpp>
 #include <omnistack/module/module.hpp>
-#include <omnistack/common/protocol_headers.hpp>
 
 namespace omnistack::data_plane::tcp_common {
 
@@ -27,7 +27,7 @@ namespace omnistack::data_plane::tcp_common {
 
         TcpFlow* GetFlow(uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port);
 
-        bool IsListen(uint32_t local_ip, uint16_t local_port);
+        TcpListenFlow* GetListenFlow(uint32_t local_ip, uint16_t local_port);
 
         void AcquireFlow(TcpFlow* flow);
 
@@ -53,7 +53,7 @@ namespace omnistack::data_plane::tcp_common {
             name = std::string(name_prefix) + "_SendBufferPool";
             handle->send_buffer_pool_ = memory::AllocateMemoryPool(name, sizeof(TcpSendBuffer), kTcpMaxFlowCount);
             handle->flow_table_ = hashtable::Hashtable::Create(kTcpFlowTableSize, 12);
-            handle->listen_table_ = hashtable::Hashtable::Create(kTcpFlowTableSize, 12);
+            handle->listen_table_ = hashtable::Hashtable::Create(kTcpFlowTableSize, 6);
         }
         handle->initialized_ ++;
         return handle;
@@ -93,13 +93,11 @@ namespace omnistack::data_plane::tcp_common {
         return static_cast<TcpFlow*>(flow_table_->Lookup(key));
     }
 
-    inline bool TcpSharedHandle::IsListen(uint32_t local_ip, uint16_t local_port) {
-        static thread_local TcpFlow* key;
+    inline TcpListenFlow* TcpSharedHandle::GetListenFlow(uint32_t local_ip, uint16_t local_port) {
+        static thread_local TcpListenFlow* key;
         key->local_ip_ = local_ip;
-        key->remote_ip_ = 0;
         key->local_port_ = local_port;
-        key->remote_port_ = 0;
-        return listen_table_->LookupKey(key);
+        return static_cast<TcpListenFlow*>(listen_table_->Lookup(key));
     }
 
     inline void TcpSharedHandle::AcquireFlow(TcpFlow* flow) {
@@ -113,10 +111,10 @@ namespace omnistack::data_plane::tcp_common {
         }
     }
 
-    inline void DecodeOptions(PacketHeader* tcp, uint16_t *mss, uint8_t* wscale, uint8_t* sack_permit, uint32_t* sack_block, uint32_t* timestamp, uint32_t* timestamp_echo) {
-        if(tcp->length_ > sizeof(TcpHeader)) [[likely]] {
-            uint8_t* options = reinterpret_cast<uint8_t*>(tcp->data_) + sizeof(TcpHeader);
-            uint8_t* options_end = reinterpret_cast<uint8_t*>(tcp->data_) + tcp->length_;
+    inline void DecodeOptions(TcpHeader* tcp, uint8_t length, uint16_t *mss, uint8_t* wscale, uint8_t* sack_permit, uint32_t* sack_block, uint32_t* timestamp, uint32_t* timestamp_echo) {
+        if(length > sizeof(TcpHeader)) [[likely]] {
+            uint8_t* options = reinterpret_cast<uint8_t*>(tcp) + sizeof(TcpHeader);
+            uint8_t* options_end = reinterpret_cast<uint8_t*>(tcp) + length;
             while(options < options_end) {
                 uint8_t kind = *options;
                 switch (kind) {
@@ -161,6 +159,10 @@ namespace omnistack::data_plane::tcp_common {
                 }
             }
         }
+    }
+
+    inline Packet* BuildReplyPacket(TcpFlow* flow, uint16_t tcp_flags, PacketPool* packet_pool) {
+
     }
 
 }

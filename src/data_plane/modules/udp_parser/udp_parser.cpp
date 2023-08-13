@@ -28,19 +28,19 @@ namespace omnistack::data_plane::udp_parser {
     };
 
     bool UdpParser::DefaultFilter(Packet* packet) {
-        PacketHeader &ip = *(packet->header_tail_ - 1);
-        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(ip.data_);
+        auto& ip = packet->packet_headers_[packet->header_tail_ - 1];
+        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + ip.offset_);
         if(ipv4_header->version == 4) [[likely]] return ipv4_header->proto == IP_PROTO_TYPE_UDP;
-        Ipv6Header* ipv6_header = reinterpret_cast<Ipv6Header*>(ip.data_);
+        Ipv6Header* ipv6_header = reinterpret_cast<Ipv6Header*>(packet->data_ + ip.offset_);
         if(ipv6_header->version == 6) [[likely]] return ipv6_header->nh == IP_PROTO_TYPE_UDP;
         return false;
     }
 
     Packet* UdpParser::MainLogic(Packet* packet) {
         UdpHeader* udp_header = reinterpret_cast<UdpHeader*>(packet->data_ + packet->offset_);
-        PacketHeader &udp = *(packet->header_tail_ ++);
+        PacketHeader &udp = packet->packet_headers_[packet->header_tail_ ++];
         udp.length_ = sizeof(UdpHeader);
-        udp.data_ = reinterpret_cast<char*>(udp_header);
+        udp.offset_ = packet->offset_;
         packet->offset_ += udp.length_;
         return packet;
     }

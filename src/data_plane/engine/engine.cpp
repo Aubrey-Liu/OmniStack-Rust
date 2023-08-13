@@ -208,7 +208,7 @@ namespace omnistack::data_plane {
         } while(forward_mask);
 
         packet->reference_count_ = reference_count;
-        packet = packet->next_packet_;
+        packet = packet->next_packet_.Get();
     }
 
     void Engine::Run() {

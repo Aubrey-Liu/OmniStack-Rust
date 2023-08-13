@@ -38,10 +38,10 @@ namespace omnistack::data_plane::tcp_flow_cache {
     };
 
     bool TcpFlowCache::DefaultFilter(Packet* packet) {
-        PacketHeader &ip = *(packet->header_tail_ - 2);
-        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(ip.data_);
+        auto& ip = packet->packet_headers_[packet->header_tail_ - 2];
+        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + ip.offset_);
         if(ipv4_header->version == 4) [[likely]] return ipv4_header->proto == IP_PROTO_TYPE_TCP;
-        Ipv6Header* ipv6_header = reinterpret_cast<Ipv6Header*>(ip.data_);
+        Ipv6Header* ipv6_header = reinterpret_cast<Ipv6Header*>(packet->data_ + ip.offset_);
         if(ipv6_header->version == 6) [[likely]] return ipv6_header->nh == IP_PROTO_TYPE_TCP;
         return false;
     }
@@ -49,10 +49,10 @@ namespace omnistack::data_plane::tcp_flow_cache {
     Packet* TcpFlowCache::MainLogic(Packet* packet) {
         auto flow = flow_cache_[packet->flow_hash_ & kTcpFlowCacheMask];
 
-        PacketHeader &tcp = *(packet->header_tail_ - 1);
-        TcpHeader* tcp_header = reinterpret_cast<TcpHeader*>(tcp.data_);
-        PacketHeader &ip = *(packet->header_tail_ - 2);
-        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(ip.data_);
+        auto& tcp = packet->packet_headers_[packet->header_tail_ - 1];
+        auto tcp_header = reinterpret_cast<TcpHeader*>(packet->data_ + tcp.offset_);
+        auto& ip = packet->packet_headers_[packet->header_tail_ - 2];
+        auto ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + ip.offset_);
         uint32_t local_ip = ipv4_header->dst;
         uint32_t remote_ip = ipv4_header->src;
         uint16_t local_port = tcp_header->dport;
@@ -80,11 +80,11 @@ namespace omnistack::data_plane::tcp_flow_cache {
 
     void TcpFlowCache::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
         tcp_shared_handle_ = TcpSharedHandle::Create(name_prefix);
-        for(auto &i : flow_cache_) i = nullptr;
+        for(auto& i : flow_cache_) i = nullptr;
     }
 
     void TcpFlowCache::Destroy() {
-        for(auto &i : flow_cache_) {
+        for(auto& i : flow_cache_) {
             if(i != nullptr) tcp_shared_handle_->ReleaseFlow(i);
         }
         TcpSharedHandle::Destroy(tcp_shared_handle_);
