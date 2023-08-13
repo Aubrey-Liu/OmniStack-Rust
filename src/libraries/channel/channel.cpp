@@ -98,30 +98,18 @@ namespace omnistack::channel {
     struct RpcResponse {
         uint64_t id;
         RpcResponseStatus status;
-        union {
-            struct {
-#if defined(OMNIMEM_BACKEND_DPDK)
-                Channel* channel_ptr;
-#else
-                uint64_t channel_offset;
-#endif
-            } get_channel;
-            struct {
-#if defined(OMNIMEM_BACKEND_DPDK)
-                MultiWriterChannel* channel_ptr;
-#else
-                uint64_t channel_offset;
-#endif
-            } get_multi_channel;
-            struct {
-#if defined(OMNIMEM_BACKEND_DPDK)
-                RawChannel* channel_ptr;
-#else
-                uint64_t channel_offset;
-#endif
-            } get_raw_channel;
-        };
+        struct {
+            memory::Pointer<Channel> channel;
+        } get_channel;
+        struct {
+            memory::Pointer<MultiWriterChannel> channel;
+        } get_multi_channel;
+        struct {
+            memory::Pointer<RawChannel> channel;
+        } get_raw_channel;
     };
+
+    static_assert(sizeof(memory::Pointer<int>) == sizeof(uint64_t));
 
     static std::thread* control_plane_thread = nullptr;
     static std::condition_variable cond_control_plane_started;
@@ -134,8 +122,6 @@ namespace omnistack::channel {
     static int control_plane_sock;
     static int sock_to_control_plane;
 
-    static uint8_t** virt_base_addrs;
-
     static void ControlPlane() {
         {
             std::unique_lock _(control_plane_state_lock);
@@ -143,9 +129,6 @@ namespace omnistack::channel {
             cond_control_plane_started.notify_all();
         }
         memory::InitializeSubsystemThread();
-#if !defined(OMNIMEM_BACKEND_DPDK)
-        virt_base_addrs = memory::GetVirtBaseAddrs();
-#endif
         int epfd;
         constexpr int kMaxEvents = 16;
 #if defined(__APPLE__)
@@ -276,11 +259,7 @@ namespace omnistack::channel {
                                     }
 
                                     resp.status = RpcResponseStatus::kSuccess;
-#if defined(OMNIMEM_BACKEND_DPDK)
-                                    resp.get_channel.channel_ptr = channel;
-#else
-                                    resp.get_channel.channel_offset = (uint8_t*)channel - virt_base_addrs[memory::process_id] - memory::kMetaHeadroomSize;
-#endif
+                                    resp.get_channel.channel = memory::Pointer(channel);
                                 } else {
                                     resp.status = RpcResponseStatus::kFail;
                                 }
@@ -299,11 +278,7 @@ namespace omnistack::channel {
                                     }
 
                                     resp.status = RpcResponseStatus::kSuccess;
-#if defined(OMNIMEM_BACKEND_DPDK)
-                                    resp.get_raw_channel.channel_ptr = channel;
-#else
-                                    resp.get_raw_channel.channel_offset = (uint8_t*)channel - virt_base_addrs[memory::process_id] - memory::kMetaHeadroomSize;
-#endif
+                                    resp.get_raw_channel.channel = memory::Pointer(channel);
                                 } else {
                                     resp.status = RpcResponseStatus::kFail;
                                 }
@@ -318,19 +293,12 @@ namespace omnistack::channel {
                                     if (!channel->initialized) {
                                         channel->initialized = true;
 
-                                        auto reader_token = token::CreateToken();
-#if defined(OMNIMEM_BACKEND_DPDK)
-                                        channel->reader_token_ptr_ = reader_token;
-#else
-                                        channel->reader_token_offset_ = (uint8_t*)reader_token - virt_base_addrs[memory::process_id];             
-#endif
+                                        channel->reader_token_ = memory::Pointer(token::CreateToken());
+                                        strcpy(channel->name, name.c_str());
+                                        channel->Init();
                                     }
                                     resp.status = RpcResponseStatus::kSuccess;
-#if defined(OMNIMEM_BACKEND_DPDK)
-                                    resp.get_multi_channel.channel_ptr = channel;
-#else
-                                    resp.get_multi_channel.channel_offset = (uint8_t*)channel - virt_base_addrs[memory::process_id] - memory::kMetaHeadroomSize;
-#endif
+                                    resp.get_multi_channel.channel = memory::Pointer(channel);
                                 } else {
                                     resp.status = RpcResponseStatus::kFail;
                                 }
@@ -497,11 +465,7 @@ namespace omnistack::channel {
     int MultiWriterChannel::Write(const void* data) {
         auto region_meta = reinterpret_cast<memory::RegionMeta*>((uint8_t*)data - memory::kMetaHeadroomSize);
         region_meta->process_id = 0;
-#if defined(OMNIMEM_BACKEND_DPDK)
-        if (!channel_ptrs_[memory::thread_id]) [[unlikely]] {
-#else
-        if (channel_offsets[memory::thread_id] == ~0) [[unlikely]] {
-#endif
+        if (!channel_ptrs_[memory::thread_id].Get()) [[unlikely]] {
             auto channel = GetRawChannel(std::string(name) + "_raw_" + std::to_string(memory::thread_id));
 #if defined(OMNIMEM_BACKEND_DPDK)
             channel_ptrs_[memory::thread_id] = channel;
@@ -530,13 +494,8 @@ namespace omnistack::channel {
     }
 
     void MultiWriterChannel::Flush() {
-#if defined(OMNIMEM_BACKEND_DPDK)
-        if (channel_ptrs_[memory::thread_id]) [[likely]] {
+        if (channel_ptrs_[memory::thread_id].Get()) [[likely]] {
             auto channel = channel_ptrs_[memory::thread_id];
-#else
-        if (channel_offsets[memory::thread_id] != ~0) [[likely]] {
-            auto channel = reinterpret_cast<Channel*>(virt_base_addrs[memory::process_id] + channel_offsets[memory::thread_id]);
-#endif
             if (channel->Flush() == 1) [[likely]] {
                 auto current_pos = memory::thread_id + (memory::kMaxThread - 1);
                 while (current_pos) {
@@ -548,31 +507,17 @@ namespace omnistack::channel {
     }
 
     void* MultiWriterChannel::Read() {
-#if defined(OMNIMEM_BACKEND_DPDK)
-        if (!reader_token_ptr_->CheckToken())
-            reader_token_ptr_->AcquireToken();
-#else
-        auto reader_token = reinterpret_cast<token::Token*>(virt_base_addrs[memory::process_id] + reader_token_offset_);
-        if (!reader_token->CheckToken())
-            reader_token->AcquireToken();
-#endif
+        if (!reader_token_->CheckToken())
+            reader_token_->AcquireToken();
 
         uint64_t last_pos = 1;
         if (current_channel_thread_id_ != 0) [[likely]] {
-#if defined(OMNIMEM_BACKEND_DPDK)
             auto& channel = current_channel_ptr_;
-#else
-            auto& channel = reinterpret_cast<Channel*&>(virt_base_addrs[memory::process_id] + current_channel_offset_);
-#endif
             auto ret = channel->Read();
             if (ret) [[likely]]
                 return ret;
             else {
-#if defined(OMNIMEM_BACKEND_DPDK)
                 current_channel_ptr_ = nullptr;
-#else
-                current_channel_offset_ = 0;
-#endif
                 current_channel_thread_id_ = 0;
             }
         }
@@ -581,20 +526,12 @@ namespace omnistack::channel {
 
 
         if (current_channel_thread_id_ != 0) [[likely]] {
-#if defined(OMNIMEM_BACKEND_DPDK)
             auto& channel = current_channel_ptr_;
-#else
-            auto& channel = reinterpret_cast<Channel*&>(virt_base_addrs[memory::process_id] + current_channel_offset_);
-#endif
             auto ret = channel->Read();
             if (ret) [[likely]]
                 return ret;
             else {
-#if defined(OMNIMEM_BACKEND_DPDK)
                 current_channel_ptr_ = nullptr;
-#else
-                current_channel_offset_ = 0;
-#endif
                 current_channel_thread_id_ = 0;
             }
         }
@@ -640,10 +577,6 @@ namespace omnistack::channel {
         auto control_plane_sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_channel_sock" +
             std::to_string(control_plane_id) + ".socket";
 
-#if !defined(OMNIMEM_BACKEND_DPDK)
-        virt_base_addrs = memory::GetVirtBaseAddrs();
-#endif
-
         sockaddr_un addr{};
         addr.sun_family = AF_UNIX;
         if (control_plane_sock_name.length() >= sizeof(addr.sun_path))
@@ -683,13 +616,8 @@ namespace omnistack::channel {
         strcpy(local_rpc_req.get_raw_channel.name, name.c_str());
         local_rpc_req.get_raw_channel.thread_id = memory::thread_id;
         auto resp = SendLocalRpcMessage();
-        if (resp.status == RpcResponseStatus::kSuccess) {
-#if defined(OMNIMEM_BACKEND_DPDK)
-            return resp.get_raw_channel.channel_ptr;
-#else
-            return resp.get_raw_channel.channel_offset + virt_base_addrs[memory::process_id];
-#endif
-        }
+        if (resp.status == RpcResponseStatus::kSuccess)
+            return resp.get_raw_channel.channel.Get();
         return nullptr;
     }
 
@@ -698,13 +626,8 @@ namespace omnistack::channel {
         strcpy(local_rpc_req.get_channel.name, name.c_str());
         local_rpc_req.get_channel.thread_id = memory::thread_id;
         auto resp = SendLocalRpcMessage();
-        if (resp.status == RpcResponseStatus::kSuccess) {
-#if defined(OMNIMEM_BACKEND_DPDK)
-            return resp.get_channel.channel_ptr;
-#else
-            return resp.get_channel.channel_offset + virt_base_addrs[memory::process_id];
-#endif
-        }
+        if (resp.status == RpcResponseStatus::kSuccess)
+            return resp.get_channel.channel.Get();
         return nullptr;
     }
 
@@ -713,13 +636,15 @@ namespace omnistack::channel {
         strcpy(local_rpc_req.get_channel.name, name.c_str());
         local_rpc_req.get_channel.thread_id = memory::thread_id;
         auto resp = SendLocalRpcMessage();
-        if (resp.status == RpcResponseStatus::kSuccess) {
-#if defined(OMNIMEM_BACKEND_DPDK)
-            return resp.get_multi_channel.channel_ptr;
-#else
-            return resp.get_multi_channel.channel_offset + virt_base_addrs[memory::process_id];
-#endif
-        }
+        if (resp.status == RpcResponseStatus::kSuccess)
+            return resp.get_multi_channel.channel.Get();
         return nullptr;
+    }
+
+    void MultiWriterChannel::Init() {
+        for (int i = 0; i < memory::kMaxThread; i ++)
+            channel_ptrs_[i] = memory::Pointer<RawChannel>(nullptr);;
+        current_channel_thread_id_ = 0;
+        current_channel_ptr_ = memory::Pointer<RawChannel>(nullptr);
     }
 }

@@ -237,7 +237,7 @@ namespace omnistack {
 #if defined(OMNIMEM_BACKEND_DPDK)
                 ptr_(ptr)
 #else
-                offset_((uint8_t*)ptr - virt_base_addrs[process_id])
+                offset_(ptr ? ((uint8_t*)ptr - virt_base_addrs[process_id]) : ~0)
 #endif
             {}
 
@@ -254,11 +254,21 @@ namespace omnistack {
             /**
              * @brief Use this to get the real address of Pointer and then use it in channel
             */
-            inline const T* Get() {
+            inline T* Get() const {
 #if defined(OMNIMEM_BACKEND_DPDK)
                 return ptr_;
 #else
+                if (offset_ == ~0) [[unlikely]] return nullptr;
                 return (T*)(virt_base_addrs[process_id] + offset_);
+#endif
+            }
+
+            inline void Set(T* ptr) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                ptr_ = ptr;
+#else
+                if (!ptr) [[unlikely]] offset_ = ~0;
+                else offset_ = ((uint8_t*)ptr - virt_base_addrs[process_id]);
 #endif
             }
         private:

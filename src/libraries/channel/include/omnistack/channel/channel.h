@@ -105,6 +105,8 @@ public:
 
         class MultiWriterChannel {
         public:
+            void Init();
+
             /**
              * @brief Write data to channel
              * @param data Data to be written
@@ -123,20 +125,10 @@ public:
             */
             void Flush();
 
-#if defined(OMNIMEM_BACKEND_DPDK)
-            token::Token* reader_token_ptr_;
-#else
-            uint64_t reader_token_offset_;
-#endif
+            memory::Pointer<token::Token> reader_token_;
 
-
-#if defined(OMNIMEM_BACKEND_DPDK)
-            RawChannel* channel_ptrs_[memory::kMaxThread + 1];
-            RawChannel* current_channel_ptr_;
-#else
-            uint64_t channel_offsets_[memory::kMaxThread + 1];
-            uint64_t current_channel_offset_;
-#endif
+            memory::Pointer<RawChannel> channel_ptrs_[memory::kMaxThread + 1];
+            memory::Pointer<RawChannel> current_channel_ptr_;
 
             uint64_t read_tick_[memory::kMaxThread * 4];
             uint64_t write_tick_[memory::kMaxThread];
