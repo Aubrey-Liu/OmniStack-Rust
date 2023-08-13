@@ -92,6 +92,15 @@ namespace omnistack {
          */
         void* AllocateNamedShared(const std::string& name, size_t size);
 
+        /**
+         * @brief Allocate memory in shared memory by name (Can be used cross process)
+         * @param name The name of the memory region
+         * @param size
+         * @param thread_id The thread id of the thread that need to use the region
+         * @return The pointer if created by other process the same address
+         */
+        void* AllocateNamedSharedForThread(const std::string& name, size_t size, uint64_t thread_id);
+
         void FreeNamedShared(void* ptr);
 
         /**
@@ -210,6 +219,63 @@ namespace omnistack {
 #if !defined(OMNIMEM_BACKEND_DPDK)
         uint8_t** GetVirtBaseAddrs();
 #endif
+
+        extern uint8_t** virt_base_addrs;
+
+        template<typename T>
+        class Pointer {
+        public:
+            inline Pointer() {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                ptr_ = nullptr;
+#else
+                offset_ = ~0;
+#endif
+            }
+
+            inline Pointer(T* ptr): 
+#if defined(OMNIMEM_BACKEND_DPDK)
+                ptr_(ptr)
+#else
+                offset_((uint8_t*)ptr - virt_base_addrs[process_id])
+#endif
+            {}
+
+            inline T* operator->() {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                return ptr_;
+#else
+                return (T*)(virt_base_addrs[process_id] + offset_);
+#endif
+            }
+
+            template<typename Type> friend inline Type& operator*(const Pointer<Type>& p);
+
+            /**
+             * @brief Use this to get the real address of Pointer and then use it in channel
+            */
+            inline const T* Get() {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                return ptr_;
+#else
+                return (T*)(virt_base_addrs[process_id] + offset_);
+#endif
+            }
+        private:
+#if defined(OMNIMEM_BACKEND_DPDK)
+            T* ptr_;
+#else
+            uint64_t offset_;
+#endif
+        };
+
+        template<typename Type> inline Type& operator*(const Pointer<Type>& p) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+            return *p.ptr_;
+#else
+            return *(T*)(virt_base_addrs[process_id] + p.offset_);
+#endif
+        }
     }
 }
 

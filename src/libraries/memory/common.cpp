@@ -200,7 +200,7 @@ namespace omnistack::memory {
     static ControlPlaneStatus control_plane_status = ControlPlaneStatus::kStopped;
 
 #if !defined(OMNIMEM_BACKEND_DPDK)
-    static uint8_t** virt_base_addrs = nullptr;
+    uint8_t** virt_base_addrs = nullptr;
     static std::string virt_base_addrs_name;
     static int virt_base_addrs_fd = 0;
 
@@ -275,6 +275,7 @@ namespace omnistack::memory {
         region_meta->type = region_type;
         region_meta->process_id = 0;
         region_meta->ref_cnt = 1;
+        memset(region_meta, 0, aligned_size);
         return region_meta;
     }
 
@@ -1371,4 +1372,22 @@ namespace omnistack::memory {
         return virt_base_addrs;
     }
 #endif
+
+    void* AllocateNamedSharedForThread(const std::string& name, size_t size, uint64_t thread_id) {
+        local_rpc_request.type = RpcRequestType::kGetMemory;
+        if (name.length() >= kMaxNameLength) throw std::runtime_error("Name too long");
+        local_rpc_request.get_memory.size = size;
+        local_rpc_request.get_memory.thread_id = thread_id;
+        strcpy(local_rpc_request.get_memory.name, name.c_str());
+        auto resp = SendLocalRpcRequest();
+        if (resp.status == RpcResponseStatus::kSuccess) {
+            #if defined(OMNIMEM_BACKEND_DPDK)
+            auto meta = reinterpret_cast<RegionMeta*>(resp.get_memory.addr);
+            #else
+            auto meta = reinterpret_cast<RegionMeta*>(virt_base_addrs[process_id] + resp.get_memory.offset);
+            #endif
+            return reinterpret_cast<uint8_t*>(meta) + kMetaHeadroomSize;
+        }
+        return nullptr;
+    }
 }

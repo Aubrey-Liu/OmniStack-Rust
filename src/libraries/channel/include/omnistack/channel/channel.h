@@ -16,10 +16,10 @@ namespace omnistack {
         constexpr int kChannelSize = 1024;
         constexpr int kBatchSize = 16;
 
-        /* Channel can only be used to transfer data  */
-        class Channel
-        {
+        class RawChannel {
         public:
+            void Init();
+
             /**
              * @brief Write data to channel
              * @param data Data to be written
@@ -37,16 +37,9 @@ namespace omnistack {
              * @brief Flush channel from writer side
             */
             int Flush();
-
-#if defined(OMNIMEM_BACKEND_DPDK)
-            token::Token* reader_token_ptr_;
-            token::Token* writer_token_ptr_;
-#else
-            uint64_t reader_token_offset_;
-            uint64_t writer_token_offset_;
-#endif
         
-        private:
+            bool IsReadable();
+private:
             char padding0_[64];
 
             volatile uint32_t write_pos_;
@@ -71,6 +64,43 @@ namespace omnistack {
 #else
             uint64_t ring_offset_[kChannelSize];
 #endif
+
+public:
+            bool initialized_;
+        };
+
+        /* Channel can only be used to transfer data  */
+        class Channel
+        {
+        public:
+            void Init(RawChannel* raw_channel);
+
+            /**
+             * @brief Write data to channel
+             * @param data Data to be written
+             * @return 0 if success, 1 if flushed, -1 if failed
+            */
+            int Write(const void* data);
+
+            /**
+             * @brief Read data from channel
+             * @return Data read from channel
+            */
+            void* Read();
+
+            /**
+             * @brief Flush channel from writer side
+            */
+            int Flush();
+
+            memory::Pointer<token::Token> reader_token_;
+            memory::Pointer<token::Token> writer_token_;
+        
+        private:
+            memory::Pointer<RawChannel> raw_channel_;
+
+        public:
+            bool initialized_;
         };
 
         class MultiWriterChannel {
@@ -93,17 +123,39 @@ namespace omnistack {
             */
             void Flush();
 
-            Channel* channels_[memory::kMaxThread + 1];
+#if defined(OMNIMEM_BACKEND_DPDK)
+            token::Token* reader_token_ptr_;
+#else
+            uint64_t reader_token_offset_;
+#endif
 
-            int read_tick_[memory::kMaxThread * 2];
-            int write_tick_[memory::kMaxThread];
+
+#if defined(OMNIMEM_BACKEND_DPDK)
+            RawChannel* channel_ptrs_[memory::kMaxThread + 1];
+            RawChannel* current_channel_ptr_;
+#else
+            uint64_t channel_offsets_[memory::kMaxThread + 1];
+            uint64_t current_channel_offset_;
+#endif
+
+            uint64_t read_tick_[memory::kMaxThread * 4];
+            uint64_t write_tick_[memory::kMaxThread];
+            uint64_t current_channel_thread_id_;
+
+public:
+            bool initialized;
+            char name[128];
         };
 
         void StartControlPlane();
         
         void InitializeSubsystem();
 
-        Channel* CreateChannel();
+        RawChannel* GetRawChannel(const std::string& name);
+
+        Channel* GetChannel(const std::string& name);
+
+        MultiWriterChannel* GetMultiWriterChannel();
 
         void DestroyChannel(Channel* channel);
     } // namespace channel
