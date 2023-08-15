@@ -651,4 +651,8 @@ namespace omnistack::channel {
         current_channel_thread_id_ = 0;
         current_channel_ptr_ = memory::Pointer<RawChannel>(nullptr);
     }
+
+    ControlPlaneStatus GetControlPlaneStatus() {
+        return control_plane_status;
+    }
 }

@@ -150,6 +150,8 @@ public:
         MultiWriterChannel* GetMultiWriterChannel();
 
         void DestroyChannel(Channel* channel);
+
+        ControlPlaneStatus GetControlPlaneStatus();
     } // namespace channel
 } // namespace omnistack
 
