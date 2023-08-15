@@ -301,7 +301,7 @@ namespace omnistack {
 #if defined (OMNIMEM_BACKEND_DPDK)
             return *p.ptr_;
 #else
-            return *(T*)(virt_base_addrs[process_id] + p.offset_);
+            return *(Type*)(virt_base_addrs[process_id] + p.offset_);
 #endif
         }
     }
