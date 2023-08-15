@@ -385,7 +385,7 @@ namespace omnistack::channel {
 #if defined (OMNIMEM_BACKEND_DPDK)
         ring_ptr_[writer_write_pos_] = region_meta;
 #else
-        ring_offset_[writer_write_pos_] = (uint8_t*)region_meta - virt_base_addrs[memory::process_id];
+        ring_offset_[writer_write_pos_] = (uint8_t*)region_meta - memory::virt_base_addrs[memory::process_id];
 #endif
         writer_write_pos_ = next_val;
         writer_batch_count_ ++;
@@ -413,7 +413,7 @@ namespace omnistack::channel {
 #if defined (OMNIMEM_BACKEND_DPDK)
         auto ret = ring_ptr_[reader_read_pos_];
 #else
-        auto ret = reinterpret_cast<memory::RegionMeta*>(virt_base_addrs[memory::process_id] + ring_offset_[reader_read_pos_]);
+        auto ret = reinterpret_cast<memory::RegionMeta*>(memory::virt_base_addrs[memory::process_id] + ring_offset_[reader_read_pos_]);
 #endif
         ret->process_id = memory::process_id;
         reader_read_pos_ = (reader_read_pos_ + 1) == kChannelSize ? 0 : reader_read_pos_ + 1;
@@ -650,5 +650,9 @@ namespace omnistack::channel {
             channel_ptrs_[i] = memory::Pointer<RawChannel>(nullptr);;
         current_channel_thread_id_ = 0;
         current_channel_ptr_ = memory::Pointer<RawChannel>(nullptr);
+    }
+
+    ControlPlaneStatus GetControlPlaneStatus() {
+        return control_plane_status;
     }
 }
