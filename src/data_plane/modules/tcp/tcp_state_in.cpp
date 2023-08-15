@@ -53,7 +53,6 @@ namespace omnistack::data_plane::tcp_state_in {
         uint32_t remote_timestamp;
         DecodeOptions(tcp_header, tcp.length_, &remote_mss, &remote_wscale, nullptr, nullptr, &remote_timestamp, nullptr);
 
-        flow->state_ = TcpFlow::State::kSynReceived;
 #if defined (OMNI_TCP_OPTION_MSS)
         flow->mss_ = remote_mss ? std::min(remote_mss, kTcpMaxSegmentSize) : kTcpMaxSegmentSize;
 #else 
@@ -76,26 +75,28 @@ namespace omnistack::data_plane::tcp_state_in {
         recv_var.timestamp_recent_ = 0;
 #endif
 
-        /* set send variables */
-        auto& send_var = flow->send_variables_;
-        send_var.iss_ = Rand32();
-        send_var.send_una_ = send_var.iss_;
-        send_var.send_nxt_ = send_var.iss_;
+        if(flow->state_ == TcpFlow::State::kListen) {
+            /* set send variables */
+            auto& send_var = flow->send_variables_;
+            send_var.iss_ = Rand32();
+            send_var.send_una_ = send_var.iss_;
+            send_var.send_nxt_ = send_var.iss_;
 #if defined (OMNI_TCP_OPTION_WSOPT)
-        send_var.send_wnd_ = ntohs(tcp_header->window) << remote_wscale;
-        send_var.send_wscale_ = remote_wscale;
+            send_var.send_wnd_ = ntohs(tcp_header->window) << remote_wscale;
+            send_var.send_wscale_ = remote_wscale;
 #else
-        send_var.send_wnd_ = ntohs(tcp_header->window);
+            send_var.send_wnd_ = ntohs(tcp_header->window);
 #endif
-        send_var.send_wl1_ = send_var.iss_ - 1;
-        send_var.send_wl2_ = recv_var.irs_;
-        send_var.rxtcur_ = kTcpInitialRetransmissionTimeout;
-        send_var.rto_begin_ = 0;
-        send_var.rto_timeout_ = 0;
+            send_var.send_wl1_ = send_var.iss_ - 1;
+            send_var.send_wl2_ = recv_var.irs_;
+            send_var.rxtcur_ = kTcpInitialRetransmissionTimeout;
+            send_var.rto_begin_ = 0;
+            send_var.rto_timeout_ = 0;
 
-        /* set tcp congestion control algorithm */
-        flow->congestion_control_ = TcpCongestionControlFactory::instance_().Create(listen_flow->congestion_control_algorithm_, flow);
-    
+            /* set tcp congestion control algorithm */
+            flow->congestion_control_ = TcpCongestionControlFactory::instance_().Create(listen_flow->congestion_control_algorithm_, flow);
+        }
+
         /* reply SYN-ACK */
         auto reply = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
         if(reply == nullptr) {
@@ -104,6 +105,9 @@ namespace omnistack::data_plane::tcp_state_in {
         }
         reply->custom_value_ = reinterpret_cast<uint64_t>(flow);
         tcp_shared_handle_->AcquireFlow(flow);
+
+        if(flow->state_ == TcpFlow::State::kListen) flow->send_variables_.send_nxt_ ++;
+        flow->state_ = TcpFlow::State::kSynReceived;
 
         packet->Release();
         return reply;
@@ -126,17 +130,18 @@ namespace omnistack::data_plane::tcp_state_in {
         if(tcp_header->syn) [[unlikely]] {
             if(!tcp_header->ack) {
                 /* handle SYN */
-
                 if(flow == nullptr) {
                     /* passively connect */
                     auto listen_flow = tcp_shared_handle_->GetListenFlow(local_ip, local_port);
                     if(listen_flow == nullptr) return TcpInvalid(packet);
                     flow = tcp_shared_handle_->CreateFlow(local_ip, remote_ip, local_port, remote_port);
                     if(flow == nullptr) return TcpInvalid(packet);
+                    flow->state_ = TcpFlow::State::kListen;
                     return EnterSynReceived(listen_flow, flow, packet);
                 }
                 else if(flow != nullptr && flow->state_ == TcpFlow::State::kSynSent) {
                     /* simultaneously connect */
+                    return EnterSynReceived(nullptr, flow, packet);
                 }
                 else return TcpInvalid(packet);
             }
