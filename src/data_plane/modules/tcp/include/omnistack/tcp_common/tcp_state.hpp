@@ -38,6 +38,7 @@ namespace omnistack::data_plane::tcp_common {
         uint64_t rto_begin_;            // retransmission timeout begin
         uint64_t rto_timeout_;          // retransmission timeout
         uint8_t is_retransmission_;     // if last packet is retransmission
+        uint8_t send_wscale_;           // window scale
     };
 
     class TcpListenFlow {
@@ -72,8 +73,7 @@ namespace omnistack::data_plane::tcp_common {
         State state_;
 
         uint32_t reference_count_;  // reference count for this flow
-        uint16_t mss;               // maximum segment size
-        uint8_t window_scale_;      // window scale factor, shift count to left after receive window scaling
+        uint16_t mss_;              // maximum segment size
 
         TcpReceiveVariables receive_variables_;
         TcpSendVariables send_variables_;

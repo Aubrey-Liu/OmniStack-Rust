@@ -23,7 +23,7 @@ namespace omnistack {
         extern uint64_t process_id;
         extern thread_local uint64_t thread_id;
 
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         static constexpr std::string_view kBackendName = "dpdk";
 #else
         static constexpr std::string_view kBackendName = "origin";
@@ -41,7 +41,7 @@ namespace omnistack {
             RegionType type;
             uint64_t iova;
             uint64_t process_id;
-            #if defined(OMNIMEM_BACKEND_DPDK)
+            #if defined (OMNIMEM_BACKEND_DPDK)
             void* addr;
             #else
             uint64_t offset;
@@ -50,7 +50,7 @@ namespace omnistack {
             uint64_t ref_cnt;
 
             union {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 MemoryPool* mempool;
 #else
                 uint64_t mempool_offset;
@@ -64,7 +64,7 @@ namespace omnistack {
          */
         void InitializeSubsystem(
             int control_plane_id = 0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             ,bool init_dpdk = false
 #endif
         );
@@ -124,7 +124,7 @@ namespace omnistack {
          * @brief Start a control plane to monitor all the process / thread that allocate the memory to automatically free memory
          */
         void StartControlPlane(
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             bool init_dpdk = false
 #endif
         );
@@ -135,7 +135,7 @@ namespace omnistack {
          * @param ptr The pointer to the region
          * @param thread_id The target thread id
          */
-#if defined(_MSC_VER_)
+#if defined (_MSC_VER_)
         __forceinline
 #elif defined(__GNUC__)
         __inline__ __attribute__((always_inline))
@@ -147,14 +147,14 @@ namespace omnistack {
 
         constexpr uint64_t kMemoryPoolLocalCache = 256;
         struct MemoryPoolBatch {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             void* addrs[kMemoryPoolLocalCache];        
 #else
             uint64_t offsets[kMemoryPoolLocalCache];        
 #endif
             uint32_t cnt;
             uint32_t used;
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             MemoryPoolBatch* next;
 #else
             uint64_t next;
@@ -226,7 +226,7 @@ namespace omnistack {
         class Pointer {
         public:
             inline Pointer() {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 ptr_ = nullptr;
 #else
                 offset_ = ~0;
@@ -234,7 +234,7 @@ namespace omnistack {
             }
 
             inline Pointer(T* ptr): 
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 ptr_(ptr)
 #else
                 offset_(ptr ? ((uint8_t*)ptr - virt_base_addrs[process_id]) : ~0)
@@ -242,7 +242,7 @@ namespace omnistack {
             {}
 
             inline T* operator->() {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 return ptr_;
 #else
                 return (T*)(virt_base_addrs[process_id] + offset_);
@@ -250,7 +250,7 @@ namespace omnistack {
             }
 
             inline T* operator+(const uint32_t& a) {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 return ptr_ + a;
 #else
                 if (offset_ == ~0) [[unlikely]] return (T*)(a * sizeof(T));
@@ -259,7 +259,7 @@ namespace omnistack {
             }
 
             inline T* operator-(const uint32_t& a) {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 return ptr_ - a;
 #else
                 if (offset_ == ~0) [[unlikely]] return (T*)(-a * sizeof(T));
@@ -273,7 +273,7 @@ namespace omnistack {
              * @brief Use this to get the real address of Pointer and then use it in channel
             */
             inline T* Get() const {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 return ptr_;
 #else
                 if (offset_ == ~0) [[unlikely]] return nullptr;
@@ -282,7 +282,7 @@ namespace omnistack {
             }
 
             inline void Set(T* ptr) {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 ptr_ = ptr;
 #else
                 if (!ptr) [[unlikely]] offset_ = ~0;
@@ -290,7 +290,7 @@ namespace omnistack {
 #endif
             }
         private:
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             T* ptr_;
 #else
             uint64_t offset_;
@@ -298,7 +298,7 @@ namespace omnistack {
         };
 
         template<typename Type> inline Type& operator*(const Pointer<Type>& p) {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             return *p.ptr_;
 #else
             return *(T*)(virt_base_addrs[process_id] + p.offset_);
