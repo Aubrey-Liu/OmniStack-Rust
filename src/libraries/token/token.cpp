@@ -16,7 +16,7 @@
 #include <vector>
 #include <queue>
 
-#if defined(__APPLE__)
+#if defined (__APPLE__)
 #include <sys/event.h>
 #else
 #include <sys/epoll.h>
@@ -148,13 +148,13 @@ namespace omnistack::token
         memory::InitializeSubsystemThread();
         int epfd;
         constexpr int kMaxEvents = 16;
-#if defined(__APPLE__)
+#if defined (__APPLE__)
         struct kevent events[kMaxEvents];
 #else
         struct epoll_event events[kMaxEvents];
 #endif
         try {
-#if defined(__APPLE__)
+#if defined (__APPLE__)
             epfd = kqueue();
             struct kevent ev{};
             EV_SET(&ev, control_plane_sock, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void *) (intptr_t) control_plane_sock);
@@ -229,7 +229,7 @@ namespace omnistack::token
                     min_wait_usec = std::min(min_wait_usec, tick - now);
                 }
                 int nevents;
-#if defined(__APPLE__)
+#if defined (__APPLE__)
                 struct timespec timeout = {
                         .tv_sec = 1,
                         .tv_nsec = min_wait_usec * 1000
@@ -240,7 +240,7 @@ namespace omnistack::token
 #endif
                 for (int eidx = 0; eidx < nevents; eidx ++) {
                     auto& evt = events[eidx];
-#if defined(__APPLE__)
+#if defined (__APPLE__)
                     auto fd = (int)(intptr_t)evt.udata;
 #else
                     auto fd = evt.data.fd;
@@ -263,7 +263,7 @@ namespace omnistack::token
                                         return ;
                                     }
                                 }
-    #if defined(__APPLE__)
+    #if defined (__APPLE__)
                                 struct kevent ev{};
                                 EV_SET(&ev, new_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void *) (intptr_t) new_fd);
                                 if (kevent(epfd, &ev, 1, nullptr, 0, nullptr)) {

@@ -12,7 +12,7 @@ TEST(LibrariesToken, RunControlPlane) {
     auto pid = fork();
     if (pid == 0) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -36,7 +36,7 @@ TEST(LibrariesToken, ConnectToControlPlane) {
     auto pid = fork();
     if (pid == 0) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -58,7 +58,7 @@ TEST(LibrariesToken, ConnectToControlPlane) {
     if (pid_client == 0) {
         try {
             omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 , true
 #endif
             );
@@ -84,7 +84,7 @@ TEST(LibrariesToken, CreateToken) {
     auto pid = fork();
     if (pid == 0) {
         omnistack::memory::StartControlPlane(
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             true
 #endif
         );
@@ -106,7 +106,7 @@ TEST(LibrariesToken, CreateToken) {
     if (pid_client == 0) {
         try {
             omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 , true
 #endif
             );
@@ -139,7 +139,7 @@ TEST(LibrariesToken, AutoTakeTokenBack) {
     auto pid = fork();
     if (pid == 0) {
         omnistack::memory::StartControlPlane(
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             true
 #endif
         );
@@ -161,7 +161,7 @@ TEST(LibrariesToken, AutoTakeTokenBack) {
     if (pid_client == 0) {
         try {
             omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 , true
 #endif
             );
@@ -213,7 +213,7 @@ TEST(LibrariesToken, ManuallyReturnToken) {
     auto pid = fork();
     if (pid == 0) {
         omnistack::memory::StartControlPlane(
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             true
 #endif
         );
@@ -235,7 +235,7 @@ TEST(LibrariesToken, ManuallyReturnToken) {
     if (pid_client == 0) {
         try {
             omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 , true
 #endif
             );

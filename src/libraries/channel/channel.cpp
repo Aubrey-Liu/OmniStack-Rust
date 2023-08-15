@@ -17,7 +17,7 @@
 #include <vector>
 #include <queue>
 
-#if defined(__APPLE__)
+#if defined (__APPLE__)
 #include <sys/event.h>
 #else
 #include <sys/epoll.h>
@@ -131,13 +131,13 @@ namespace omnistack::channel {
         memory::InitializeSubsystemThread();
         int epfd;
         constexpr int kMaxEvents = 16;
-#if defined(__APPLE__)
+#if defined (__APPLE__)
         struct kevent events[kMaxEvents];
 #else
         struct epoll_event events[kMaxEvents];
 #endif
         try {
-#if defined(__APPLE__)
+#if defined (__APPLE__)
             epfd = kqueue();
             struct kevent ev{};
             EV_SET(&ev, control_plane_sock, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void *) (intptr_t) control_plane_sock);
@@ -165,7 +165,7 @@ namespace omnistack::channel {
 
         while (!stop_control_plane) {
             int nevents;
-#if defined(__APPLE__)
+#if defined (__APPLE__)
             struct timespec timeout = {
                     .tv_sec = 1,
                     .tv_nsec = 0
@@ -176,7 +176,7 @@ namespace omnistack::channel {
 #endif
             for (int eidx = 0; eidx < nevents; eidx ++) {
                 auto& evt = events[eidx];
-#if defined(__APPLE__)
+#if defined (__APPLE__)
                 auto fd = (int)(intptr_t)evt.udata;
 #else
                 auto fd = evt.data.fd;
@@ -199,7 +199,7 @@ namespace omnistack::channel {
                                         return ;
                                     }
                                 }
-    #if defined(__APPLE__)
+    #if defined (__APPLE__)
                                 struct kevent ev{};
                                 EV_SET(&ev, new_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void *) (intptr_t) new_fd);
                                 if (kevent(epfd, &ev, 1, nullptr, 0, nullptr)) {
@@ -382,7 +382,7 @@ namespace omnistack::channel {
         }
         auto region_meta = reinterpret_cast<memory::RegionMeta*>((uint8_t*)data - memory::kMetaHeadroomSize);
         region_meta->process_id = 0;
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         ring_ptr_[writer_write_pos_] = region_meta;
 #else
         ring_offset_[writer_write_pos_] = (uint8_t*)region_meta - virt_base_addrs[memory::process_id];
@@ -410,7 +410,7 @@ namespace omnistack::channel {
             }
             reader_write_pos_ = write_pos_;
         }
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         auto ret = ring_ptr_[reader_read_pos_];
 #else
         auto ret = reinterpret_cast<memory::RegionMeta*>(virt_base_addrs[memory::process_id] + ring_offset_[reader_read_pos_]);

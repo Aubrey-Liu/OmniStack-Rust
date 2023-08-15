@@ -8,6 +8,7 @@
 #include <omnistack/tcp_common/tcp_state.hpp>
 #include <omnistack/tcp_common/tcp_constant.hpp>
 #include <omnistack/common/protocol_headers.hpp>
+#include <omnistack/common/time.hpp>
 #include <omnistack/hashtable/hashtable.hpp>
 #include <omnistack/module/module.hpp>
 
@@ -161,8 +162,143 @@ namespace omnistack::data_plane::tcp_common {
         }
     }
 
-    inline Packet* BuildReplyPacket(TcpFlow* flow, uint16_t tcp_flags, PacketPool* packet_pool) {
+    consteval uint8_t TcpHeaderLength(bool mss, bool wsopt, bool sack, bool sack_permitted, bool tspot) {
+        uint8_t length = sizeof(TcpHeader);
+#if defined (OMNI_TCP_OPTION_MSS)
+        if(mss) length = length + ((TCP_OPTION_LENGTH_MSS + 3) >> 2 << 2);
+#endif
+#if defined (OMNI_TCP_OPTION_WSOPT)
+        if(wsopt) length = length + ((TCP_OPTION_LENGTH_WSOPT + 3) >> 2 << 2);
+#endif
+#if defined (OMNI_TCP_OPTION_SACK)
+        if(sack) length = length + ((TCP_OPTION_LENGTH_SACK + 3) >> 2 << 2);
+#endif
+#if defined (OMNI_TCP_OPTION_SACK_PERMITTED)
+        if(sack_permitted) length = length + ((TCP_OPTION_LENGTH_SACK_PERMITTED + 3) >> 2 << 2);
+#endif
+#if defined (OMNI_TCP_OPTION_TSPOT)
+        if(tspot) length = length + ((TCP_OPTION_LENGTH_TSPOT + 3) >> 2 << 2);
+#endif
+        return length + 3 >> 2 << 2;
+    }
 
+    /**
+     * @brief Build a tcp packet with the given tcp flags.
+     * @note this function will not increase send_nxt_.
+    */
+    inline Packet* BuildReplyPacket(TcpFlow* flow, uint16_t tcp_flags, PacketPool* packet_pool) {
+        auto packet = packet_pool->Allocate();
+
+        /* build tcp header */
+        auto& header_tcp = packet->packet_headers_[packet->header_tail_ ++];
+        header_tcp.length_ = TcpHeaderLength(false, false, false, false, true);
+        header_tcp.offset_ = 0;
+        packet->data_ = packet->data_ - header_tcp.length_;
+        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_ + header_tcp.offset_);
+        tcp->sport = flow->local_port_;
+        tcp->dport = flow->remote_port_;
+        tcp->seq = htonl(flow->send_variables_.send_nxt_);
+        tcp->ACK = htonl(flow->receive_variables_.recv_nxt_);
+        tcp->tcpflags = tcp_flags;
+        tcp->dataofs = header_tcp.length_ >> 2;
+        tcp->window = htons(flow->receive_variables_.recv_wnd_);
+        tcp->urgptr = 0;
+
+        /* set tcp options */
+        auto tcp_options = reinterpret_cast<uint8_t*>(tcp) + sizeof(TcpHeader);
+#if defined (OMNI_TCP_OPTION_TSPOT)
+        if(flow->receive_variables_.timestamp_recent_ != 0) {
+            *tcp_options = TCP_OPTION_KIND_NOP;
+            *(tcp_options + 1) = TCP_OPTION_KIND_NOP;
+            *(tcp_options + 2) = TCP_OPTION_KIND_TSPOT;
+            *(tcp_options + 3) = TCP_OPTION_LENGTH_TSPOT;
+            *reinterpret_cast<uint32_t*>(tcp_options + 4) = htonl(static_cast<uint32_t>(NowMs()));
+            *reinterpret_cast<uint32_t*>(tcp_options + 8) = htonl(flow->receive_variables_.timestamp_recent_);
+            tcp_options = tcp_options + 12;
+        }
+#endif
+
+        /* build ipv4 header */
+        auto& header_ipv4 = packet->packet_headers_[packet->header_tail_ ++];
+        header_ipv4.length_ = sizeof(Ipv4Header);
+        header_ipv4.offset_ = 0;
+        header_tcp.offset_ = header_tcp.offset_ + header_ipv4.length_;
+        packet->data_ = packet->data_ - header_ipv4.length_;
+        auto ipv4 = reinterpret_cast<Ipv4Header*>(packet->data_ + header_ipv4.offset_);
+        ipv4->version = 4;
+        ipv4->proto = IP_PROTO_TYPE_TCP;
+        ipv4->src = flow->local_ip_;
+        ipv4->dst = flow->remote_ip_;
+
+        return packet;
+    }
+
+    /**
+     * @brief Build a tcp packet with the given tcp flags.
+     * @note this function will not increase send_nxt_.
+    */
+    inline Packet* BuildReplyPacketWithFullOptions(TcpFlow* flow, uint16_t tcp_flags, PacketPool* packet_pool) {
+        auto packet = packet_pool->Allocate();
+
+        /* build tcp header */
+        auto& header_tcp = packet->packet_headers_[packet->header_tail_ ++];
+        header_tcp.length_ = TcpHeaderLength(true, true, true, true, true);
+        header_tcp.offset_ = 0;
+        packet->data_ = packet->data_ - header_tcp.length_;
+        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_ + header_tcp.offset_);
+        tcp->sport = flow->local_port_;
+        tcp->dport = flow->remote_port_;
+        tcp->seq = htonl(flow->send_variables_.send_nxt_);
+        tcp->ACK = htonl(flow->receive_variables_.recv_nxt_);
+        tcp->tcpflags = tcp_flags;
+        tcp->dataofs = header_tcp.length_ >> 2;
+        tcp->window = htons(flow->receive_variables_.recv_wnd_);
+        tcp->urgptr = 0;
+
+        /* set tcp options */
+        auto tcp_options = reinterpret_cast<uint8_t*>(tcp) + sizeof(TcpHeader);
+#if defined (OMNI_TCP_OPTION_MSS)
+        if(flow->mss_ != 0) {
+            *tcp_options = TCP_OPTION_KIND_MSS;
+            *(tcp_options + 1) = TCP_OPTION_LENGTH_MSS;
+            *reinterpret_cast<uint16_t*>(tcp_options + 2) = htons(flow->mss_);
+            tcp_options = tcp_options + 4;
+        }
+#endif
+#if defined (OMNI_TCP_OPTION_WSOPT)
+        if(flow->receive_variables_.recv_wscale_ != 0) {
+            *tcp_options = TCP_OPTION_KIND_NOP;
+            *(tcp_options + 1) = TCP_OPTION_KIND_WSOPT;
+            *(tcp_options + 2) = TCP_OPTION_LENGTH_WSOPT;
+            *(tcp_options + 3) = flow->receive_variables_.recv_wscale_;
+            tcp_options = tcp_options + 4;
+        }
+#endif
+#if defined (OMNI_TCP_OPTION_TSPOT)
+        if(flow->receive_variables_.timestamp_recent_ != 0) {
+            *tcp_options = TCP_OPTION_KIND_NOP;
+            *(tcp_options + 1) = TCP_OPTION_KIND_NOP;
+            *(tcp_options + 2) = TCP_OPTION_KIND_TSPOT;
+            *(tcp_options + 3) = TCP_OPTION_LENGTH_TSPOT;
+            *reinterpret_cast<uint32_t*>(tcp_options + 4) = htonl(static_cast<uint32_t>(NowMs()));
+            *reinterpret_cast<uint32_t*>(tcp_options + 8) = htonl(flow->receive_variables_.timestamp_recent_);
+            tcp_options = tcp_options + 12;
+        }
+#endif
+
+        /* build ipv4 header */
+        auto& header_ipv4 = packet->packet_headers_[packet->header_tail_ ++];
+        header_ipv4.length_ = sizeof(Ipv4Header);
+        header_ipv4.offset_ = 0;
+        header_tcp.offset_ = header_tcp.offset_ + header_ipv4.length_;
+        packet->data_ = packet->data_ - header_ipv4.length_;
+        auto ipv4 = reinterpret_cast<Ipv4Header*>(packet->data_ + header_ipv4.offset_);
+        ipv4->version = 4;
+        ipv4->proto = IP_PROTO_TYPE_TCP;
+        ipv4->src = flow->local_ip_;
+        ipv4->dst = flow->remote_ip_;
+
+        return packet;
     }
 
 }

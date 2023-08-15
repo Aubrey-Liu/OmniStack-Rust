@@ -14,7 +14,7 @@
 #include <set>
 #include <vector>
 
-#if defined(__APPLE__)
+#if defined (__APPLE__)
 #include <sys/event.h>
 #else
 #include <sys/epoll.h>
@@ -26,7 +26,7 @@
 #include <sys/file.h>
 #endif
 
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
 #include <rte_eal.h>
 #include <rte_malloc.h>
 #include <numa.h>
@@ -103,14 +103,14 @@ namespace omnistack::memory {
                 uint64_t thread_id;
             } new_thread;
             struct {
-                #if defined(OMNIMEM_BACKEND_DPDK)
+                #if defined (OMNIMEM_BACKEND_DPDK)
                 void* addr;
                 #else
                 uint64_t offset;
                 #endif
             } get_memory;
             struct {
-                #if defined(OMNIMEM_BACKEND_DPDK)
+                #if defined (OMNIMEM_BACKEND_DPDK)
                 void* addr;
                 #else
                 uint64_t offset;
@@ -143,14 +143,14 @@ namespace omnistack::memory {
                 uint64_t thread_id;
             } get_memory_pool;
             struct {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 void* addr;
 #else
                 uint64_t offset;
 #endif
             } free_memory;
             struct {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                 void* addr;
 #else
                 uint64_t offset;
@@ -232,7 +232,7 @@ namespace omnistack::memory {
     void MemoryPool::PutBack(void *ptr) {
         auto meta = (RegionMeta*)( reinterpret_cast<char*>(ptr) - kMetaHeadroomSize );
         if (meta->type == RegionType::kMempoolChunk) {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             if (meta->mempool != nullptr)
                 meta->mempool->Put(ptr);
 #else
@@ -246,7 +246,7 @@ namespace omnistack::memory {
     static inline
     RegionMeta* AllocateRegionMeta(size_t size, int thread_cpu, RegionType region_type = RegionType::kNamedShared) {
         auto aligned_size = (size + kMetaHeadroomSize + 63) / 64 * 64;
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         auto region_meta = (RegionMeta*)rte_malloc_socket(nullptr, aligned_size, 64, (thread_cpu == -1 ? -1 : numa_node_of_cpu(
             thread_cpu
         )));
@@ -283,7 +283,7 @@ namespace omnistack::memory {
     */
     static inline
     void FreeRegionMeta(RegionMeta* region_meta) {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         rte_free(region_meta);
 #else
         auto pre_iter = usable_region.begin();
@@ -313,7 +313,7 @@ namespace omnistack::memory {
     static inline
     RpcResponse ControlPlaneFreeMemoryPool(int fd, const RpcRequest& rpc_request) {
         RpcResponse resp;
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         auto region_meta = reinterpret_cast<RegionMeta*>(rpc_request.free_memory_pool.addr);
 #else
         auto region_meta = reinterpret_cast<RegionMeta*>(
@@ -330,7 +330,7 @@ namespace omnistack::memory {
                 );
                 region_meta->ref_cnt --;
                 if (!region_meta->ref_cnt) {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                     auto block_meta = reinterpret_cast<RegionMeta*>(mempool->batch_block_ptr_);
                     auto chunk_meta = reinterpret_cast<RegionMeta*>(mempool->region_ptr_);
 #else
@@ -368,7 +368,7 @@ namespace omnistack::memory {
     static inline
     RpcResponse ControlPlaneFreeShared(int fd, const RpcRequest& rpc_request) {
         RpcResponse resp;
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         auto region_meta = reinterpret_cast<RegionMeta*>(rpc_request.free_memory.addr);
 #else
         auto region_meta = reinterpret_cast<RegionMeta*>(
@@ -409,13 +409,13 @@ namespace omnistack::memory {
 
         int epfd;
         constexpr int kMaxEvents = 16;
-#if defined(__APPLE__)
+#if defined (__APPLE__)
         struct kevent events[kMaxEvents];
 #else
         struct epoll_event events[kMaxEvents];
 #endif
         try {
-#if defined(__APPLE__)
+#if defined (__APPLE__)
             epfd = kqueue();
             struct kevent ev{};
             EV_SET(&ev, sock_client, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void *) (intptr_t) sock_client);
@@ -443,7 +443,7 @@ namespace omnistack::memory {
 
         while (!stop_control_plane) {
             int nevents;
-#if defined(__APPLE__)
+#if defined (__APPLE__)
             struct timespec timeout = {
                     .tv_sec = 1,
                     .tv_nsec = 0
@@ -454,7 +454,7 @@ namespace omnistack::memory {
 #endif
             for (int eidx = 0; eidx < nevents; eidx ++) {
                 auto& evt = events[eidx];
-#if defined(__APPLE__)
+#if defined (__APPLE__)
                 auto fd = (int)(intptr_t)evt.udata;
 #else
                 auto fd = evt.data.fd;
@@ -492,7 +492,7 @@ namespace omnistack::memory {
                                     return ;
                                 }
                             }
-#if defined(__APPLE__)
+#if defined (__APPLE__)
                             struct kevent ev{};
                             EV_SET(&ev, new_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void *) (intptr_t) new_fd);
                             if (kevent(epfd, &ev, 1, nullptr, 0, nullptr)) {
@@ -590,7 +590,7 @@ namespace omnistack::memory {
                                 if (pool_name == "" || pool_name_to_meta.count(pool_name) == 0) {
                                     RegionMeta* mempool_meta = AllocateRegionMeta(sizeof(MemoryPool), thread_cpu, RegionType::kMempool);
                                     used_pools.insert(mempool_meta);
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                                     resp.get_memory_pool.addr = mempool_meta->addr;
 #else
                                     resp.get_memory_pool.offset = mempool_meta->offset;
@@ -609,7 +609,7 @@ namespace omnistack::memory {
 
                                     auto aligned_chunk_region_size = mempool->chunk_size_ * mempool->chunk_count_;
                                     auto chunk_meta = AllocateRegionMeta(aligned_chunk_region_size, thread_cpu);
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                                     mempool->region_ptr_ = reinterpret_cast<uint8_t*>(chunk_meta);
 #else
                                     mempool->region_offset_ = reinterpret_cast<uint8_t*>(chunk_meta) - virt_shared_region;
@@ -618,7 +618,7 @@ namespace omnistack::memory {
                                         auto block_need_allocate = (mempool->chunk_count_ + kMemoryPoolLocalCache) / kMemoryPoolLocalCache + 2 * kMaxThread + 4;
                                         auto all_block_size = block_need_allocate * sizeof(MemoryPoolBatch);
                                         auto block_meta = AllocateRegionMeta(all_block_size, thread_cpu);
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                                         auto chunk_region_begin = mempool->region_ptr_ + kMetaHeadroomSize;
                                         mempool->batch_block_ptr_ = reinterpret_cast<uint8_t*>(block_meta);
                                         mempool->full_block_ptr_ = nullptr;
@@ -681,7 +681,7 @@ namespace omnistack::memory {
                                     auto& meta = pool_name_to_meta[pool_name];
                                     meta->ref_cnt ++;
                                     region_meta_to_fd[meta].insert(fd);
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                                     resp.get_memory_pool.addr = meta->addr;
 #else
                                     resp.get_memory_pool.offset = meta->offset;
@@ -761,7 +761,7 @@ namespace omnistack::memory {
                                 RpcRequest request = {
                                     .type = RpcRequestType::kFreeMemoryPool,
                                     .free_memory_pool = {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                                         .addr = region_meta
 #else
                                         .offset = static_cast<uint64_t>(reinterpret_cast<uint8_t*>(region_meta) - virt_shared_region)
@@ -777,7 +777,7 @@ namespace omnistack::memory {
                                 RpcRequest request = {
                                     .type = RpcRequestType::kFreeMemory,
                                     .free_memory = {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
                                         .addr = region_meta
 #else
                                         .offset = static_cast<uint64_t>(reinterpret_cast<uint8_t*>(region_meta) - virt_shared_region)
@@ -807,7 +807,7 @@ namespace omnistack::memory {
     }
 
     void StartControlPlane(
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         bool init_dpdk
 #endif
     ) {
@@ -815,7 +815,7 @@ namespace omnistack::memory {
         std::unique_lock<std::mutex> _(control_plane_state_lock);
         if (control_plane_started)
             throw std::runtime_error("There is multiple control plane");
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         if (init_dpdk) {
             constexpr int argc = 4;
             char** argv = new char*[argc];
@@ -833,7 +833,7 @@ namespace omnistack::memory {
         {
             virt_base_addrs_name = "omnistack_virt_base_addrs_" + std::to_string(getpid());
             {
-                #if defined(__APPLE__)
+                #if defined (__APPLE__)
                 auto ret = shm_open(virt_base_addrs_name.c_str(), O_RDWR);
                 #else
                 auto ret = shm_open(virt_base_addrs_name.c_str(), O_RDWR, 0666);
@@ -841,7 +841,7 @@ namespace omnistack::memory {
                 if (ret >= 0) throw std::runtime_error("Failed to init virt_base_addrs for already exists");
             }
             {
-                #if defined(__APPLE__)
+                #if defined (__APPLE__)
                 virt_base_addrs_fd = shm_open(virt_base_addrs_name.c_str(), O_RDWR | O_CREAT);
                 #else
                 virt_base_addrs_fd = shm_open(virt_base_addrs_name.c_str(), O_RDWR | O_CREAT, 0666);
@@ -865,7 +865,7 @@ namespace omnistack::memory {
         {
             virt_shared_region_name = "omnistack_virt_shared_region_" + std::to_string(getpid());
             {
-                #if defined(__APPLE__)
+                #if defined (__APPLE__)
                 auto ret = shm_open(virt_shared_region_name.c_str(), O_RDWR);
                 #else
                 auto ret = shm_open(virt_shared_region_name.c_str(), O_RDWR, 0666);
@@ -873,7 +873,7 @@ namespace omnistack::memory {
                 if (ret >= 0) throw std::runtime_error("Failed to init virt_shared_region for already exists");
             }
             {
-                #if defined(__APPLE__)
+                #if defined (__APPLE__)
                 virt_shared_region_control_plane_fd = shm_open(virt_shared_region_name.c_str(), O_RDWR | O_CREAT);
                 #else
                 virt_shared_region_control_plane_fd = shm_open(virt_shared_region_name.c_str(), O_RDWR | O_CREAT, 0666);
@@ -1037,11 +1037,11 @@ namespace omnistack::memory {
     }
 
     void InitializeSubsystem(int control_plane_id
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             ,bool init_dpdk
 #endif
         ) {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         if (init_dpdk) {
             constexpr int argc = 4;
             char** argv = new char*[argc];
@@ -1085,7 +1085,7 @@ namespace omnistack::memory {
             {
                 virt_base_addrs_name = "omnistack_virt_base_addrs_" + std::to_string(main_process_pid);
                 {
-                    #if defined(__APPLE__)
+                    #if defined (__APPLE__)
                     virt_base_addrs_fd = shm_open(virt_base_addrs_name.c_str(), O_RDWR);
                     #else
                     virt_base_addrs_fd = shm_open(virt_base_addrs_name.c_str(), O_RDWR, 0666);
@@ -1109,7 +1109,7 @@ namespace omnistack::memory {
             {
                 virt_shared_region_name = "omnistack_virt_shared_region_" + std::to_string(main_process_pid);
                 {
-                    #if defined(__APPLE__)
+                    #if defined (__APPLE__)
                     virt_shared_region_fd = shm_open(virt_shared_region_name.c_str(), O_RDWR);
                     #else
                     virt_shared_region_fd = shm_open(virt_shared_region_name.c_str(), O_RDWR, 0666);
@@ -1173,7 +1173,7 @@ namespace omnistack::memory {
         strcpy(local_rpc_request.get_memory.name, name.c_str());
         auto resp = SendLocalRpcRequest();
         if (resp.status == RpcResponseStatus::kSuccess) {
-            #if defined(OMNIMEM_BACKEND_DPDK)
+            #if defined (OMNIMEM_BACKEND_DPDK)
             auto meta = reinterpret_cast<RegionMeta*>(resp.get_memory.addr);
             #else
             auto meta = reinterpret_cast<RegionMeta*>(virt_base_addrs[process_id] + resp.get_memory.offset);
@@ -1185,7 +1185,7 @@ namespace omnistack::memory {
 
     void FreeNamedShared(void* ptr) {
         local_rpc_request.type = RpcRequestType::kFreeMemory;
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         local_rpc_request.free_memory.addr = (uint8_t*)ptr - kMetaHeadroomSize;
 #else
         local_rpc_request.free_memory.offset = reinterpret_cast<uint8_t*>(ptr) - virt_base_addrs[process_id] - kMetaHeadroomSize;
@@ -1200,7 +1200,7 @@ namespace omnistack::memory {
         auto cache = local_free_cache_[thread_id];
         if (!cache) [[unlikely]] {
             pthread_mutex_lock(&recycle_mutex_);
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             auto container_ptr = empty_block_ptr_;
             empty_block_ptr_ = container_ptr->next;
 #else
@@ -1214,7 +1214,7 @@ namespace omnistack::memory {
             container_ptr->used = container_ptr->cnt = 0;
         } else if (cache->cnt == kMemoryPoolLocalCache) [[unlikely]] { // Get a empty block from main pool
             pthread_mutex_lock(&recycle_mutex_);
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             cache->next = full_block_ptr_;
             full_block_ptr_ = cache;
 #else
@@ -1222,7 +1222,7 @@ namespace omnistack::memory {
             full_block_offset_ = reinterpret_cast<uint8_t*>(cache) - virt_base_addrs[process_id];
 #endif
 
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             auto container_ptr = empty_block_ptr_;
             empty_block_ptr_ = container_ptr->next;
 #else
@@ -1236,7 +1236,7 @@ namespace omnistack::memory {
         }
         if (cache) [[likely]] {
             reinterpret_cast<RegionMeta*>(real_ptr)->ref_cnt = 0;
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             cache->addrs[cache->cnt++] = real_ptr;
 #else
             cache->offsets[cache->cnt++] = (real_ptr - virt_base_addrs[process_id]);
@@ -1247,7 +1247,7 @@ namespace omnistack::memory {
     void* MemoryPool::Get() {
         if (local_cache_[thread_id] == nullptr) [[unlikely]] {
             pthread_mutex_lock(&recycle_mutex_);
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             if (full_block_ptr_ != nullptr) {
                 auto container_ptr = full_block_ptr_;
                 full_block_ptr_ = container_ptr->next;
@@ -1270,7 +1270,7 @@ namespace omnistack::memory {
             pthread_mutex_unlock(&recycle_mutex_);
         } else if (local_cache_[thread_id]->used == local_cache_[thread_id]->cnt) [[unlikely]] { // chunk ran out
             pthread_mutex_lock(&recycle_mutex_);
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             if (full_block_ptr_ != nullptr) {
                 auto container_ptr = full_block_ptr_;
                 full_block_ptr_ = container_ptr->next;
@@ -1304,14 +1304,14 @@ namespace omnistack::memory {
             pthread_mutex_unlock(&recycle_mutex_);
         }
         if (local_cache_[thread_id] != nullptr) [[likely]] {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             auto ret = local_cache_[thread_id]->addrs[local_cache_[thread_id]->used++];
 #else
             auto ret_offset = local_cache_[thread_id]->offsets[local_cache_[thread_id]->used++];
             auto ret = virt_base_addrs[process_id] + ret_offset;
 #endif
             auto meta = reinterpret_cast<RegionMeta *>(ret);
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             meta->mempool = this;
             meta->addr = ret;
 #else
@@ -1336,7 +1336,7 @@ namespace omnistack::memory {
         strcpy(local_rpc_request.get_memory_pool.name, name.c_str());
         auto resp = SendLocalRpcRequest();
         if (resp.status == RpcResponseStatus::kSuccess) {
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             auto pool = reinterpret_cast<MemoryPool*>(reinterpret_cast<char*>(resp.get_memory_pool.addr) + kMetaHeadroomSize);
 #else
             auto pool = reinterpret_cast<MemoryPool*>(virt_base_addrs[process_id] + resp.get_memory_pool.offset + kMetaHeadroomSize);
@@ -1352,7 +1352,7 @@ namespace omnistack::memory {
 
     void FreeMemoryPool(MemoryPool* mempool) {
         local_rpc_request.type = RpcRequestType::kFreeMemoryPool;
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         local_rpc_request.free_memory.addr = (uint8_t*)mempool - kMetaHeadroomSize;
 #else
         local_rpc_request.free_memory.offset = reinterpret_cast<uint8_t*>(mempool) - virt_base_addrs[process_id] - kMetaHeadroomSize;
@@ -1380,7 +1380,7 @@ namespace omnistack::memory {
         strcpy(local_rpc_request.get_memory.name, name.c_str());
         auto resp = SendLocalRpcRequest();
         if (resp.status == RpcResponseStatus::kSuccess) {
-            #if defined(OMNIMEM_BACKEND_DPDK)
+            #if defined (OMNIMEM_BACKEND_DPDK)
             auto meta = reinterpret_cast<RegionMeta*>(resp.get_memory.addr);
             #else
             auto meta = reinterpret_cast<RegionMeta*>(virt_base_addrs[process_id] + resp.get_memory.offset);

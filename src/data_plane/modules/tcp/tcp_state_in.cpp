@@ -54,8 +54,10 @@ namespace omnistack::data_plane::tcp_state_in {
         DecodeOptions(tcp_header, tcp.length_, &remote_mss, &remote_wscale, nullptr, nullptr, &remote_timestamp, nullptr);
 
         flow->state_ = TcpFlow::State::kSynReceived;
-#if defined(OMNI_TCP_OPTION_MSS)
-        flow->mss = remote_mss ? std::min(remote_mss, kTcpMaxSegmentSize) : kTcpMaxSegmentSize;
+#if defined (OMNI_TCP_OPTION_MSS)
+        flow->mss_ = remote_mss ? std::min(remote_mss, kTcpMaxSegmentSize) : kTcpMaxSegmentSize;
+#else 
+        flow->mss_ = kTcpMaxSegmentSize;
 #endif
 
         /* set receive variables */
@@ -63,20 +65,29 @@ namespace omnistack::data_plane::tcp_state_in {
         recv_var.irs_ = ntohl(tcp_header->seq);
         recv_var.recv_nxt_ = recv_var.irs_ + 1;
         recv_var.recv_wnd_ = kTcpReceiveWindow;
-#if defined(OMNI_TCP_OPTION_WSOPT)
+#if defined (OMNI_TCP_OPTION_WSOPT)
         recv_var.recv_wscale_ = kTcpReceiveWindowScale;
+#else
+        recv_var.recv_wscale_ = 0;
 #endif
-#if defined(OMNI_TCP_OPTION_TSPOT)
+#if defined (OMNI_TCP_OPTION_TSPOT)
         recv_var.timestamp_recent_ = remote_timestamp;
+#else 
+        recv_var.timestamp_recent_ = 0;
 #endif
 
         /* set send variables */
         auto& send_var = flow->send_variables_;
         send_var.iss_ = Rand32();
         send_var.send_una_ = send_var.iss_;
-        send_var.send_nxt_ = send_var.iss_ + 1;
+        send_var.send_nxt_ = send_var.iss_;
+#if defined (OMNI_TCP_OPTION_WSOPT)
         send_var.send_wnd_ = ntohs(tcp_header->window) << remote_wscale;
-        send_var.send_wl1_ = send_var.iss_;
+        send_var.send_wscale_ = remote_wscale;
+#else
+        send_var.send_wnd_ = ntohs(tcp_header->window);
+#endif
+        send_var.send_wl1_ = send_var.iss_ - 1;
         send_var.send_wl2_ = recv_var.irs_;
         send_var.rxtcur_ = kTcpInitialRetransmissionTimeout;
         send_var.rto_begin_ = 0;
@@ -86,11 +97,14 @@ namespace omnistack::data_plane::tcp_state_in {
         flow->congestion_control_ = TcpCongestionControlFactory::instance_().Create(listen_flow->congestion_control_algorithm_, flow);
     
         /* reply SYN-ACK */
-        auto reply = BuildReplyPacket(flow, 0, packet_pool_);
+        auto reply = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
         if(reply == nullptr) {
             tcp_shared_handle_->ReleaseFlow(flow);
             return TcpInvalid(packet);
         }
+        reply->custom_value_ = reinterpret_cast<uint64_t>(flow);
+        tcp_shared_handle_->AcquireFlow(flow);
+
         packet->Release();
         return reply;
     }

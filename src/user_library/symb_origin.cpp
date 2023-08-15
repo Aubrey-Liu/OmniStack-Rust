@@ -20,7 +20,7 @@ namespace omnistack {
             omnistack_typeof(::send)* send = nullptr;
             omnistack_typeof(::sendto)* sendto = nullptr;
 
-#if defined(__APPLE__)
+#if defined (__APPLE__)
             omnistack_typeof(::kqueue)* kqueue = nullptr;
             omnistack_typeof(::kevent)* kevent = nullptr;
             omnistack_typeof(::kevent64)* kevent64 = nullptr;
@@ -51,7 +51,7 @@ namespace omnistack {
                 INIT_API(send);
                 INIT_API(sendto);
 
-#if defined(__APPLE__)
+#if defined (__APPLE__)
                 INIT_API(kqueue);
                 INIT_API(kevent);
                 INIT_API(kevent64);

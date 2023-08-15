@@ -13,7 +13,7 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
-#if defined(__APPLE__)
+#if defined (__APPLE__)
 #include <sys/event.h>
 #elif defined(__linux__)
 #include <sys/epoll.h>
@@ -47,7 +47,7 @@ namespace omnistack {
             extern omnistack_typeof(::send)* send;
             extern omnistack_typeof(::sendto)* sendto;
 
-#if defined(__APPLE__)
+#if defined (__APPLE__)
             extern omnistack_typeof(::kqueue)* kqueue;
             extern omnistack_typeof(::kevent)* kevent;
             extern omnistack_typeof(::kevent64)* kevent64;

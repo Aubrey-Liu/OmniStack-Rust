@@ -10,7 +10,7 @@ TEST(LibrariesMemory, RunControlPlane) {
     auto pid = fork();
     if (pid == 0) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -29,7 +29,7 @@ TEST(LibrariesMemory, ConnectToControlPlane) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
             true
 #endif
         );
@@ -40,7 +40,7 @@ TEST(LibrariesMemory, ConnectToControlPlane) {
     auto client_pid = fork();
     if (!client_pid) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -64,7 +64,7 @@ TEST(LibrariesMemory, ResourcesRecycle) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -75,7 +75,7 @@ TEST(LibrariesMemory, ResourcesRecycle) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -93,7 +93,7 @@ TEST(LibrariesMemory, ResourcesRecycle) {
     auto client_pid1 = fork();
     if (!client_pid1) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -121,7 +121,7 @@ TEST(LibrariesMemory, MultiConnectToControlPlane) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -132,7 +132,7 @@ TEST(LibrariesMemory, MultiConnectToControlPlane) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -145,7 +145,7 @@ TEST(LibrariesMemory, MultiConnectToControlPlane) {
     auto client_pid1 = fork();
     if (!client_pid1) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -171,7 +171,7 @@ TEST(LibrariesMemory, AllocateLocal) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -182,7 +182,7 @@ TEST(LibrariesMemory, AllocateLocal) {
     auto client_pid = fork();
     if (!client_pid) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -209,7 +209,7 @@ TEST(LibrariesMemory, AllocateShared) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -220,7 +220,7 @@ TEST(LibrariesMemory, AllocateShared) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -236,7 +236,7 @@ TEST(LibrariesMemory, AllocateShared) {
     if (!client_pid1) {
         usleep(500000);
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -265,7 +265,7 @@ TEST(LibrariesMemory, FreeShared) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -276,7 +276,7 @@ TEST(LibrariesMemory, FreeShared) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -293,7 +293,7 @@ TEST(LibrariesMemory, FreeShared) {
     if (!client_pid1) {
         usleep(500000);
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -323,7 +323,7 @@ TEST(LibrariesMemory, CreateMempool) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -334,7 +334,7 @@ TEST(LibrariesMemory, CreateMempool) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -361,7 +361,7 @@ TEST(LibrariesMemory, GetChunkFromMempool) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -372,7 +372,7 @@ TEST(LibrariesMemory, GetChunkFromMempool) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -399,7 +399,7 @@ TEST(LibrariesMemory, PutChunkToMempool) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -410,7 +410,7 @@ TEST(LibrariesMemory, PutChunkToMempool) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -436,7 +436,7 @@ TEST(LibrariesMemory, GetChunksFromMempool) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -447,7 +447,7 @@ TEST(LibrariesMemory, GetChunksFromMempool) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -479,7 +479,7 @@ TEST(LibrariesMemory, PutChunksToMempool) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -490,7 +490,7 @@ TEST(LibrariesMemory, PutChunksToMempool) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -521,7 +521,7 @@ TEST(LibrariesMemory, MixedMempool) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -532,7 +532,7 @@ TEST(LibrariesMemory, MixedMempool) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -583,7 +583,7 @@ TEST(LibrariesMemory, FreeMemoryPool) {
     auto control_pid = fork();
     if (!control_pid) {
         omnistack::memory::StartControlPlane(
-    #if defined(OMNIMEM_BACKEND_DPDK)
+    #if defined (OMNIMEM_BACKEND_DPDK)
             true
     #endif
         );
@@ -594,7 +594,7 @@ TEST(LibrariesMemory, FreeMemoryPool) {
     auto client_pid0 = fork();
     if (!client_pid0) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
@@ -609,7 +609,7 @@ TEST(LibrariesMemory, FreeMemoryPool) {
     auto client_pid1 = fork();
     if (!client_pid1) {
         omnistack::memory::InitializeSubsystem(0
-#if defined(OMNIMEM_BACKEND_DPDK)
+#if defined (OMNIMEM_BACKEND_DPDK)
         , true
 #endif
         );
