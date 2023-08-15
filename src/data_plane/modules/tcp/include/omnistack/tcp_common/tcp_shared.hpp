@@ -237,12 +237,12 @@ namespace omnistack::data_plane::tcp_common {
      * @brief Build a tcp packet with the given tcp flags.
      * @note this function will not increase send_nxt_.
     */
-    inline Packet* BuildReplyPacket(TcpFlow* flow, uint16_t tcp_flags, PacketPool* packet_pool, bool mss, bool wscale) {
+    inline Packet* BuildReplyPacketWithFullOptions(TcpFlow* flow, uint16_t tcp_flags, PacketPool* packet_pool) {
         auto packet = packet_pool->Allocate();
 
         /* build tcp header */
         auto& header_tcp = packet->packet_headers_[packet->header_tail_ ++];
-        header_tcp.length_ = TcpHeaderLength(false, false, false, false, true);
+        header_tcp.length_ = TcpHeaderLength(true, true, true, true, true);
         header_tcp.offset_ = 0;
         packet->data_ = packet->data_ - header_tcp.length_;
         auto tcp = reinterpret_cast<TcpHeader*>(packet->data_ + header_tcp.offset_);
@@ -258,7 +258,7 @@ namespace omnistack::data_plane::tcp_common {
         /* set tcp options */
         auto tcp_options = reinterpret_cast<uint8_t*>(tcp) + sizeof(TcpHeader);
 #if defined (OMNI_TCP_OPTION_MSS)
-        if(mss && flow->mss_ != 0) {
+        if(flow->mss_ != 0) {
             *tcp_options = TCP_OPTION_KIND_MSS;
             *(tcp_options + 1) = TCP_OPTION_LENGTH_MSS;
             *reinterpret_cast<uint16_t*>(tcp_options + 2) = htons(flow->mss_);
@@ -266,7 +266,7 @@ namespace omnistack::data_plane::tcp_common {
         }
 #endif
 #if defined (OMNI_TCP_OPTION_WSOPT)
-        if(wscale && flow->receive_variables_.recv_wscale_ != 0) {
+        if(flow->receive_variables_.recv_wscale_ != 0) {
             *tcp_options = TCP_OPTION_KIND_NOP;
             *(tcp_options + 1) = TCP_OPTION_KIND_WSOPT;
             *(tcp_options + 2) = TCP_OPTION_LENGTH_WSOPT;

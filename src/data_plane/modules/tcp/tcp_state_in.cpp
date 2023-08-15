@@ -97,7 +97,7 @@ namespace omnistack::data_plane::tcp_state_in {
         flow->congestion_control_ = TcpCongestionControlFactory::instance_().Create(listen_flow->congestion_control_algorithm_, flow);
     
         /* reply SYN-ACK */
-        auto reply = BuildReplyPacket(flow, 0, packet_pool_);
+        auto reply = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
         if(reply == nullptr) {
             tcp_shared_handle_->ReleaseFlow(flow);
             return TcpInvalid(packet);
