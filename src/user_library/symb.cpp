@@ -22,9 +22,10 @@ namespace omnistack::user_lib::api {
         if (ret == -1) return ret;
         if (ret == 0) {
             omnistack::memory::ForkSubsystem();
-            omnistack::memory::InitializeSubsystemThread();
             omnistack::token::ForkSubsystem();
             omnistack::channel::ForkSubsystem();
+
+            omnistack::memory::InitializeSubsystemThread();
         }
         return ret;
     }
