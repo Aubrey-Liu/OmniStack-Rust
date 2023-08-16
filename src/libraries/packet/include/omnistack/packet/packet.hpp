@@ -27,7 +27,7 @@ namespace omnistack::packet {
 
     struct PacketHeader {
         uint8_t length_;
-        int offset_;         // offset referred to data_ in packet
+        uint8_t offset_;        // offset referred to data_ in packet
     };
 
     class PacketPool;
@@ -57,17 +57,16 @@ namespace omnistack::packet {
         uint32_t custom_mask_;      // bitmask, module can use for transferring infomation
         uint64_t custom_value_;     // value, module can use for transferring data
         Pointer<char> data_;        // pointer to packet data
-        uint64_t iova_;             // IO address for DMA
         uint32_t flow_hash_;
         uint16_t header_tail_;      // index into packet_headers_
         uint16_t padding;
+        PacketHeader packet_headers_[kPacketMaxHeaderNum];
         Pointer<Packet> next_packet_;
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         uint32_t upstream_node_;        /* identify the upstream node of current packet */
         /* a cache line ends here */
 
         char mbuf_[kPacketMbufSize];
-        PacketHeader packet_headers_[kPacketMaxHeaderNum];
     };
 
     class PacketPool {
@@ -154,7 +153,6 @@ namespace omnistack::packet {
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
         packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom;
-        packet_copy->iova_ = packet->iova_;
         packet_copy->next_packet_ = nullptr;
 #if defined (OMNIMEM_BACKEND_DPDK)
         rte_memcpy(packet_copy->data_ + packet->offset_, packet->mbuf_ + packet->offset_, packet->length_);
@@ -182,7 +180,6 @@ namespace omnistack::packet {
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
         packet_copy->data_ = packet->data_;
-        packet_copy->iova_ = packet->iova_;
         packet_copy->next_packet_ = nullptr;
         while(packet_copy->header_tail_ != packet->header_tail_) {
             auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
