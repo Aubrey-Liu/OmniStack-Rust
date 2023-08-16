@@ -1389,4 +1389,36 @@ namespace omnistack::memory {
         }
         return nullptr;
     }
+
+    void ForkSubsystem() {
+        // sock_id = control_plane_id;
+        id_to_rpc_meta = std::map<int, RpcRequestMeta*>();
+        sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_memory_sock" +
+                    std::to_string(sock_id) + ".socket";
+        sockaddr_un addr{};
+        addr.sun_family = AF_UNIX;
+        if (sock_name.length() >= sizeof(addr.sun_path))
+            throw std::runtime_error("Failed to assign sock path to unix domain addr");
+        strcpy(addr.sun_path, sock_name.c_str());
+        sock_to_control_plane = socket(AF_UNIX, SOCK_STREAM, 0);
+
+        if (connect(sock_to_control_plane, (struct sockaddr*)&addr, sizeof(addr.sun_family) + sock_name.length()))
+            throw std::runtime_error("Failed to connect to control plane " + std::to_string(errno));
+
+        rpc_response_receiver = new std::thread(RpcResponseReceiver);
+
+        local_rpc_request.type = RpcRequestType::kGetProcessId;
+        auto resp = SendLocalRpcRequest();
+        auto old_process_id = process_id;
+        if (resp.status == RpcResponseStatus::kSuccess) {
+            process_id = resp.get_process_id.process_id;
+            main_process_pid = resp.get_process_id.pid;
+        } else {
+            std::cerr << "Failed to initialize subsystem\n";
+            exit(1);
+        }
+#if !defined(OMNIMEM_BACKEND_DPDK)
+        virt_base_addrs[process_id] = virt_base_addrs[old_process_id];
+#endif
+    }
 }

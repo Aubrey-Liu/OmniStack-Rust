@@ -541,4 +541,23 @@ namespace omnistack::token
             throw std::runtime_error("Failed to create token");
         return resp.new_token.token.Get();
     }
+
+    void ForkSubsystem() {
+        control_plane_id = memory::GetControlPlaneId();
+        auto control_plane_sock_name = std::filesystem::temp_directory_path().string() + "/omnistack_token_sock" +
+            std::to_string(control_plane_id) + ".socket";
+
+        sockaddr_un addr{};
+        addr.sun_family = AF_UNIX;
+        if (control_plane_sock_name.length() >= sizeof(addr.sun_path))
+            throw std::runtime_error("Failed to assign sock path to unix domain addr");
+        strcpy(addr.sun_path, control_plane_sock_name.c_str());
+        sock_to_control_plane = socket(AF_UNIX, SOCK_STREAM, 0);
+
+        if (connect(sock_to_control_plane, (struct sockaddr*)&addr, sizeof(addr.sun_family) + control_plane_sock_name.length()))
+            throw std::runtime_error("Failed to connect to control plane " + std::to_string(errno));
+
+        id_to_rpc_meta = std::map<int, RpcRequestMeta*>();
+        rpc_response_receiver = new std::thread(RpcResponseReceiver);
+    }
 } // namespace omnistack::token

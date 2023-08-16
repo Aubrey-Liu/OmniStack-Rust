@@ -69,6 +69,8 @@ namespace omnistack {
 #endif
         );
 
+        void ForkSubsystem();
+
         /**
          * @brief Initialize the memory subsystem per thread
          */

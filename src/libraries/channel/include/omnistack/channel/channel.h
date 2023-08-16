@@ -143,6 +143,8 @@ public:
         
         void InitializeSubsystem();
 
+        void ForkSubsystem();
+
         RawChannel* GetRawChannel(const std::string& name);
 
         Channel* GetChannel(const std::string& name);
