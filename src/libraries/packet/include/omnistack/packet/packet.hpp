@@ -13,6 +13,8 @@
 #if defined (OMNIMEM_BACKEND_DPDK)
 #include <rte_mbuf.h>
 #include <rte_memcpy.h>
+#else
+#include <cstring>
 #endif
 
 namespace omnistack::packet {

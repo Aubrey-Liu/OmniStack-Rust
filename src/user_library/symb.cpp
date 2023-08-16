@@ -14,9 +14,11 @@ noexcept
     return ret;
 }
 
+#if defined(OMNIAPI_DYNAMIC)
 extern "C" {
     pid_t fork(void) {
         auto ret = omnistack::user_lib::api::fork();
         return ret;
     }
 }
+#endif
