@@ -2,7 +2,7 @@
 // Created by Jeremy Guo on 2023/6/12.
 //
 
-#include "symb.h"
+#include <omnistack/user_lib/symb.h>
 
 namespace omnistack {
     namespace user_lib {

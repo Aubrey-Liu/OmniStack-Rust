@@ -64,7 +64,7 @@ namespace omnistack {
         
         void InitializeSubsystem();
 
-        // void InitializeSubsystemThread();
+        void ForkSubsystem();
 
         Token* CreateToken();
 

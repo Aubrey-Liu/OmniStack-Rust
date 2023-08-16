@@ -33,6 +33,10 @@
 
 namespace omnistack {
     namespace user_lib {
+        void Initialize();
+        void CleanUp();
+        void InitializeThread();
+
         namespace posix_api {
             extern omnistack_typeof(::fork)* fork;
             extern omnistack_typeof(::pthread_create)* pthread_create;

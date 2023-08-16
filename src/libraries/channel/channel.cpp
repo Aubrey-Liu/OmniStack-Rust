@@ -591,7 +591,12 @@ namespace omnistack::channel {
         if (connect(sock_to_control_plane, (struct sockaddr*)&addr, sizeof(addr.sun_family) + control_plane_sock_name.length()))
             throw std::runtime_error("Failed to connect to control plane " + std::to_string(errno));
 
+        id_to_rpc_meta = std::map<int, RpcRequestMeta*>();
         rpc_response_receiver = new std::thread(RpcResponseReceiver);
+    }
+
+    void ForkSubsystem() {
+        InitializeSubsystem();
     }
 
     RpcResponse SendLocalRpcMessage() {
