@@ -28,3 +28,6 @@ target_link_libraries(omni_data_plane_tcp_flow_cache PUBLIC ${OMNI_DATA_PLANE_LI
 
 add_library(omni_data_plane_tcp_state_in SHARED tcp_state_in.cpp)
 target_link_libraries(omni_data_plane_tcp_state_in PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common)
+
+add_library(omni_data_plane_tcp_state_out SHARED tcp_state_out.cpp)
+target_link_libraries(omni_data_plane_tcp_state_out PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common)

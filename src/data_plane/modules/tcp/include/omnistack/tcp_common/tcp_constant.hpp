@@ -14,7 +14,8 @@ namespace omnistack::data_plane::tcp_common {
     constexpr uint16_t kTcpMaxSegmentSize = 1460;
     constexpr uint16_t kTcpReceiveWindow = 65535;
     constexpr uint8_t kTcpReceiveWindowScale = 7;
-    constexpr uint64_t kTcpInitialRetransmissionTimeout = 1000000;
+    constexpr uint64_t kTcpMaximumRetransmissionTimeout = 100000000;
+    constexpr uint64_t kTcpMinimumRetransmissionTimeout = 200000;
 
     constexpr char kTcpDefaultCongestionControlAlgorithm[] = "Cubic";
 }
