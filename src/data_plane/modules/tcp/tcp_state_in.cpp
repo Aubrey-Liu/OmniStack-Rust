@@ -91,20 +91,22 @@ namespace omnistack::data_plane::tcp_state_in {
         auto& recv_var = flow->receive_variables_;
         recv_var.irs_ = ntohl(tcp_header->seq);
         recv_var.recv_nxt_ = recv_var.irs_ + 1;
-        recv_var.recv_wnd_ = kTcpReceiveWindow;
+        if(flow->state_ == TcpFlow::State::kListen) {
+            recv_var.recv_wnd_ = kTcpDefaultReceiveWindow;
 #if defined (OMNI_TCP_OPTION_WSOPT)
-        recv_var.recv_wscale_ = kTcpReceiveWindowScale;
+            recv_var.recv_wscale_ = kTcpDefaultReceiveWindowScale;
 #else
-        recv_var.recv_wscale_ = 0;
+            recv_var.recv_wscale_ = 0;
 #endif
+        }
 #if defined (OMNI_TCP_OPTION_TSPOT)
         recv_var.timestamp_recent_ = remote_timestamp;
 #else
         recv_var.timestamp_recent_ = 0;
 #endif
 
+        /* set send variables */
         if(flow->state_ == TcpFlow::State::kListen) {
-            /* set send variables */
             auto& send_var = flow->send_variables_;
             send_var.iss_ = Rand32();
             send_var.send_una_ = send_var.iss_;
@@ -121,7 +123,7 @@ namespace omnistack::data_plane::tcp_state_in {
             send_var.rto_begin_ = 0;
             send_var.rto_timeout_ = 0;
 
-            /* set tcp congestion control algorithm */
+            /* set congestion control algorithm */
             flow->congestion_control_ = TcpCongestionControlFactory::instance_().Create(listen_flow->congestion_control_algorithm_, flow);
         }
 
@@ -436,6 +438,8 @@ namespace omnistack::data_plane::tcp_state_in {
             ret->custom_value_ = reinterpret_cast<uint64_t>(flow);
             tcp_shared_handle_->AcquireFlow(flow);
         }
+
+        /* TODO: return packet if needed */
 
         return ret;
     }

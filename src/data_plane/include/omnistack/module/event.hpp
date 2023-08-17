@@ -5,12 +5,13 @@
 #ifndef OMNISTACK_MODULE_EVENT_HPP
 #define OMNISTACK_MODULE_EVENT_HPP
 
-/* TODO: deliver control message to any module by a seperated control channel(event base) */
-
 #include <functional>
-#include <omnistack/module/hash.hpp>
+#include <omnistack/common/hash.hpp>
+#include <omnistack/packet/packet.hpp>
 
 namespace omnistack::data_plane {
+
+    constexpr uint32_t kEventMaxLength = 64;
 
     class Event {
     public:
@@ -19,9 +20,14 @@ namespace omnistack::data_plane {
         static consteval EventType GenerateEventType(const char name[]) {
             return ConstCrc32(name);
         }
+
+        Event(EventType type) : type_(type) {}
+        virtual ~Event() = default;
+
+        EventType type_;
     };
 
-    typedef std::function<void(Event* event)> EventCallback;
+    typedef std::function<packet::Packet*(Event* event)> EventCallback;
     typedef std::pair<Event::EventType, EventCallback> EventRegisterEntry;
 }
 

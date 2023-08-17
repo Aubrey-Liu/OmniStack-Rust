@@ -50,7 +50,7 @@ namespace omnistack::data_plane {
 
         void ApplyDownstreamFilters(Packet* packet);
 
-        virtual Filter GetFilter(std::string_view upstream_module, uint32_t global_id) { return DefaultFilter; };
+        virtual Filter GetFilter(std::string_view upstream_module, uint32_t global_id) { return DefaultFilter; }
 
         virtual Packet* MainLogic(Packet* packet) { return packet; }
 
@@ -60,9 +60,9 @@ namespace omnistack::data_plane {
 
         virtual void Destroy() {};
 
-        virtual std::vector<EventRegisterEntry> RegisterEventCallback() { return {}; }
+        virtual Packet* EventCallback(Event* event) { return nullptr; }
 
-        virtual void EventCallback(Event* event) {};
+        virtual std::vector<Event::EventType> RegisterEvents() { return {}; }
 
         virtual constexpr bool allow_duplication_() { return false; }
 
