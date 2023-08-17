@@ -366,7 +366,7 @@ namespace omnistack::channel {
         }
     }
 
-    inline int Channel::Write(const void* data) {
+    int Channel::Write(const void* data) {
         if (!writer_token_->CheckToken())
             writer_token_->AcquireToken();
         return raw_channel_->Write(data);
@@ -395,7 +395,7 @@ namespace omnistack::channel {
         return 0;
     }
 
-    inline void* Channel::Read() {
+    void* Channel::Read() {
         if (!reader_token_->CheckToken())
             reader_token_->AcquireToken();
         return raw_channel_->Read();
@@ -432,7 +432,7 @@ namespace omnistack::channel {
         return true;
     }
 
-    inline int Channel::Flush() {
+    int Channel::Flush() {
         if (!writer_token_->CheckToken())
             writer_token_->AcquireToken();
         return raw_channel_->Flush();

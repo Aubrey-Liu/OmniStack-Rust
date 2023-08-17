@@ -155,13 +155,13 @@ namespace omnistack::packet {
         packet_copy->mbuf_type_ = Packet::MbufType::kOrigin;
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
-        packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom + (packet->data_ - packet->mbuf_);
+        packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom + (packet->data_.Get() - packet->mbuf_);
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
 #if defined (OMNIMEM_BACKEND_DPDK)
-        rte_memcpy(packet_copy->data_, packet->data_, packet->length_);
+        rte_memcpy(packet_copy->data_.Get(), packet->data_.Get(), packet->length_);
 #else 
-        memcpy(packet_copy->data_, packet->data_, packet->length_);
+        memcpy(packet_copy->data_.Get(), packet->data_.Get(), packet->length_);
 #endif
         while(packet_copy->header_tail_ != packet->header_tail_) {
             auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];

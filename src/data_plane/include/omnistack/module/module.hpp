@@ -73,7 +73,7 @@ namespace omnistack::data_plane {
         /* when does this act? will it be done in son-class? */
         // uint32_t burst_ = 1;
 
-    private:
+    protected:
         struct FilterGroup {
             std::vector<Filter> filters_;
             std::vector<uint32_t> filter_masks_;
