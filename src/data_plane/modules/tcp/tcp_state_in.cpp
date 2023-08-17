@@ -20,6 +20,8 @@ namespace omnistack::data_plane::tcp_state_in {
 
         Packet* MainLogic(Packet* packet) override;
 
+        Packet* TimerLogic(uint64_t tick) override;
+
         void Initialize(std::string_view name_prefix, PacketPool* packet_pool) override;
 
         void Destroy() override;
@@ -45,8 +47,12 @@ namespace omnistack::data_plane::tcp_state_in {
 
         void OnAck(TcpFlow* flow, TcpHeader* tcp_header, uint32_t remote_timestamp, uint32_t echo_timestamp);
 
+        typedef std::pair<uint64_t, TcpFlow*> TimeWaitEntry;
+
+        std::queue<TimeWaitEntry> time_wait_queue_;
         TcpSharedHandle* tcp_shared_handle_;
         PacketPool* packet_pool_; 
+        memory::MemoryPool* event_pool_;
     };
 
     bool TcpStateIn::DefaultFilter(Packet* packet) {
@@ -203,7 +209,7 @@ namespace omnistack::data_plane::tcp_state_in {
     
         flow->state_ = TcpFlow::State::kTimeWait;
 
-        /* TODO: raise event: flow timewait */
+        time_wait_queue_.push(std::make_pair(NowUs(), flow));
     }
 
     inline void TcpStateIn::EnterClosed(TcpFlow* flow, TcpHeader* tcp_header, uint32_t remote_timestamp) {
@@ -298,7 +304,8 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* reply SYN-ACK */
                     ret = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
                     flow->send_variables_.send_nxt_ ++;
-                    /* TODO: raise event: new connection */
+                    /* raise event: connection established */
+                    raise_event_(new(event_pool_->Get()) TcpEventConnect(local_ip, remote_ip, local_port, remote_port));
                 }
                 else if(flow != nullptr && flow->state_ == TcpFlow::State::kSynSent) {
                     /* simultaneously connect */
@@ -317,14 +324,16 @@ namespace omnistack::data_plane::tcp_state_in {
                     EnterEstablished(flow, tcp_header, remote_mss, remote_wscale, remote_timestamp, echo_timestamp);
                     /* reply ACK */
                     ret = BuildReplyPacket(flow, 0, packet_pool_);
-                    /* TODO: raise event: connection established */
+                    /* raise event: connection established */
+                    raise_event_(new(event_pool_->Get()) TcpEventConnect(local_ip, remote_ip, local_port, remote_port));
                 }
                 else if(flow->state_ == TcpFlow::State::kSynReceived) {
                     /* simultaneously connect */
                     if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
                     EnterEstablished(flow, tcp_header, remote_mss, remote_wscale, remote_timestamp, echo_timestamp);
                     /* no reply */
-                    /* TODO: raise event: connection established */
+                    /* raise event: connection established */
+                    raise_event_(new(event_pool_->Get()) TcpEventConnect(local_ip, remote_ip, local_port, remote_port));
                 }
                 else return TcpInvalid(packet);
             }
@@ -339,7 +348,8 @@ namespace omnistack::data_plane::tcp_state_in {
                     EnterCloseWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
                     ret = BuildReplyPacket(flow, 0, packet_pool_);
-                    /* TODO: raise event: close connection */
+                    /* raise event: close connection */
+                    raise_event_(new(event_pool_->Get()) TcpEventDisconnect(local_ip, remote_ip, local_port, remote_port));
                 }
                 else if(flow->state_ == TcpFlow::State::kFinWait1) {
                     if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
@@ -370,7 +380,8 @@ namespace omnistack::data_plane::tcp_state_in {
                     EnterCloseWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
                     ret = BuildReplyPacket(flow, 0, packet_pool_);
-                    /* TODO: raise event: close connection */
+                    /* raise event: close connection */
+                    raise_event_(new(event_pool_->Get()) TcpEventDisconnect(local_ip, remote_ip, local_port, remote_port));
                 }
                 else if(flow->state_ == TcpFlow::State::kFinWait1) {
                     if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
@@ -400,20 +411,22 @@ namespace omnistack::data_plane::tcp_state_in {
         else if(tcp_header->ack) [[likely]] {
             /* handle ACK */
             if(flow == nullptr) [[unlikely]] return TcpInvalid(packet);
-            if(seq_num != flow->receive_variables_.recv_nxt_) [[unlikely]] return TcpInvalid(packet);
             if(flow->state_ == TcpFlow::State::kEstablished) [[likely]] {
                 if(TcpGreaterUint32(ack_num, flow->send_variables_.send_nxt_)) [[unlikely]] return TcpInvalid(packet);
                 OnAck(flow, tcp_header, remote_timestamp, echo_timestamp);
             }
             else {
                 /* handle ACK in other states */
+                if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
                 if(ack_num != flow->send_variables_.send_nxt_) return TcpInvalid(packet);
                 switch (flow->state_) {
-                    case TcpFlow::State::kSynReceived:
+                    case TcpFlow::State::kSynReceived: {
                         EnterEstablished(flow, tcp_header, remote_mss, remote_wscale, remote_timestamp, echo_timestamp);
                         /* no reply */
-                        /* TODO: raise event: connection established */
+                        /* raise event: connection established */
+                        raise_event_(new(event_pool_->Get()) TcpEventConnect(local_ip, remote_ip, local_port, remote_port));
                         break;
+                    }
                     case TcpFlow::State::kFinWait1:
                         EnterFinWait2(flow, tcp_header, remote_timestamp);
                         /* no reply */
@@ -422,35 +435,69 @@ namespace omnistack::data_plane::tcp_state_in {
                         EnterTimeWait(flow, tcp_header, remote_timestamp);
                         /* no reply */
                         break;
-                    case TcpFlow::State::kLastAck:
+                    case TcpFlow::State::kLastAck: {
                         EnterClosed(flow, tcp_header, remote_timestamp);
                         /* no reply */
-                        /* TODO: raise event: connection closed */
+                        /* raise event: connection closed */
+                        raise_event_(new(event_pool_->Get()) TcpEventClosed(local_ip, remote_ip, local_port, remote_port));
                         tcp_shared_handle_->ReleaseFlow(flow);
                         break;
+                    }
                     default:
                         return TcpInvalid(packet);
                 }
             }
         }
 
-        if(ret != nullptr) {
+        if(ret != nullptr) [[likely]] {
             ret->custom_value_ = reinterpret_cast<uint64_t>(flow);
             tcp_shared_handle_->AcquireFlow(flow);
         }
 
-        /* TODO: return packet if needed */
+        /* forward packet if having data */
+        if (flow != nullptr && ( flow->state_ == TcpFlow::State::kEstablished || 
+                                 flow->state_ == TcpFlow::State::kFinWait1    || 
+                                 flow->state_ == TcpFlow::State::kFinWait2    )) [[likely]] {
+            if(packet->length_ > packet->offset_) [[likely]] {
+                packet->next_packet_ = ret;
+                packet->custom_value_ = reinterpret_cast<uint64_t>(flow);
+                tcp_shared_handle_->AcquireFlow(flow);
+                ret = packet;
+            }
+        }
 
         return ret;
+    }
+
+    Packet* TcpStateIn::TimerLogic(uint64_t tick) {
+        while(!time_wait_queue_.empty()) {
+            auto entry = time_wait_queue_.front();
+            if(tick - entry.first < kTcpTimeWaitTimeout) break;
+            time_wait_queue_.pop();
+            auto flow = entry.second;
+            flow->state_ = TcpFlow::State::kClosed;
+            uint32_t local_ip = flow->local_ip_;
+            uint32_t remote_ip = flow->remote_ip_;
+            uint16_t local_port = flow->local_port_;
+            uint16_t remote_port = flow->remote_port_;
+            /* raise event: connection closed */
+            raise_event_(new(event_pool_->Get()) TcpEventClosed(local_ip, remote_ip, local_port, remote_port));
+            tcp_shared_handle_->ReleaseFlow(flow);
+        }
+        return nullptr;
     }
 
     void TcpStateIn::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
         tcp_shared_handle_ = TcpSharedHandle::Create(name_prefix);
         packet_pool_ = packet_pool;
+        std::string name(name_prefix);
+        name += "_TcpStateIn_EventPool";
+        event_pool_ = memory::AllocateMemoryPool(name.data(), kEventMaxLength, kTcpMaxFlowCount);
     }
 
     void TcpStateIn::Destroy() {
         TcpSharedHandle::Destroy(tcp_shared_handle_);
+        memory::FreeMemoryPool(event_pool_);
     }
 
 }

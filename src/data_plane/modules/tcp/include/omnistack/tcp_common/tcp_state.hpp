@@ -17,7 +17,7 @@ namespace omnistack::data_plane::tcp_common {
         uint32_t recv_nxt_;         // next sequence number expected on an incoming segments, and is the left or lower edge of the receive window
         uint16_t recv_wnd_;         // receive window
         uint8_t recv_wscale_;       // window scale
-        uint8_t received_;
+        uint8_t received_;          // if new packet is received since last ack sent
         uint32_t timestamp_recent_; // timestamp recently received
         TcpReceiveBuffer* receive_buffer_;
     };
@@ -51,7 +51,7 @@ namespace omnistack::data_plane::tcp_common {
 
     class TcpFlow {
     public:
-        enum class State {
+        enum class State : uint8_t {
             kClosed,
             kListen,
             kSynSent,
@@ -71,6 +71,8 @@ namespace omnistack::data_plane::tcp_common {
         uint16_t remote_port_;
 
         State state_;
+
+        Node* node_;                // node that this flow belongs to
 
         uint32_t reference_count_;  // reference count for this flow
         uint16_t mss_;              // maximum segment size
@@ -98,8 +100,9 @@ namespace omnistack::data_plane::tcp_common {
     };
 
     inline TcpFlow* TcpFlow::Create(memory::MemoryPool* flow_pool, memory::MemoryPool* receive_buffer_pool_, memory::MemoryPool* send_buffer_pool_, uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port) {
-        TcpFlow* flow = static_cast<TcpFlow*>(flow_pool->Get());
-        if(flow == nullptr) return nullptr;
+        auto addr = flow_pool->Get();
+        if(addr = nullptr) return nullptr;
+        auto flow = new(addr) TcpFlow();
         flow->local_ip_ = local_ip;
         flow->remote_ip_ = remote_ip;
         flow->local_port_ = local_port;
@@ -116,6 +119,7 @@ namespace omnistack::data_plane::tcp_common {
     inline void TcpFlow::Destroy(memory::MemoryPool* flow_pool, memory::MemoryPool* receive_buffer_pool_, memory::MemoryPool* send_buffer_pool_, TcpFlow* flow) {
         TcpReceiveBuffer::Destroy(receive_buffer_pool_, flow->receive_variables_.receive_buffer_);
         TcpSendBuffer::Destroy(send_buffer_pool_, flow->send_variables_.send_buffer_);
+        flow->~TcpFlow();
         flow_pool->Put(flow);
     }
 

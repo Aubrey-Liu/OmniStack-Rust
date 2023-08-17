@@ -16,6 +16,7 @@ namespace omnistack::packet {
         data_ = mbuf_ + kPacketMbufHeadroom;
         header_tail_ = 0;
         next_packet_ = nullptr;
+        node_ = nullptr;
     }
 
     PacketPool* PacketPool::CreatePacketPool(std::string_view name_prefix, uint32_t packet_count) {
