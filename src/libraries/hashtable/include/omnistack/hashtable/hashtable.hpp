@@ -6,8 +6,9 @@
 #define OMNISTACK_HASHTABLE_HPP
 
 #include <functional>
+#include <cstdint>
 
-#if defined (OMNI_HASHTABLE_BACKEND_DPDK)
+#if defined(OMNIMEM_BACKEND_DPDK)
 #include <rte_hash.h>
 #include <rte_hash_crc.h>
 #endif
@@ -16,7 +17,7 @@ namespace omnistack::hashtable {
 
     constexpr uint32_t kDefaultHashtableSize = 1024;
 
-#if defined (OMNI_HASHTABLE_BACKEND_DPDK)
+#if defined(OMNIMEM_BACKEND_DPDK)
     inline namespace dpdk {
         class Hashtable {
         public:

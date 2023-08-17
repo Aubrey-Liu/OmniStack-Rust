@@ -366,13 +366,13 @@ namespace omnistack::channel {
         }
     }
 
-    int Channel::Write(const void* data) {
+    inline int Channel::Write(const void* data) {
         if (!writer_token_->CheckToken())
             writer_token_->AcquireToken();
         return raw_channel_->Write(data);
     }
 
-    int RawChannel::Write(const void* data) {
+    inline int RawChannel::Write(const void* data) {
         const int next_val = (writer_write_pos_ + 1) == kChannelSize ? 0 : writer_write_pos_ + 1;
         if (next_val == writer_read_pos_) {
             if (next_val == read_pos_) {
@@ -395,13 +395,13 @@ namespace omnistack::channel {
         return 0;
     }
 
-    void* Channel::Read() {
+    inline void* Channel::Read() {
         if (!reader_token_->CheckToken())
             reader_token_->AcquireToken();
         return raw_channel_->Read();
     }
 
-    void* RawChannel::Read() {
+    inline void* RawChannel::Read() {
         if (reader_read_pos_ == reader_write_pos_) {
             if (reader_read_pos_ == write_pos_) {
                 return nullptr;
@@ -422,17 +422,23 @@ namespace omnistack::channel {
         return ret;
     }
 
-    bool RawChannel::IsReadable() {
-        return false;
+    inline bool RawChannel::IsReadable() {
+        if (reader_read_pos_ == reader_write_pos_) {
+            if (reader_read_pos_ == write_pos_) {
+                return false;
+            }
+            reader_write_pos_ = write_pos_;
+        }
+        return true;
     }
 
-    int Channel::Flush() {
+    inline int Channel::Flush() {
         if (!writer_token_->CheckToken())
             writer_token_->AcquireToken();
         return raw_channel_->Flush();
     }
 
-    int RawChannel::Flush() {
+    inline int RawChannel::Flush() {
         if (writer_batch_count_ > 0) {
             write_pos_ = writer_write_pos_;
             writer_batch_count_ = 0;
