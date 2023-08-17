@@ -60,7 +60,7 @@ private:
             char padding3_[64 - 3 * sizeof(uint32_t)];
 
 #if defined (OMNIMEM_BACKEND_DPDK)
-            memory::RegionMeta* ring_ptr_[kChannelSize];
+            void* ring_ptr_[kChannelSize];
 #else
             uint64_t ring_offset_[kChannelSize];
 #endif

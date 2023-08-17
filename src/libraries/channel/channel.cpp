@@ -380,12 +380,10 @@ namespace omnistack::channel {
             }
             writer_read_pos_ = read_pos_;
         }
-        auto region_meta = reinterpret_cast<memory::RegionMeta*>((uint8_t*)data - memory::kMetaHeadroomSize);
-        region_meta->process_id = 0;
 #if defined (OMNIMEM_BACKEND_DPDK)
-        ring_ptr_[writer_write_pos_] = region_meta;
+        ring_ptr_[writer_write_pos_] = (void*)data;
 #else
-        ring_offset_[writer_write_pos_] = (uint8_t*)region_meta - memory::virt_base_addrs[memory::process_id];
+        ring_offset_[writer_write_pos_] = (uint8_t*)data - memory::virt_base_addrs[memory::process_id];
 #endif
         writer_write_pos_ = next_val;
         writer_batch_count_ ++;
@@ -415,14 +413,13 @@ namespace omnistack::channel {
 #else
         auto ret = reinterpret_cast<memory::RegionMeta*>(memory::virt_base_addrs[memory::process_id] + ring_offset_[reader_read_pos_]);
 #endif
-        ret->process_id = memory::process_id;
         reader_read_pos_ = (reader_read_pos_ + 1) == kChannelSize ? 0 : reader_read_pos_ + 1;
         reader_batch_count_ ++;
         if (reader_batch_count_ >= kBatchSize) [[unlikely]] {
             reader_batch_count_ = 0;
             read_pos_ = reader_read_pos_;
         }
-        return (uint8_t*)ret + memory::kMetaHeadroomSize;
+        return ret;
     }
 
     bool RawChannel::IsReadable() {
