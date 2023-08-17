@@ -9,8 +9,8 @@
 
 namespace omnistack::data_plane::tcp_common {
 
-    constexpr Event::EventType kTcpEventTypeConnect = Event::GenerateEventType("tcp_event_type_connect");
-    constexpr Event::EventType kTcpEventTypeDisconnect = Event::GenerateEventType("tcp_event_type_disconnect");
+    constexpr Event::EventType kTcpEventTypeConnect = Event::GenerateEventType("tcp.connect");
+    constexpr Event::EventType kTcpEventTypeDisconnect = Event::GenerateEventType("tcp.disconnect");
 
     class TcpEventConnect : public Event {
     public:

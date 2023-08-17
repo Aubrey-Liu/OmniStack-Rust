@@ -18,6 +18,7 @@ STATIC
     include/omnistack/tcp_common/tcp_buffer.hpp 
     include/omnistack/tcp_common/tcp_congestion_control.hpp 
     include/omnistack/tcp_common/tcp_state.hpp 
+    include/omnistack/tcp_common/tcp_events.hpp
     include/omnistack/tcp_common/tcp_shared.hpp
 )
 set_target_properties(omni_data_plane_tcp_common PROPERTIES LINKER_LANGUAGE CXX)
@@ -31,3 +32,6 @@ target_link_libraries(omni_data_plane_tcp_state_in PUBLIC ${OMNI_DATA_PLANE_LIB}
 
 add_library(omni_data_plane_tcp_state_out SHARED tcp_state_out.cpp)
 target_link_libraries(omni_data_plane_tcp_state_out PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common)
+
+add_library(omni_data_plane_tcp_data_in SHARED tcp_data_in.cpp)
+target_link_libraries(omni_data_plane_tcp_data_in PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common)
