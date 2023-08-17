@@ -17,6 +17,10 @@
 #include <cstring>
 #endif
 
+namespace omnistack::node {
+    class BasicNode;
+}
+
 namespace omnistack::packet {
     using namespace omnistack::common;
     using omnistack::memory::Pointer;
@@ -31,7 +35,6 @@ namespace omnistack::packet {
     };
 
     class PacketPool;
-    class Node;
 
     class Packet {
     public:
@@ -63,7 +66,7 @@ namespace omnistack::packet {
         uint16_t padding;
         PacketHeader packet_headers_[kPacketMaxHeaderNum];
         Pointer<Packet> next_packet_;
-        Pointer<Node> node_;        // pointer to the node which the packet belongs to
+        Pointer<node::BasicNode> node_;        // pointer to the node which the packet belongs to
         /* a cache line ends here */
 
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */

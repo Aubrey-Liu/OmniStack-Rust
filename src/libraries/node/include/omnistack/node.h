@@ -18,8 +18,7 @@ namespace omnistack {
 
         enum class NodeCommandType {
             kUpdateNodeInfo = 0,
-            kClearNodeInfo,
-            kNodeClosed,
+            kClearNodeInfo, // => Node Closed
             kPacket
         };
 
@@ -64,17 +63,47 @@ namespace omnistack {
             char padding[16 - sizeof(NodeCommandType)];
         };
 
+        /** Basic Node's lock is guaranteed by its Channel **/
         class BasicNode {
         public:
-            uint64_t id_;
+            uint32_t com_user_id_;
+
             NodeInfo info_;
+
+            bool in_hashtable_;
+            
+            bool peer_closed_;
+
+            uint32_t user_proc_ref_;
+            pthread_spinlock_t user_proc_ref_lock_;
+            
             void Write(packet::Packet* packet);
             packet::Packet* Read();
 
+            void WriteBottom(packet::Packet* packet);
+
+            bool IsReadable();
+            void UpdateInfo(NodeInfo info);
+            void Init();
+            void CleanUp();
+            void Connect(EventNode* event_node);
+            void PutIntoHashtable();
+            void ClearFromHashtableAndClose();
+            int OpenRef();
+            void CloseRef();
+
+            inline memory::Pointer<BasicNode> GetNext() {
+                return next_;
+            }
+
+            inline void SetNext(const memory::Pointer<BasicNode>& next) {
+                next_ = next;
+            }
+
+        private:
             memory::Pointer<EventNode> enode_;
             memory::Pointer<BasicNode> next_;
-        private:
-            channel::MultiWriterChannel* channel_;
+            memory::Pointer<channel::Channel> channel_;
         };
 
         /**
@@ -82,7 +111,7 @@ namespace omnistack {
         */
         // void Connect(BasicNode* basic_node, EventNode* event_node);
         
-        // BasicNode* CreateBasicNodeNode();
+        BasicNode* CreateBasicNode(uint32_t com_user_id);
 
         // EventNode* CreateEventNode();
 

@@ -149,7 +149,7 @@ public:
 
         Channel* GetChannel(const std::string& name);
 
-        MultiWriterChannel* GetMultiWriterChannel();
+        MultiWriterChannel* GetMultiWriterChannel(const std::string& name);
 
         void DestroyChannel(Channel* channel);
 
