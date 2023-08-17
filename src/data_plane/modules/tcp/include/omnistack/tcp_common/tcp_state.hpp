@@ -17,7 +17,7 @@ namespace omnistack::data_plane::tcp_common {
         uint32_t recv_nxt_;         // next sequence number expected on an incoming segments, and is the left or lower edge of the receive window
         uint16_t recv_wnd_;         // receive window
         uint8_t recv_wscale_;       // window scale
-        uint8_t received_;
+        uint8_t received_;          // if new packet is received since last ack sent
         uint32_t timestamp_recent_; // timestamp recently received
         TcpReceiveBuffer* receive_buffer_;
     };
@@ -51,7 +51,7 @@ namespace omnistack::data_plane::tcp_common {
 
     class TcpFlow {
     public:
-        enum class State {
+        enum class State : uint8_t {
             kClosed,
             kListen,
             kSynSent,
@@ -71,6 +71,8 @@ namespace omnistack::data_plane::tcp_common {
         uint16_t remote_port_;
 
         State state_;
+
+        Node* node_;                // node that this flow belongs to
 
         uint32_t reference_count_;  // reference count for this flow
         uint16_t mss_;              // maximum segment size

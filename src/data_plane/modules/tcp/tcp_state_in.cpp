@@ -20,6 +20,8 @@ namespace omnistack::data_plane::tcp_state_in {
 
         Packet* MainLogic(Packet* packet) override;
 
+        Packet* TimerLogic(uint64_t tick) override;
+
         void Initialize(std::string_view name_prefix, PacketPool* packet_pool) override;
 
         void Destroy() override;
@@ -416,13 +418,13 @@ namespace omnistack::data_plane::tcp_state_in {
         else if(tcp_header->ack) [[likely]] {
             /* handle ACK */
             if(flow == nullptr) [[unlikely]] return TcpInvalid(packet);
-            if(seq_num != flow->receive_variables_.recv_nxt_) [[unlikely]] return TcpInvalid(packet);
             if(flow->state_ == TcpFlow::State::kEstablished) [[likely]] {
                 if(TcpGreaterUint32(ack_num, flow->send_variables_.send_nxt_)) [[unlikely]] return TcpInvalid(packet);
                 OnAck(flow, tcp_header, remote_timestamp, echo_timestamp);
             }
             else {
                 /* handle ACK in other states */
+                if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
                 if(ack_num != flow->send_variables_.send_nxt_) return TcpInvalid(packet);
                 switch (flow->state_) {
                     case TcpFlow::State::kSynReceived: {

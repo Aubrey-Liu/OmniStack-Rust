@@ -82,8 +82,10 @@ namespace omnistack::data_plane {
             uint8_t last_apply_;
         };
 
+        /* event must be processed immediately while raising */
         std::function<void(Event* event)> raise_event_;
         std::vector<FilterGroup> filter_groups_;
+        /* TODO: change the forward structure to compile-time hash */
         std::vector<std::pair<std::string, uint32_t>> upstream_nodes_;
     };
 
