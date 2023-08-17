@@ -100,8 +100,9 @@ namespace omnistack::data_plane::tcp_common {
     };
 
     inline TcpFlow* TcpFlow::Create(memory::MemoryPool* flow_pool, memory::MemoryPool* receive_buffer_pool_, memory::MemoryPool* send_buffer_pool_, uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port) {
-        TcpFlow* flow = static_cast<TcpFlow*>(flow_pool->Get());
-        if(flow == nullptr) return nullptr;
+        auto addr = flow_pool->Get();
+        if(addr = nullptr) return nullptr;
+        auto flow = new(addr) TcpFlow();
         flow->local_ip_ = local_ip;
         flow->remote_ip_ = remote_ip;
         flow->local_port_ = local_port;
@@ -118,6 +119,7 @@ namespace omnistack::data_plane::tcp_common {
     inline void TcpFlow::Destroy(memory::MemoryPool* flow_pool, memory::MemoryPool* receive_buffer_pool_, memory::MemoryPool* send_buffer_pool_, TcpFlow* flow) {
         TcpReceiveBuffer::Destroy(receive_buffer_pool_, flow->receive_variables_.receive_buffer_);
         TcpSendBuffer::Destroy(send_buffer_pool_, flow->send_variables_.send_buffer_);
+        flow->~TcpFlow();
         flow_pool->Put(flow);
     }
 
