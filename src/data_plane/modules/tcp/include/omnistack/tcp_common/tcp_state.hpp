@@ -72,7 +72,7 @@ namespace omnistack::data_plane::tcp_common {
 
         State state_;
 
-        Node* node_;                // node that this flow belongs to
+        node::BasicNode* node_;                // node that this flow belongs to
 
         uint32_t reference_count_;  // reference count for this flow
         uint16_t mss_;              // maximum segment size
