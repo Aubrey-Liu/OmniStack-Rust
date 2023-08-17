@@ -2,8 +2,8 @@
 // Created by liuhao on 23-8-12.
 //
 
-#ifndef OMNISTACK_MODULE_HASH_HPP
-#define OMNISTACK_MODULE_HASH_HPP
+#ifndef OMNISTACK_COMMON_HASH_HPP
+#define OMNISTACK_COMMON_HASH_HPP
 
 #include <cstdint>
 #include <string>
@@ -63,8 +63,15 @@ constexpr uint32_t kCrcTable[256] = {
     0x2d02ef8dL
 };
 
-consteval uint32_t ConstCrc32(const std::string_view str)
+consteval uint32_t ConstCrc32(std::string_view str)
 {
+    uint32_t crc = 0xffffffff;
+    for(auto c : str)
+        crc = (crc >> 8) ^ kCrcTable[(crc ^ c) & 0xff];
+    return crc ^ 0xffffffff;
+}
+
+constexpr uint32_t Crc32(std::string_view str) {
     uint32_t crc = 0xffffffff;
     for(auto c : str)
         crc = (crc >> 8) ^ kCrcTable[(crc ^ c) & 0xff];
@@ -73,4 +80,4 @@ consteval uint32_t ConstCrc32(const std::string_view str)
 
 static_assert(ConstCrc32("123456789") == 0xcbf43926, "CRC32 calculation failed");
 
-#endif
+#endif //OMNISTACK_COMMON_HASH_HPP

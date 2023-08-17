@@ -12,8 +12,9 @@ namespace omnistack::data_plane::tcp_common {
     constexpr uint32_t kTcpFlowTableSize = kTcpMaxFlowCount * 2;
 
     constexpr uint16_t kTcpMaxSegmentSize = 1460;
-    constexpr uint16_t kTcpReceiveWindow = 65535;
-    constexpr uint8_t kTcpReceiveWindowScale = 7;
+    constexpr uint16_t kTcpDefaultSendWindow = 65535;
+    constexpr uint16_t kTcpDefaultReceiveWindow = 65535;
+    constexpr uint8_t kTcpDefaultReceiveWindowScale = 7;
     constexpr uint64_t kTcpMaximumRetransmissionTimeout = 100000000;
     constexpr uint64_t kTcpMinimumRetransmissionTimeout = 200000;
 

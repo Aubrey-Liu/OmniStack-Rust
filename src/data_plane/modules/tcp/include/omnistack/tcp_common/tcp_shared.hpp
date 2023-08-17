@@ -7,6 +7,7 @@
 
 #include <omnistack/tcp_common/tcp_state.hpp>
 #include <omnistack/tcp_common/tcp_constant.hpp>
+#include <omnistack/tcp_common/tcp_events.hpp>
 #include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/common/time.hpp>
 #include <omnistack/hashtable/hashtable.hpp>
@@ -81,6 +82,7 @@ namespace omnistack::data_plane::tcp_common {
 
     inline TcpFlow* TcpSharedHandle::CreateFlow(uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port) {
         auto flow = TcpFlow::Create(flow_pool_, receive_buffer_pool_, send_buffer_pool_, local_ip, remote_ip, local_port, remote_port);
+        if(flow == nullptr) [[unlikely]] return nullptr;
         flow_table_->Insert(flow, flow);
         return flow;
     }
