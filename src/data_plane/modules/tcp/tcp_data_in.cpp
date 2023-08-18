@@ -97,7 +97,7 @@ namespace omnistack::data_plane::tcp_data_in {
         /* check if ack immediately */
         if(ret == nullptr || ret->next_packet_.Get() != nullptr) [[unlikely]] {
             /* ack immediately */
-            auto ack_packet = BuildReplyPacket(flow, 0, packet_pool_);
+            auto ack_packet = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
             /* TODO: set forward info */
             ack_packet->next_packet_ = ret;
             ret = ack_packet;
@@ -116,7 +116,7 @@ namespace omnistack::data_plane::tcp_data_in {
         while(ack_list_top_) {
             auto flow = ack_list_[--ack_list_top_];
             flow->receive_variables_.received_ = false;
-            auto ack_packet = BuildReplyPacket(flow, 0, packet_pool_);
+            auto ack_packet = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
             /* TODO: set forward info */
             ack_packet->next_packet_ = ret;
             ret = ack_packet;

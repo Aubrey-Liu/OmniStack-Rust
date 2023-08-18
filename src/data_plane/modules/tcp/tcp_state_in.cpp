@@ -236,14 +236,15 @@ namespace omnistack::data_plane::tcp_state_in {
             uint32_t ack_bytes = ack_num - send_var.send_una_;
             send_var.send_una_ = ack_num;
             send_var.is_retransmission_ = false;
-            /* TODO: release packets in retransmission queue */
+            /* release packets in retransmission queue */
+            send_var.send_buffer_->PopSent(ack_bytes);
 
             /* estimate rtt */
 #if defined (OMNI_TCP_OPTION_TSPOT)
             if(echo_timestamp) [[likely]] EstimateRtt(flow, (uint32_t)(NowMs() - echo_timestamp));
-            else EstimateRtt(flow, (uint32_t)(NowUs() - flow->send_variables_.rto_begin_));
+            else if(!send_var.is_retransmission_) EstimateRtt(flow, (uint32_t)(NowUs() - flow->send_variables_.rto_begin_));
 #else
-            EstimateRtt(flow, (uint32_t)(NowUs() - flow->send_variables_.rto_begin_));
+            if(!send_var.is_retransmission_) EstimateRtt(flow, (uint32_t)(NowUs() - flow->send_variables_.rto_begin_));
 #endif
         }
         else if(send_var.send_nxt_ == send_var.send_una_ && ack_num == send_var.send_una_) {
@@ -258,7 +259,7 @@ namespace omnistack::data_plane::tcp_state_in {
         else {
             /* restart retransmission timer */
             send_var.rto_begin_ = NowUs();
-            send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
+            send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_; 
         }
 
         /* TODO: update congestion control */
@@ -302,7 +303,7 @@ namespace omnistack::data_plane::tcp_state_in {
                     flow->state_ = TcpFlow::State::kListen;
                     EnterSynReceived(listen_flow, flow, tcp_header, remote_mss, remote_wscale, remote_timestamp);
                     /* reply SYN-ACK */
-                    ret = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
+                    ret = BuildReplyPacketWithFullOptions(flow, TCP_FLAGS_SYN | TCP_FLAGS_ACK, packet_pool_);
                     flow->send_variables_.send_nxt_ ++;
                     /* raise event: connection established */
                     raise_event_(new(event_pool_->Get()) TcpEventConnect(local_ip, remote_ip, local_port, remote_port));
@@ -311,7 +312,7 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* simultaneously connect */
                     EnterSynReceived(nullptr, flow, tcp_header, remote_mss, remote_wscale, remote_timestamp);
                     /* reply SYN-ACK */
-                    ret = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
+                    ret = BuildReplyPacketWithFullOptions(flow, TCP_FLAGS_SYN | TCP_FLAGS_ACK, packet_pool_);
                 }
                 else return TcpInvalid(packet);
             }
@@ -323,7 +324,7 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* actively connect */
                     EnterEstablished(flow, tcp_header, remote_mss, remote_wscale, remote_timestamp, echo_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                     /* raise event: connection established */
                     raise_event_(new(event_pool_->Get()) TcpEventConnect(local_ip, remote_ip, local_port, remote_port));
                 }
@@ -347,7 +348,7 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* passive close */
                     EnterCloseWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                     /* raise event: close connection */
                     raise_event_(new(event_pool_->Get()) TcpEventDisconnect(local_ip, remote_ip, local_port, remote_port));
                 }
@@ -356,18 +357,18 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* simultaneous close */
                     EnterClosing(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else if(flow->state_ == TcpFlow::State::kFinWait2) {
                     if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
                     EnterTimeWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else if(flow->state_ == TcpFlow::State::kTimeWait) {
                     if(seq_num != flow->receive_variables_.recv_nxt_ - 1) return TcpInvalid(packet);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else return TcpInvalid(packet);
             }
@@ -379,7 +380,7 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* passive close */
                     EnterCloseWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                     /* raise event: close connection */
                     raise_event_(new(event_pool_->Get()) TcpEventDisconnect(local_ip, remote_ip, local_port, remote_port));
                 }
@@ -387,13 +388,13 @@ namespace omnistack::data_plane::tcp_state_in {
                     if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
                     EnterTimeWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else if(flow->state_ == TcpFlow::State::kFinWait2) {
                     if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
                     EnterTimeWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else if(flow->state_ == TcpFlow::State::kClosing) {
                     if(seq_num != flow->receive_variables_.recv_nxt_ - 1) return TcpInvalid(packet);
@@ -403,7 +404,7 @@ namespace omnistack::data_plane::tcp_state_in {
                 else if(flow->state_ == TcpFlow::State::kTimeWait) {
                     if(seq_num != flow->receive_variables_.recv_nxt_ - 1) return TcpInvalid(packet);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else return TcpInvalid(packet);
             }
