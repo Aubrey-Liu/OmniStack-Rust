@@ -15,7 +15,7 @@ namespace omnistack::data_plane::ipv4_sender {
     using namespace omnistack::packet;
 
     inline constexpr char kName[] = "Ipv4Sender";
-    inline constexpr uint32_t route_table_max_size = 10;
+    constexpr uint32_t route_table_max_size = 10;
 
     class Route {
     public:
@@ -64,18 +64,35 @@ namespace omnistack::data_plane::ipv4_sender {
     }
 
     Packet* Ipv4Sender::MainLogic(Packet* packet) {
-        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + packet->offset_);
-        auto& ipv4 = packet->packet_headers_[packet->header_tail_ ++];
-        ipv4.length_ = ipv4_header->ihl << 2;
-        ipv4.offset_ = packet->offset_;
-        packet->length_ = ntohs(ipv4_header->len) + packet->offset_;
-        packet->offset_ += ipv4.length_;
+        // TODO: find target ip according to specific upper protocol TCP/UDP/ICMP
+        // using nic id instead before finishing that.
+        uint32_t dst_nic = packet->nic_;
 
-        /* TODO: define a set of log helper */
-#ifdef OMNI_DEBUG
-        LogIpv4Address("[Ipv4Sender] src = ", ipv4_header->src);
-        LogIpv4Address("[Ipv4Sender] dst = ", ipv4_header->dst);
-#endif
+        for(int i = 0;i < route_table.size();i++)
+        {
+            if(dst_nic == route_table[i].nic)
+            {
+                // edit the packet header.
+                fprintf(ipv4_sender_log, "MainLogic: found target nic %d with ip %d.\n", dst_nic, route_table[i].ip_addr);
+                auto& ipv4 = packet->packet_headers_[packet->header_tail_ ++];
+                ipv4.length_ = sizeof(Ipv4Header);
+                ipv4.offset_ = packet->offset_;
+                Ipv4Header* header = (Ipv4Header*)malloc(sizeof(Ipv4Header));
+                header->ihl = 5; // default value without extra info
+                header->version = 4;
+                header->len = packet->length_ + (header->ihl << 2);
+                header->tos = 0;
+                header->id = 0;
+                header->frag_off = 0;
+                header->ttl = 10;
+                header->proto = 0;
+                header->chksum = 0x149;
+                header->src = -1;
+                header->dst = route_table[i].ip_addr;
+                fprintf(ipv4_sender_log, "MainLogic: finished editing ipv4 header with check_sum 0x%x\n", header->chksum);
+                free(header);
+            }
+        }
 
         return packet;
     }
@@ -94,7 +111,7 @@ namespace omnistack::data_plane::ipv4_sender {
     void Ipv4Sender::Destroy()
     {
         fprintf(ipv4_sender_log, "Destroy(): finished.\n");
-        //fclose(ipv4_sender_log); will trigger the seg fault
+        if(ipv4_sender_log != NULL) fclose(ipv4_sender_log);
         return;
     }
 

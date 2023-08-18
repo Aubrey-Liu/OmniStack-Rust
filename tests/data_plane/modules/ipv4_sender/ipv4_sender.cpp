@@ -1,5 +1,5 @@
 //
-// Created by liuhao on 23-8-6.
+// Created by zengqihuan on 2023-8-18
 //
 
 #include <dlfcn.h>
@@ -46,6 +46,22 @@ TEST(DataPlaneIpv4Sender, Logfile) {
     auto ipv4_sender = ModuleFactory::instance_().Create("Ipv4Sender");
     ASSERT_NE(ipv4_sender, nullptr);
     ipv4_sender->Initialize("nothing", nullptr);
+    ipv4_sender->Destroy();
+    dlclose(handle);
+}
+
+TEST(DataPlaneIpv4Sender, MainLogicExecOnce) {
+    using namespace omnistack::data_plane;
+    using namespace omnistack::common;
+    using namespace omnistack::packet;
+    auto handle = dlopen("../lib/libomni_data_plane_ipv4_sender.so", RTLD_NOW | RTLD_GLOBAL);
+    ASSERT_NE(handle, nullptr);
+    auto ipv4_sender = ModuleFactory::instance_().Create("Ipv4Sender");
+    ASSERT_NE(ipv4_sender, nullptr);
+    ipv4_sender->Initialize("nothing", nullptr);
+    Packet pack = Packet();
+    pack.nic_ = 1;
+    ipv4_sender->MainLogic(&pack);
     ipv4_sender->Destroy();
     dlclose(handle);
 }
