@@ -54,6 +54,7 @@ namespace omnistack::data_plane::tcp_common {
 
     private:
         TcpSendBuffer() = default;
+        ~TcpSendBuffer() = default;
     };
 
     inline TcpReceiveBuffer* TcpReceiveBuffer::Create(memory::MemoryPool* buffer_pool) {

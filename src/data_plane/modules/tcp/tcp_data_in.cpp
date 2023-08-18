@@ -1,9 +1,8 @@
 //
-// Created by liuhao on 23-8-11.
+// Created by liuhao on 23-8-17.
 //
 
 #include <omnistack/tcp_common/tcp_shared.hpp>
-#include <omnistack/common/random.hpp>
 
 namespace omnistack::data_plane::tcp_data_in {
     using namespace tcp_common;
