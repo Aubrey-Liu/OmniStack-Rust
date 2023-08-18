@@ -52,9 +52,28 @@ namespace omnistack::data_plane::tcp_common {
 
         static void Destroy(memory::MemoryPool* buffer_pool, TcpSendBuffer* buffer);
 
+        void PopSent(uint32_t bytes);
+
+        void PushSent(Packet* packet);
+
+        Packet* FrontSent() const;
+
+        bool EmptySent() const;
+
+        void PopUnsent();
+
+        void PushUnsent(Packet* packet);
+
+        Packet* FrontUnsent() const;
+
+        bool EmptyUnsent() const;
+
     private:
         TcpSendBuffer() = default;
         ~TcpSendBuffer() = default;
+
+        std::queue<Packet*> sent_buffer_;
+        std::queue<Packet*> unsent_buffer_;
     };
 
     inline TcpReceiveBuffer* TcpReceiveBuffer::Create(memory::MemoryPool* buffer_pool) {
@@ -93,6 +112,60 @@ namespace omnistack::data_plane::tcp_common {
 
     inline void TcpReceiveBuffer::Push(uint32_t seq, Packet* packet) {
         buffer_.push(std::make_pair(seq, packet));
+    }
+
+    inline TcpSendBuffer* TcpSendBuffer::Create(memory::MemoryPool* buffer_pool) {
+        auto addr = buffer_pool->Get();
+        return new(addr) TcpSendBuffer();
+    }
+
+    inline void TcpSendBuffer::Destroy(memory::MemoryPool* buffer_pool, TcpSendBuffer* buffer) {
+        buffer->~TcpSendBuffer();
+        buffer_pool->Put(buffer);
+    }
+
+    inline void TcpSendBuffer::PopSent(uint32_t bytes) {
+        while(bytes > 0 && !sent_buffer_.empty()) {
+            auto packet = sent_buffer_.front();
+            auto packet_bytes = packet->length_;
+            if(packet_bytes <= bytes) {
+                bytes -= packet_bytes;
+                packet->Release();
+                sent_buffer_.pop();
+            }
+            else {
+                packet->data_ = packet->data_ + bytes;
+                break;
+            }
+        }
+    }
+
+    inline void TcpSendBuffer::PushSent(Packet* packet) {
+        sent_buffer_.push(packet);
+    }
+
+    inline Packet* TcpSendBuffer::FrontSent() const {
+        return sent_buffer_.front();
+    }
+
+    inline bool TcpSendBuffer::EmptySent() const {
+        return sent_buffer_.empty();
+    }
+
+    inline void TcpSendBuffer::PopUnsent() {
+        unsent_buffer_.pop();
+    }
+
+    inline void TcpSendBuffer::PushUnsent(Packet* packet) {
+        unsent_buffer_.push(packet);
+    }
+
+    inline Packet* TcpSendBuffer::FrontUnsent() const {
+        return unsent_buffer_.front();
+    }
+
+    inline bool TcpSendBuffer::EmptyUnsent() const {
+        return unsent_buffer_.empty();
     }
 
 }

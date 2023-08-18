@@ -39,6 +39,7 @@ namespace omnistack::data_plane::tcp_common {
         uint64_t rto_timeout_;          // retransmission timeout
         uint8_t is_retransmission_;     // if last packet is retransmission
         uint8_t send_wscale_;           // window scale
+        uint8_t in_retransmission_queue_;      // if in sending queue
     };
 
     class TcpListenFlow {
@@ -110,8 +111,10 @@ namespace omnistack::data_plane::tcp_common {
         flow->reference_count_ = 1;
 
         flow->receive_variables_.receive_buffer_ = TcpReceiveBuffer::Create(receive_buffer_pool_);
+        flow->receive_variables_.received_ = 0;
 
         flow->send_variables_.send_buffer_ = TcpSendBuffer::Create(send_buffer_pool_);
+        flow->send_variables_.in_retransmission_queue_ = 0;
 
         return flow;
     }

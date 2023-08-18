@@ -192,7 +192,7 @@ namespace omnistack::data_plane::tcp_common {
         auto packet = packet_pool->Allocate();
 
         /* build tcp header */
-        auto& header_tcp = packet->packet_headers_[packet->header_tail_ ++];
+        auto& header_tcp = packet->packet_headers_[packet->header_tail_++];
         header_tcp.length_ = TcpHeaderLength(false, false, false, false, true);
         header_tcp.offset_ = 0;
         packet->data_ = packet->data_ - header_tcp.length_;
@@ -221,7 +221,7 @@ namespace omnistack::data_plane::tcp_common {
 #endif
 
         /* build ipv4 header */
-        auto& header_ipv4 = packet->packet_headers_[packet->header_tail_ ++];
+        auto& header_ipv4 = packet->packet_headers_[packet->header_tail_++];
         header_ipv4.length_ = sizeof(Ipv4Header);
         header_ipv4.offset_ = 0;
         header_tcp.offset_ = header_tcp.offset_ + header_ipv4.length_;
@@ -289,7 +289,7 @@ namespace omnistack::data_plane::tcp_common {
 #endif
 
         /* build ipv4 header */
-        auto& header_ipv4 = packet->packet_headers_[packet->header_tail_ ++];
+        auto& header_ipv4 = packet->packet_headers_[packet->header_tail_++];
         header_ipv4.length_ = sizeof(Ipv4Header);
         header_ipv4.offset_ = 0;
         header_tcp.offset_ = header_tcp.offset_ + header_ipv4.length_;

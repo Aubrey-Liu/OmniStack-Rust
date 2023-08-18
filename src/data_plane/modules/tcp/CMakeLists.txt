@@ -38,3 +38,6 @@ target_link_libraries(omni_data_plane_tcp_state_out PUBLIC ${OMNI_DATA_PLANE_LIB
 
 add_library(omni_data_plane_tcp_data_in SHARED tcp_data_in.cpp)
 target_link_libraries(omni_data_plane_tcp_data_in PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common)
+
+add_library(omni_data_plane_tcp_send SHARED tcp_send.cpp)
+target_link_libraries(omni_data_plane_tcp_send PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common)
