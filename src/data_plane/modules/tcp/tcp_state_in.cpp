@@ -262,7 +262,8 @@ namespace omnistack::data_plane::tcp_state_in {
             send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_; 
         }
 
-        /* TODO: update congestion control */
+        /* update congestion control */
+        flow->congestion_control_->OnPacketAcked(ack_num - send_var.send_una_);
     }
 
     Packet* TcpStateIn::MainLogic(Packet* packet) {

@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-// #include <concepts>
+#include <concepts>
 #include <string>
 #include <vector>
 #include <array>
@@ -114,11 +114,13 @@ namespace omnistack::data_plane {
         }
 
         [[nodiscard]] std::unique_ptr<BaseModule> Create(const std::string& name) const {
+            std::cerr << "Create module: " << name << std::endl;
             auto it = module_list_.find(name);
             if(it == module_list_.end()) {
                 /* TODO: report error */
                 return nullptr;
             }
+            std::cerr << "Create module: " << name << " success" << std::endl;
             return it->second();
         }
 
