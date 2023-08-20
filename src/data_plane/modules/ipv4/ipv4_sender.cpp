@@ -1,11 +1,12 @@
 //
 // Created by zengqihuan on 2023-8-15
 //
-// enable debug log here
+// TODO: enable debug log here
 #define IPV4_SENDER_DEBUG
 
 #include <omnistack/module/module.hpp>
 #include <omnistack/common/protocol_headers.hpp>
+#include <omnistack/node.h>
 #include <deque>
 #include <stdio.h>
 
@@ -74,7 +75,7 @@ namespace omnistack::data_plane::ipv4_sender {
         header->tos = 0;
         header->id = 0;
         header->frag_off = 0;
-        header->ttl = 10; // default ttl
+        header->ttl = 255; // default max ttl
         header->proto = proto;
         header->chksum = 0x149;
         header->src = htonl(src);
@@ -82,25 +83,47 @@ namespace omnistack::data_plane::ipv4_sender {
     }
 
     Packet* Ipv4Sender::MainLogic(Packet* packet) {
-        // TODO: find target ip according to specific upper protocol TCP/UDP/ICMP
-        // using nic id instead before finishing that.
-        uint32_t dst_nic = packet->nic_;
 
+        // assume no huge pack need to be fragile
+        if(packet->length_ > 1450) return nullptr;
+        // read src/dst ip from node
+        uint32_t src_ip_addr = (packet->node_)->info_.network.ipv4.sip;
+        uint32_t dst_ip_addr = (packet->node_)->info_.network.ipv4.dip;
+        uint8_t max_cidr = 0;
+        uint16_t dst_nic = 0;
+        // edit omnistack's header. notice that the offset should be - after used. 
+        auto& ipv4 = packet->packet_headers_[packet->header_tail_ ++];
+        ipv4.length_ = sizeof(Ipv4Header);
+        ipv4.offset_ = packet->offset_ - sizeof(Ipv4Header);
+        Ipv4Header* header = reinterpret_cast<Ipv4Header*>(packet->data_ + ipv4.offset_);
+        packet->offset_ -= ipv4.length_;
+
+        // find dst ip from route table
         for(int i = 0;i < route_table.size();i++)
         {
-            if(dst_nic == route_table[i].nic)
+            if(((dst_ip_addr ^ route_table[i].ip_addr) & route_table[i].cidr_mask) != 0)
             {
-                // edit the packet header.
-                fprintf(ipv4_sender_log, "MainLogic: found target nic %d with ip %d.\n", dst_nic, route_table[i].ip_addr);
-                auto& ipv4 = packet->packet_headers_[packet->header_tail_ ++];
-                ipv4.length_ = sizeof(Ipv4Header);
-                ipv4.offset_ = packet->offset_;
-                Ipv4Header* header = (Ipv4Header*)malloc(sizeof(Ipv4Header));
-                EditIpv4Header(header, ipv4.length_ >> 2, htons(packet->length_ - packet->offset_), 0, -1, route_table[i].ip_addr);
-                fprintf(ipv4_sender_log, "MainLogic: finished editing ipv4 header with check_sum 0x%x\n", header->chksum);
-                free(header);
+                if (i != route_table.size() - 1) continue;
+                else
+                {
+                    // drop the packet if can't find a route
+                    fprintf(ipv4_sender_log, "MainLogic: can't find a route from %d to %d.\n", src_ip_addr, dst_ip_addr);
+                    return nullptr;
+                }
+            }
+            if(max_cidr < route_table[i].cidr)
+            {
+                max_cidr = route_table[i].cidr;
+                dst_nic = route_table[i].nic;
             }
         }
+
+        packet->nic_ = dst_nic;
+        // TODO: give it correct proto type
+        fprintf(ipv4_sender_log, "MainLogic: found route path from %d to %d\n", src_ip_addr, dst_ip_addr);
+        EditIpv4Header(header, ipv4.length_ >> 2, htons(packet->length_ - packet->offset_), IP_PROTO_TYPE_TCP, 
+            src_ip_addr, dst_ip_addr);
+        fprintf(ipv4_sender_log, "MainLogic: finished editing ipv4 header with check_sum 0x%x\n", header->chksum);
 
         return packet;
     }
