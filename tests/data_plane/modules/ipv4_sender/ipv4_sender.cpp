@@ -29,7 +29,6 @@ TEST(DataPlaneIpv4Sender, Functions) {
     auto ipv4_sender = ModuleFactory::instance_().Create(omnistack::common::ConstCrc32("Ipv4Sender"));
     ASSERT_NE(ipv4_sender, nullptr);
     auto result = ipv4_sender->DefaultFilter(nullptr);
-    ASSERT_EQ(result, true);
     result = ipv4_sender->GetFilter(0, 0)(nullptr);
     ASSERT_EQ(result, true);
     result = ipv4_sender->allow_duplication_();

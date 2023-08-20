@@ -54,13 +54,31 @@ namespace omnistack::data_plane::ipv4_sender {
 
         constexpr ModuleType type_() override { return ModuleType::kReadWrite; }
 
+        void EditIpv4Header(Ipv4Header* header, uint8_t ihl, uint16_t len, uint8_t proto, uint32_t src, uint32_t dst);
+
     private:
         FILE* ipv4_sender_log = NULL;
     };
 
     bool Ipv4Sender::DefaultFilter(Packet* packet) {
-        // TODO: confirm header protocol as TCP/UDP/ICMP
+        // TODO: confirm header protocol is TCP/UDP, but not nesassary currently
         return true;
+    }
+
+    void Ipv4Sender::EditIpv4Header(Ipv4Header* header, uint8_t ihl, uint16_t len, uint8_t proto, uint32_t src, uint32_t dst)
+    {
+        // assume all args are small edian
+        header->ihl = ihl;
+        header->version = 4;
+        header->len = htons(len);
+        header->tos = 0;
+        header->id = 0;
+        header->frag_off = 0;
+        header->ttl = 10; // default ttl
+        header->proto = proto;
+        header->chksum = 0x149;
+        header->src = htonl(src);
+        header->dst = htonl(src);
     }
 
     Packet* Ipv4Sender::MainLogic(Packet* packet) {
@@ -78,17 +96,7 @@ namespace omnistack::data_plane::ipv4_sender {
                 ipv4.length_ = sizeof(Ipv4Header);
                 ipv4.offset_ = packet->offset_;
                 Ipv4Header* header = (Ipv4Header*)malloc(sizeof(Ipv4Header));
-                header->ihl = 5; // default value without extra info
-                header->version = 4;
-                header->len = packet->length_ + (header->ihl << 2);
-                header->tos = 0;
-                header->id = 0;
-                header->frag_off = 0;
-                header->ttl = 10;
-                header->proto = 0;
-                header->chksum = 0x149;
-                header->src = -1;
-                header->dst = route_table[i].ip_addr;
+                EditIpv4Header(header, ipv4.length_ >> 2, htons(packet->length_ - packet->offset_), 0, -1, route_table[i].ip_addr);
                 fprintf(ipv4_sender_log, "MainLogic: finished editing ipv4 header with check_sum 0x%x\n", header->chksum);
                 free(header);
             }
