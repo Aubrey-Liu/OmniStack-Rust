@@ -10,7 +10,7 @@
 #include <omnistack/tcp_common/tcp_events.hpp>
 #include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/common/time.hpp>
-#include <omnistack/hashtable/hashtable.hpp>
+#include <omnistack/hashtable/hashtable.h>
 #include <omnistack/module/module.hpp>
 
 namespace omnistack::data_plane::tcp_common {

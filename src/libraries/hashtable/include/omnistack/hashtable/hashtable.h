@@ -52,8 +52,8 @@ namespace omnistack::hashtable {
             rte_hash* hash_table_;
         };
 
-        pthread_once_t init_once_flag = PTHREAD_ONCE_INIT;
-        pthread_spinlock_t create_spinlock;
+        extern pthread_once_t init_once_flag;
+        extern pthread_spinlock_t create_spinlock;
         void InitOnce() {
             pthread_spin_init(&create_spinlock, PTHREAD_PROCESS_PRIVATE);
         }
@@ -150,6 +150,27 @@ namespace omnistack::hashtable {
             ::memcmp
         };
 
+        static inline uint32_t
+        hash_crc(const void *data, uint32_t data_len, uint32_t init_val) {
+            unsigned i;
+            uintptr_t pd = (uintptr_t) data;
+            for (i = 0; i < data_len / 8; i++) {
+                init_val = hash_crc_8byte(*(const uint64_t *)pd, init_val);
+                pd += 8;
+            }
+            if (data_len & 0x4) {
+                init_val = hash_crc_4byte(*(const uint32_t *)pd, init_val);
+                pd += 4;
+            }
+            if (data_len & 0x2) {
+                init_val = hash_crc_2byte(*(const uint16_t *)pd, init_val);
+                pd += 2;
+            }
+            if (data_len & 0x1)
+                init_val = hash_crc_1byte(*(const uint8_t *)pd, init_val);
+            return init_val;
+        }
+
         class Hashtable {
         public:
             typedef uint32_t HashValue;
@@ -203,6 +224,18 @@ namespace omnistack::hashtable {
                     }
                 }
                 return nullptr;
+            }
+
+            void* Lookup(const void* key) {
+                std::lock_guard<std::mutex> lock(lock_);
+                HashValue hash_value = hash_crc(key, key_len_);
+                auto range = map_.equal_range(hash_value);
+                for(auto it = range.first; it != range.second; ++it) {
+                    if(cmp_func_(it->second.first, key, key_len_) == 0) {
+                        return it->second.second;
+                    }
+                }
+                return nullptr; 
             }
 
             void Foreach(ForeachCallback callback, void* param) {
