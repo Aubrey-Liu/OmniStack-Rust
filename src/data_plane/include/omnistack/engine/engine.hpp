@@ -8,6 +8,7 @@
 #include <omnistack/graph/graph.hpp>
 #include <omnistack/module/module.hpp>
 #include <omnistack/channel/channel.h>
+#include <unordered_map>
 
 namespace omnistack::data_plane {
     /* Engine receives a SubGraph and runs it */
@@ -22,21 +23,39 @@ namespace omnistack::data_plane {
 
         void Destroy();
 
-        void RaiseEvent(Event* event);
+        static void RaiseEvent(Event* event) { current_engine_->HandleEvent(event); }
 
         static void SigintHandler(int sig) { stop_ = true; }
 
     private:
+        void HandleEvent(Event* event);
+
+        void ForwardPacket(Packet* &packet, uint32_t node_idx);
+
+        bool CompareLinks(uint32_t x, uint32_t y);
+
+        void SortLinks(std::vector<uint32_t>& links);
+
+        static thread_local Engine* current_engine_;
+        static thread_local volatile bool stop_;
+
         typedef std::pair<uint32_t, Packet*> QueueItem;
         std::vector<QueueItem> packet_queue_;
+
+        /* event info */
+        std::unordered_map<Event::EventType, std::vector<uint32_t>> event_entries_;
+
+        /* timer info */
+        std::vector<std::pair<uint32_t, uint32_t>> timer_list_;
 
         /* graph info */
         uint32_t module_num_;
         uint32_t assigned_module_idx_;
         std::vector<std::unique_ptr<BaseModule>> modules_;
+        std::vector<uint32_t> module_name_crc32_;
         std::vector<std::vector<uint32_t>> upstream_links_;
         std::vector<std::vector<uint32_t>> downstream_links_;
-        std::map<uint32_t, uint32_t> local_to_global;
+        std::vector<uint32_t> local_to_global;
         std::vector<uint32_t> timer_modules_;
         // std::vector<std::pair<Channel, uint32_t>> receive_channels_;
         // std::vector<Channel> send_channels_;
@@ -47,14 +66,6 @@ namespace omnistack::data_plane {
         /* helper structures */
         std::vector<uint32_t> next_hop_filter_default_;
         std::vector<bool> module_read_only_;
-
-        static thread_local volatile bool stop_;
-
-        void ForwardPacket(Packet* &packet, uint32_t node_idx);
-
-        bool CompareLinks(uint32_t x, uint32_t y);
-
-        void SortLinks(std::vector<uint32_t>& links);
     };
 }
 

@@ -73,6 +73,20 @@ namespace omnistack::common {
         return crc ^ 0xffffffff;
     }
 
+    consteval uint32_t ConstCrc32(const char* str, size_t len) {
+        uint32_t crc = 0xffffffff;
+        for (auto i = 0; i < len; i ++)
+            crc = (crc >> 8) ^ kCrcTable[(crc ^ str[i]) & 0xff];
+        return crc ^ 0xffffffff;
+    }
+
+    constexpr uint32_t Crc32(const char* str, size_t len) {
+        uint32_t crc = 0xffffffff;
+        for (auto i = 0; i < len; i ++)
+            crc = (crc >> 8) ^ kCrcTable[(crc ^ str[i]) & 0xff];
+        return crc ^ 0xffffffff;
+    }
+
     constexpr uint32_t Crc32(std::string_view str) {
         uint32_t crc = 0xffffffff;
         for(auto c : str)

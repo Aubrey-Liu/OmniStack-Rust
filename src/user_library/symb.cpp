@@ -2,6 +2,7 @@
 #include <omnistack/memory/memory.h>
 #include <omnistack/token/token.h>
 #include <omnistack/channel/channel.h>
+#include <omnistack/node.h>
 
 #if defined(OMNIMEM_BACKEND_DPDK)
 #include <rte_eal.h>
@@ -33,9 +34,14 @@ namespace omnistack::user_lib::api {
 
 namespace omnistack::user_lib {
     void Initialize() {
-        omnistack::memory::InitializeSubsystem(0, true);
+        omnistack::memory::InitializeSubsystem(0
+#if defined(OMNIMEM_BACKEND_DPDK)
+        ,true
+#endif
+        );
         omnistack::token::InitializeSubsystem();
         omnistack::channel::InitializeSubsystem();
+        omnistack::node::InitializeSubsystem();
     }
 
     void CleanUp() {

@@ -29,11 +29,16 @@ namespace omnistack::data_plane::tcp_data_in {
 
         constexpr ModuleType type_() override { return ModuleType::kOccupy; }
     
+        constexpr uint32_t max_burst_() override { return 1; }
+
     private:
         TcpSharedHandle* tcp_shared_handle_;
         PacketPool* packet_pool_; 
         TcpFlow* ack_list_[kTcpMaxFlowCount];
         uint32_t ack_list_top_;
+
+        uint32_t next_hop_filter_mask_data_;
+        uint32_t next_hop_filter_mask_ack_;
     };
 
     bool TcpDataIn::DefaultFilter(Packet* packet) {
@@ -80,17 +85,18 @@ namespace omnistack::data_plane::tcp_data_in {
         if(data_length > 0) [[likely]] {
             if(seq_num == recv_var.recv_nxt_) [[likely]] {
                 uint32_t seq_end = seq_num + data_length;
-                packet->next_packet_ = recv_var.receive_buffer_->Pop(seq_end);
+                packet = recv_var.receive_buffer_->Pop(seq_end, packet);
                 ret = packet;
                 recv_var.recv_nxt_ = seq_end;
             }
             else recv_var.receive_buffer_->Push(seq_num, packet);
         }
 
-        /* TODO: set node info and forward info */
+        /* set node info and forward info */
         auto iter = ret;
         while(iter != nullptr) {
             iter->node_ = flow->node_;
+            iter->next_hop_filter_ &= next_hop_filter_mask_data_;
             iter = iter->next_packet_.Get();
         }
 
@@ -98,7 +104,9 @@ namespace omnistack::data_plane::tcp_data_in {
         if(ret == nullptr || ret->next_packet_.Get() != nullptr) [[unlikely]] {
             /* ack immediately */
             auto ack_packet = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
-            /* TODO: set forward info */
+            /* set forward info */
+            ack_packet->next_hop_filter_ &= next_hop_filter_mask_ack_;
+
             ack_packet->next_packet_ = ret;
             ret = ack_packet;
         }
@@ -117,7 +125,9 @@ namespace omnistack::data_plane::tcp_data_in {
             auto flow = ack_list_[--ack_list_top_];
             flow->receive_variables_.received_ = false;
             auto ack_packet = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
-            /* TODO: set forward info */
+            /* set forward info */
+            ack_packet->next_hop_filter_ &= next_hop_filter_mask_ack_;
+
             ack_packet->next_packet_ = ret;
             ret = ack_packet;
         }
@@ -128,6 +138,18 @@ namespace omnistack::data_plane::tcp_data_in {
         tcp_shared_handle_ = TcpSharedHandle::Create(name_prefix);
         packet_pool_ = packet_pool;
         ack_list_top_ = 0;
+
+        /* set next hop filter mask */
+        uint32_t node_user_mask = 0;
+        uint32_t ipv4_sender_mask = 0;
+        for(auto& son : downstream_nodes_) {
+            if(son.module_type == ConstCrc32("NodeUser"))
+                node_user_mask |= son.filter_mask;
+            else if(son.module_type == ConstCrc32("Ipv4Sender"))
+                ipv4_sender_mask |= son.filter_mask;
+        }
+        next_hop_filter_mask_ack_ = ~node_user_mask;
+        next_hop_filter_mask_data_ = ~ipv4_sender_mask;
     }
 
     void TcpDataIn::Destroy() {
