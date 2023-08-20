@@ -3,7 +3,7 @@
 //
 
 #include <gtest/gtest.h>
-#include <omnistack/hashtable/hashtable.hpp>
+#include <omnistack/hashtable/hashtable.h>
 
 TEST(LibHashtable, Create) {
     
