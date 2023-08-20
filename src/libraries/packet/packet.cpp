@@ -17,6 +17,7 @@ namespace omnistack::packet {
         header_tail_ = 0;
         next_packet_ = nullptr;
         node_ = nullptr;
+        next_hop_filter_ = 0;
     }
 
     PacketPool* PacketPool::CreatePacketPool(std::string_view name_prefix, uint32_t packet_count) {

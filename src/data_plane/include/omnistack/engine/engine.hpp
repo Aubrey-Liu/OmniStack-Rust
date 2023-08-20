@@ -8,6 +8,7 @@
 #include <omnistack/graph/graph.hpp>
 #include <omnistack/module/module.hpp>
 #include <omnistack/channel/channel.h>
+#include <unordered_map>
 
 namespace omnistack::data_plane {
     /* Engine receives a SubGraph and runs it */
@@ -22,13 +23,27 @@ namespace omnistack::data_plane {
 
         void Destroy();
 
-        void RaiseEvent(Event* event);
+        static void RaiseEvent(Event* event) { current_engine_->HandleEvent(event); }
 
         static void SigintHandler(int sig) { stop_ = true; }
 
     private:
+        void HandleEvent(Event* event);
+
+        void ForwardPacket(Packet* &packet, uint32_t node_idx);
+
+        bool CompareLinks(uint32_t x, uint32_t y);
+
+        void SortLinks(std::vector<uint32_t>& links);
+
+        static thread_local Engine* current_engine_;
+        static thread_local volatile bool stop_;
+
         typedef std::pair<uint32_t, Packet*> QueueItem;
         std::vector<QueueItem> packet_queue_;
+
+        /* event info */
+        std::unordered_map<Event::EventType, std::vector<uint32_t>> event_entries_;
 
         /* graph info */
         uint32_t module_num_;
@@ -48,14 +63,6 @@ namespace omnistack::data_plane {
         /* helper structures */
         std::vector<uint32_t> next_hop_filter_default_;
         std::vector<bool> module_read_only_;
-
-        static thread_local volatile bool stop_;
-
-        void ForwardPacket(Packet* &packet, uint32_t node_idx);
-
-        bool CompareLinks(uint32_t x, uint32_t y);
-
-        void SortLinks(std::vector<uint32_t>& links);
     };
 }
 

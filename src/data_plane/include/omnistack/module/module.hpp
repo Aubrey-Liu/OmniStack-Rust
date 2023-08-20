@@ -93,7 +93,6 @@ namespace omnistack::data_plane {
             std::vector<uint32_t> filter_masks;
             uint32_t universe_mask;
             FilterGroupType type;
-            uint8_t last_apply;
         };
 
         struct DownstreamInfo {
@@ -102,7 +101,9 @@ namespace omnistack::data_plane {
             uint32_t filter_mask;
         };
 
-        /* event must be processed immediately while raising */
+        /** Event will be processed immediately while raising.
+         *  However, the packet returned from the callback will be add to packet queue and processed later.
+        */
         std::function<void(Event* event)> raise_event_;
         std::vector<FilterGroup> filter_groups_;
         std::vector<std::pair<uint32_t, uint32_t>> upstream_nodes_;

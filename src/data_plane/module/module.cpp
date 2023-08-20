@@ -22,7 +22,6 @@ namespace omnistack::data_plane {
         for(int i = 0; i < groups.size(); i ++) {
             auto& group_ids = groups[i];
             auto& group = filter_groups_[i];
-            group.last_apply = 0;
             group.universe_mask = 0;
             group.type = group_types[i];
             for(auto idx : group_ids) {

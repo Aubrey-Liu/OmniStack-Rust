@@ -29,6 +29,9 @@ namespace omnistack::data_plane {
     }
 
     void Engine::Init(SubGraph &sub_graph, uint32_t core, std::string_view name_prefix) {
+        /* set up current engine pointer per thread */
+        current_engine_ = this;
+
         /* TODO: bind to CPU core */
 
         /* create packet pool */
@@ -163,8 +166,24 @@ namespace omnistack::data_plane {
                 modules_[u]->RegisterDownstreamFilters(modules, filters, filter_masks, groups, group_types);
             }
 
-            /* initialize module */
-            for(auto& module : modules_) module->Initialize(name_prefix, packet_pool_);
+        }
+
+        /* set event entry point */
+        {
+            for(auto& i : modules_) i->set_raise_event_(RaiseEvent);
+        }
+
+        /* initialize module */
+        {
+            for(auto& i : modules_) i->Initialize(name_prefix, packet_pool_);
+        }
+
+        /* register events */
+        {
+            for(uint32_t i = 0; i < modules_.size(); i ++) {
+                auto events = modules_[i]->RegisterEvents();
+                for(auto event : events) event_entries_[event].push_back(i);
+            }
         }
 
         /* TODO: initialize channels to remote engine */
@@ -225,6 +244,18 @@ namespace omnistack::data_plane {
 
         packet->reference_count_ = reference_count;
         packet = packet->next_packet_.Get();
+    }
+
+    void Engine::HandleEvent(Event* event) {
+        auto& module_ids = event_entries_[event->type_];
+        for(auto module_id : module_ids) {
+            auto ret = modules_[module_id]->EventCallback(event);
+            if(ret != nullptr) {
+                if(ret->next_hop_filter_ == 0) ret->next_hop_filter_ = next_hop_filter_default_[module_id];
+                modules_[module_id]->ApplyDownstreamFilters(ret);
+                ForwardPacket(ret, module_id);
+            }
+        }
     }
 
     void Engine::Run() {
