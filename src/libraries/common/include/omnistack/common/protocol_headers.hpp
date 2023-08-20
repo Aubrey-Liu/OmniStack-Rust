@@ -106,6 +106,26 @@ struct Ipv6Header {
 #define TCP_OPTION_LENGTH_SACK_PREMITTED 0x02
 #define TCP_OPTION_LENGTH_TSPOT 0x0A
 
+#ifndef BIGENDIAN
+    #define TCP_FLAGS_FIN 0x100
+    #define TCP_FLAGS_SYN 0x200
+    #define TCP_FLAGS_RST 0x400
+    #define TCP_FLAGS_PSH 0x800
+    #define TCP_FLAGS_ACK 0x1000
+    #define TCP_FLAGS_URG 0x2000
+    #define TCP_FLAGS_ECE 0x4000
+    #define TCP_FLAGS_CWR 0x8000
+#else
+    #define TCP_FLAGS_FIN 0x01
+    #define TCP_FLAGS_SYN 0x02
+    #define TCP_FLAGS_RST 0x04
+    #define TCP_FLAGS_PSH 0x08
+    #define TCP_FLAGS_ACK 0x10
+    #define TCP_FLAGS_URG 0x20
+    #define TCP_FLAGS_ECE 0x40
+    #define TCP_FLAGS_CWR 0x80
+#endif
+
 struct TcpHeader {
     uint16_t    sport;
     uint16_t    dport;

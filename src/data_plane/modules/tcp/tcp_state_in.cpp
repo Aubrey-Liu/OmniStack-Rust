@@ -16,7 +16,7 @@ namespace omnistack::data_plane::tcp_state_in {
 
         static bool DefaultFilter(Packet* packet);
 
-        Filter GetFilter(std::string_view upstream_module, uint32_t global_id) override { return DefaultFilter; }
+        Filter GetFilter(uint32_t upstream_module, uint32_t global_id) override { return DefaultFilter; }
 
         Packet* MainLogic(Packet* packet) override;
 
@@ -53,6 +53,10 @@ namespace omnistack::data_plane::tcp_state_in {
         TcpSharedHandle* tcp_shared_handle_;
         PacketPool* packet_pool_; 
         memory::MemoryPool* event_pool_;
+
+        uint32_t next_hop_filter_mask_ack_;
+        uint32_t next_hop_filter_mask_send_;
+        uint32_t next_hop_filter_mask_data_;
     };
 
     bool TcpStateIn::DefaultFilter(Packet* packet) {
@@ -236,14 +240,15 @@ namespace omnistack::data_plane::tcp_state_in {
             uint32_t ack_bytes = ack_num - send_var.send_una_;
             send_var.send_una_ = ack_num;
             send_var.is_retransmission_ = false;
-            /* TODO: release packets in retransmission queue */
+            /* release packets in retransmission queue */
+            send_var.send_buffer_->PopSent(ack_bytes);
 
             /* estimate rtt */
 #if defined (OMNI_TCP_OPTION_TSPOT)
             if(echo_timestamp) [[likely]] EstimateRtt(flow, (uint32_t)(NowMs() - echo_timestamp));
-            else EstimateRtt(flow, (uint32_t)(NowUs() - flow->send_variables_.rto_begin_));
+            else if(!send_var.is_retransmission_) EstimateRtt(flow, (uint32_t)(NowUs() - flow->send_variables_.rto_begin_));
 #else
-            EstimateRtt(flow, (uint32_t)(NowUs() - flow->send_variables_.rto_begin_));
+            if(!send_var.is_retransmission_) EstimateRtt(flow, (uint32_t)(NowUs() - flow->send_variables_.rto_begin_));
 #endif
         }
         else if(send_var.send_nxt_ == send_var.send_una_ && ack_num == send_var.send_una_) {
@@ -258,10 +263,11 @@ namespace omnistack::data_plane::tcp_state_in {
         else {
             /* restart retransmission timer */
             send_var.rto_begin_ = NowUs();
-            send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
+            send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_; 
         }
 
-        /* TODO: update congestion control */
+        /* update congestion control */
+        flow->congestion_control_->OnPacketAcked(ack_num - send_var.send_una_);
     }
 
     Packet* TcpStateIn::MainLogic(Packet* packet) {
@@ -289,6 +295,7 @@ namespace omnistack::data_plane::tcp_state_in {
         }
 
         Packet* ret = nullptr;
+        bool to_tcp_send = false;
 
         if(tcp_header->syn) [[unlikely]] {
             if(!tcp_header->ack) {
@@ -302,8 +309,9 @@ namespace omnistack::data_plane::tcp_state_in {
                     flow->state_ = TcpFlow::State::kListen;
                     EnterSynReceived(listen_flow, flow, tcp_header, remote_mss, remote_wscale, remote_timestamp);
                     /* reply SYN-ACK */
-                    ret = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
+                    ret = BuildReplyPacketWithFullOptions(flow, TCP_FLAGS_SYN | TCP_FLAGS_ACK, packet_pool_);
                     flow->send_variables_.send_nxt_ ++;
+                    to_tcp_send = true;
                     /* raise event: connection established */
                     raise_event_(new(event_pool_->Get()) TcpEventConnect(local_ip, remote_ip, local_port, remote_port));
                 }
@@ -311,7 +319,8 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* simultaneously connect */
                     EnterSynReceived(nullptr, flow, tcp_header, remote_mss, remote_wscale, remote_timestamp);
                     /* reply SYN-ACK */
-                    ret = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
+                    ret = BuildReplyPacketWithFullOptions(flow, TCP_FLAGS_SYN | TCP_FLAGS_ACK, packet_pool_);
+                    to_tcp_send = true;
                 }
                 else return TcpInvalid(packet);
             }
@@ -323,7 +332,7 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* actively connect */
                     EnterEstablished(flow, tcp_header, remote_mss, remote_wscale, remote_timestamp, echo_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                     /* raise event: connection established */
                     raise_event_(new(event_pool_->Get()) TcpEventConnect(local_ip, remote_ip, local_port, remote_port));
                 }
@@ -347,7 +356,7 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* passive close */
                     EnterCloseWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                     /* raise event: close connection */
                     raise_event_(new(event_pool_->Get()) TcpEventDisconnect(local_ip, remote_ip, local_port, remote_port));
                 }
@@ -356,18 +365,18 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* simultaneous close */
                     EnterClosing(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else if(flow->state_ == TcpFlow::State::kFinWait2) {
                     if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
                     EnterTimeWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else if(flow->state_ == TcpFlow::State::kTimeWait) {
                     if(seq_num != flow->receive_variables_.recv_nxt_ - 1) return TcpInvalid(packet);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else return TcpInvalid(packet);
             }
@@ -379,7 +388,7 @@ namespace omnistack::data_plane::tcp_state_in {
                     /* passive close */
                     EnterCloseWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                     /* raise event: close connection */
                     raise_event_(new(event_pool_->Get()) TcpEventDisconnect(local_ip, remote_ip, local_port, remote_port));
                 }
@@ -387,13 +396,13 @@ namespace omnistack::data_plane::tcp_state_in {
                     if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
                     EnterTimeWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else if(flow->state_ == TcpFlow::State::kFinWait2) {
                     if(seq_num != flow->receive_variables_.recv_nxt_) return TcpInvalid(packet);
                     EnterTimeWait(flow, tcp_header, remote_timestamp);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else if(flow->state_ == TcpFlow::State::kClosing) {
                     if(seq_num != flow->receive_variables_.recv_nxt_ - 1) return TcpInvalid(packet);
@@ -403,7 +412,7 @@ namespace omnistack::data_plane::tcp_state_in {
                 else if(flow->state_ == TcpFlow::State::kTimeWait) {
                     if(seq_num != flow->receive_variables_.recv_nxt_ - 1) return TcpInvalid(packet);
                     /* reply ACK */
-                    ret = BuildReplyPacket(flow, 0, packet_pool_);
+                    ret = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
                 }
                 else return TcpInvalid(packet);
             }
@@ -449,9 +458,13 @@ namespace omnistack::data_plane::tcp_state_in {
             }
         }
 
-        if(ret != nullptr) [[likely]] {
-            ret->custom_value_ = reinterpret_cast<uint64_t>(flow);
-            tcp_shared_handle_->AcquireFlow(flow);
+        if(ret != nullptr) [[unlikely]] {
+            if(to_tcp_send) {
+                ret->next_hop_filter_ &= next_hop_filter_mask_send_;
+                ret->custom_value_ = reinterpret_cast<uint64_t>(flow);
+                tcp_shared_handle_->AcquireFlow(flow);
+            }
+            else ret->next_hop_filter_ &= next_hop_filter_mask_ack_;
         }
 
         /* forward packet if having data */
@@ -459,12 +472,15 @@ namespace omnistack::data_plane::tcp_state_in {
                                  flow->state_ == TcpFlow::State::kFinWait1    || 
                                  flow->state_ == TcpFlow::State::kFinWait2    )) [[likely]] {
             if(packet->length_ > packet->offset_) [[likely]] {
+                packet->next_hop_filter_ &= next_hop_filter_mask_data_;
                 packet->next_packet_ = ret;
                 packet->custom_value_ = reinterpret_cast<uint64_t>(flow);
                 tcp_shared_handle_->AcquireFlow(flow);
                 ret = packet;
             }
+            else packet->Release();
         }
+        else packet->Release();
 
         return ret;
     }
@@ -493,6 +509,18 @@ namespace omnistack::data_plane::tcp_state_in {
         std::string name(name_prefix);
         name += "_TcpStateIn_EventPool";
         event_pool_ = memory::AllocateMemoryPool(name.data(), kEventMaxLength, kTcpMaxFlowCount);
+    
+        uint32_t tcp_send_mask = 0;
+        uint32_t tcp_data_in_mask = 0;
+        uint32_t ipv4_send_mask = 0;
+        for(auto son : downstream_nodes_) {
+            if(son.module_type == ConstCrc32("TcpSend")) tcp_send_mask |= son.filter_mask;
+            else if(son.module_type == ConstCrc32("TcpDataIn")) tcp_data_in_mask |= son.filter_mask;
+            else if(son.module_type == ConstCrc32("Ipv4Send")) ipv4_send_mask |= son.filter_mask;
+        }
+        next_hop_filter_mask_send_ = ~(tcp_data_in_mask | ipv4_send_mask);
+        next_hop_filter_mask_data_ = ~(tcp_send_mask | ipv4_send_mask);
+        next_hop_filter_mask_ack_ = ~(tcp_send_mask | tcp_data_in_mask);
     }
 
     void TcpStateIn::Destroy() {

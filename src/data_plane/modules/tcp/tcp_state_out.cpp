@@ -16,7 +16,7 @@ namespace omnistack::data_plane::tcp_state_out {
 
         static bool DefaultFilter(Packet* packet);
 
-        Filter GetFilter(std::string_view upstream_module, uint32_t global_id) override { return DefaultFilter; }
+        Filter GetFilter(uint32_t upstream_module, uint32_t global_id) override { return DefaultFilter; }
 
         Packet* EventCallback(Event* event) override;
 
@@ -128,7 +128,7 @@ namespace omnistack::data_plane::tcp_state_out {
         EnterSynSent(flow, kTcpDefaultCongestionControlAlgorithm);
         
         /* send SYN */
-        auto packet = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
+        auto packet = BuildReplyPacketWithFullOptions(flow, TCP_FLAGS_SYN, packet_pool_);
         flow->send_variables_.send_nxt_ ++;
 
         packet->custom_value_ = reinterpret_cast<uint64_t>(flow);
@@ -159,7 +159,7 @@ namespace omnistack::data_plane::tcp_state_out {
         }
 
         /* send FIN */
-        auto packet = BuildReplyPacketWithFullOptions(flow, 0, packet_pool_);
+        auto packet = BuildReplyPacketWithFullOptions(flow, TCP_FLAGS_FIN, packet_pool_);
         flow->send_variables_.send_nxt_ ++;
 
         packet->custom_value_ = reinterpret_cast<uint64_t>(flow);

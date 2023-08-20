@@ -17,6 +17,7 @@
 #include <set>
 #include <omnistack/packet/packet.hpp>
 #include <omnistack/module/event.hpp>
+#include <omnistack/common/constant.hpp>
 
 namespace omnistack::data_plane {
 
@@ -42,20 +43,33 @@ namespace omnistack::data_plane {
 
         static constexpr bool DefaultFilter(Packet* packet){ return true; }
 
-        void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
+        void RegisterDownstreamFilters(const std::vector<std::pair<uint32_t, uint32_t>>& modules, const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
 
         void set_raise_event_(std::function<void(Event* event)> raise_event);
 
-        void set_upstream_nodes_(const std::vector<std::pair<std::string, uint32_t>>& upstream_nodes);
+        void set_upstream_nodes_(const std::vector<std::pair<uint32_t, uint32_t>>& upstream_nodes);
 
         void ApplyDownstreamFilters(Packet* packet);
 
-        virtual Filter GetFilter(std::string_view upstream_module, uint32_t global_id) { return DefaultFilter; }
+        /**
+         * @brief Get the Filter object for certain upstream node
+         * @param upstream_node upstream node identifier (Crc32 of name)
+         * @param global_id global identifier in graph of this module
+         * @return Filter for certain link
+         * @note This function will be called before Initialize(), and will be called only once for each upstream node
+        */
+        virtual Filter GetFilter(uint32_t upstream_node, uint32_t global_id) { return DefaultFilter; }
 
         virtual Packet* MainLogic(Packet* packet) { return packet; }
 
         virtual Packet* TimerLogic(uint64_t tick) { return nullptr; }
 
+        /**
+         * @brief Initialize module
+         * @param name_prefix name prefix of this module, used to avoid name conflict
+         * @param packet_pool packet pool for this module
+         * @note All protected members will be initialized before this function called
+        */
         virtual void Initialize(std::string_view name_prefix, PacketPool* packet_pool) {};
 
         virtual void Destroy() {};
@@ -66,7 +80,7 @@ namespace omnistack::data_plane {
 
         virtual constexpr bool allow_duplication_() { return false; }
 
-        virtual constexpr std::string_view name_() { return "BaseModule"; }
+        virtual constexpr uint32_t name_() { return common::ConstCrc32("BaseModule"); }
 
         virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
 
@@ -75,18 +89,25 @@ namespace omnistack::data_plane {
 
     protected:
         struct FilterGroup {
-            std::vector<Filter> filters_;
-            std::vector<uint32_t> filter_masks_;
-            uint32_t universe_mask_;
-            FilterGroupType type_;
-            uint8_t last_apply_;
+            std::vector<Filter> filters;
+            std::vector<uint32_t> filter_masks;
+            uint32_t universe_mask;
+            FilterGroupType type;
         };
 
-        /* event must be processed immediately while raising */
+        struct DownstreamInfo {
+            uint32_t module_type;
+            uint32_t module_id;
+            uint32_t filter_mask;
+        };
+
+        /** Event will be processed immediately while raising.
+         *  However, the packet returned from the callback will be add to packet queue and processed later.
+        */
         std::function<void(Event* event)> raise_event_;
         std::vector<FilterGroup> filter_groups_;
-        /* TODO: change the forward structure to compile-time hash */
-        std::vector<std::pair<std::string, uint32_t>> upstream_nodes_;
+        std::vector<std::pair<uint32_t, uint32_t>> upstream_nodes_;
+        std::vector<DownstreamInfo> downstream_nodes_;
     };
 
     class ModuleFactory {
@@ -98,9 +119,10 @@ namespace omnistack::data_plane {
             return factory;
         }
 
-        void Register(const std::string& name, const CreateFunction& func) {
+        void Register(uint32_t name, const CreateFunction& func) {
             if(module_list_.find(name) != module_list_.end()) {
                 /* TODO: report error */
+                std::cerr << "module name conflict: " << name << "\n";
                 return;
             }
             if(func == nullptr) {
@@ -113,7 +135,7 @@ namespace omnistack::data_plane {
             }
         }
 
-        [[nodiscard]] std::unique_ptr<BaseModule> Create(const std::string& name) const {
+        [[nodiscard]] std::unique_ptr<BaseModule> Create(uint32_t name) const {
             auto it = module_list_.find(name);
             if(it == module_list_.end()) {
                 /* TODO: report error */
@@ -123,7 +145,7 @@ namespace omnistack::data_plane {
         }
 
     private:
-        std::map<std::string, CreateFunction> module_list_;
+        std::map<uint32_t, CreateFunction> module_list_;
     };
 
     template<typename T, const char name[]>
@@ -133,11 +155,11 @@ namespace omnistack::data_plane {
             return std::make_unique<T>();
         }
 
-        constexpr std::string_view name_() override { return std::string_view(name); }
+        constexpr uint32_t name_() override { return common::ConstCrc32(name); }
 
         struct FactoryEntry {
             FactoryEntry() {
-                ModuleFactory::instance_().Register(std::string(name), CreateModuleObject);
+                ModuleFactory::instance_().Register(common::ConstCrc32(name), CreateModuleObject);
             }
             inline void DoNothing() const {}
         };

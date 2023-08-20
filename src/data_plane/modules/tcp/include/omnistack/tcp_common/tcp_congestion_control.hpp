@@ -21,21 +21,21 @@ namespace omnistack::data_plane::tcp_common {
         TcpCongestionControlBase(TcpCongestionControlBase&&) = delete;
         virtual ~TcpCongestionControlBase() {}
 
-        virtual void OnPacketAcked() = 0;
+        virtual void OnPacketAcked(uint32_t ack_bytes) {};
 
-        virtual void OnPacketLost() = 0;
+        virtual void OnPacketSent(uint32_t bytes) {};
 
-        virtual void OnPacketSent() = 0;
+        virtual void OnCongestionEvent() {};
 
-        virtual void OnCongestionEvent() = 0;
+        virtual void OnRetransmissionTimeout() {};
 
-        virtual void OnRetransmissionTimeout() = 0;
+        virtual uint32_t GetCongestionWindow() const { return 0; };
 
-        virtual uint32_t GetCongestionWindow() const = 0;
+        virtual uint32_t GetBytesCanSend() const { return 0; };
 
         virtual constexpr std::string_view name_() { return "TcpCongestionControlBase"; }
     
-    private:
+    protected:
         TcpFlow* flow_;
     };
 
@@ -91,7 +91,7 @@ namespace omnistack::data_plane::tcp_common {
 
         static const FactoryEntry factory_entry_;
 
-        TcpCongestionControl() {
+        TcpCongestionControl(TcpFlow* flow) : TcpCongestionControlBase(flow) {
             factory_entry_.DoNothing();
         }
         virtual ~TcpCongestionControl() {

@@ -70,8 +70,9 @@ namespace omnistack::packet {
         /* a cache line ends here */
 
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
-        uint32_t upstream_node_;        /* identify the upstream node of current packet */
-        
+        uint32_t upstream_node_name_;   /* identify the upstream node of current packet */
+        uint32_t upstream_node_id_;
+
         char mbuf_[kPacketMbufSize];
     };
 

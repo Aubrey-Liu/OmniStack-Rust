@@ -18,7 +18,7 @@ namespace omnistack::data_plane {
         typedef uint32_t EventType;
 
         static consteval EventType GenerateEventType(const char name[]) {
-            return ConstCrc32(name);
+            return common::ConstCrc32(name);
         }
 
         Event(EventType type) : type_(type) {}

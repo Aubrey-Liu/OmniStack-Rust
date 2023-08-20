@@ -25,7 +25,7 @@ namespace omnistack::data_plane::sample_module {
             return true;
         }
 
-        Filter GetFilter(std::string_view upstream_module, uint32_t global_id) override {
+        Filter GetFilter(uint32_t upstream_module, uint32_t global_id) override {
             Message("GetFilter\n");
             return DefaultFilter;
         }

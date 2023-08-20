@@ -6,21 +6,21 @@
 #include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/module/module.hpp>
 
-namespace omnistack::data_plane::tcp_flow_cache {
+namespace omnistack::data_plane::tcp_flow_cache_in {
     using namespace tcp_common;
 
-    inline constexpr char kName[] = "TcpFlowCache";
+    inline constexpr char kName[] = "TcpFlowCacheIn";
 
     constexpr uint32_t kTcpFlowCacheSize = 1 << 8;
     constexpr uint32_t kTcpFlowCacheMask = kTcpFlowCacheSize - 1;
 
-    class TcpFlowCache : public Module<TcpFlowCache, kName> {
+    class TcpFlowCacheIn : public Module<TcpFlowCacheIn, kName> {
     public:
-        TcpFlowCache() {}
+        TcpFlowCacheIn() {}
 
         static bool DefaultFilter(Packet* packet);
 
-        Filter GetFilter(std::string_view upstream_module, uint32_t global_id) override { return DefaultFilter; }
+        Filter GetFilter(uint32_t upstream_module, uint32_t global_id) override { return DefaultFilter; }
 
         Packet* MainLogic(Packet* packet) override;
 
@@ -37,7 +37,7 @@ namespace omnistack::data_plane::tcp_flow_cache {
         TcpFlow* flow_cache_[kTcpFlowCacheSize];
     };
 
-    bool TcpFlowCache::DefaultFilter(Packet* packet) {
+    bool TcpFlowCacheIn::DefaultFilter(Packet* packet) {
         auto& ip = packet->packet_headers_[packet->header_tail_ - 2];
         Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + ip.offset_);
         if(ipv4_header->version == 4) [[likely]] return ipv4_header->proto == IP_PROTO_TYPE_TCP;
@@ -46,7 +46,7 @@ namespace omnistack::data_plane::tcp_flow_cache {
         return false;
     }
 
-    Packet* TcpFlowCache::MainLogic(Packet* packet) {
+    Packet* TcpFlowCacheIn::MainLogic(Packet* packet) {
         auto flow = flow_cache_[packet->flow_hash_ & kTcpFlowCacheMask];
 
         auto& tcp = packet->packet_headers_[packet->header_tail_ - 1];
@@ -60,7 +60,7 @@ namespace omnistack::data_plane::tcp_flow_cache {
 
         if(flow != nullptr) [[likely]] {
             bool is_same = flow->local_ip_ == local_ip && flow->remote_ip_ == remote_ip && flow->local_port_ == local_port && flow->remote_port_ == remote_port;
-            if(!is_same) [[unlikely]] {
+            if(flow->state_ == TcpFlow::State::kClosed || !is_same) [[unlikely]] {
                 tcp_shared_handle_->ReleaseFlow(flow);
                 flow = nullptr;
             }
@@ -78,12 +78,12 @@ namespace omnistack::data_plane::tcp_flow_cache {
         return packet;
     }
 
-    void TcpFlowCache::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
+    void TcpFlowCacheIn::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
         tcp_shared_handle_ = TcpSharedHandle::Create(name_prefix);
         for(auto& i : flow_cache_) i = nullptr;
     }
 
-    void TcpFlowCache::Destroy() {
+    void TcpFlowCacheIn::Destroy() {
         for(auto& i : flow_cache_) {
             if(i != nullptr) tcp_shared_handle_->ReleaseFlow(i);
         }

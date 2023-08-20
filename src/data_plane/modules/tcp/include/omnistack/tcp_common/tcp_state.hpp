@@ -32,13 +32,16 @@ namespace omnistack::data_plane::tcp_common {
         uint32_t send_wl2_;             // segment acknowledgment number used for last window update
         TcpSendBuffer* send_buffer_;
 
-        uint64_t rxtcur_;               // retransmission timeout currently
-        uint64_t srtt_;                 // smoothed round-trip time
-        uint64_t rttvar_;               // round-trip time variation
-        uint64_t rto_begin_;            // retransmission timeout begin
-        uint64_t rto_timeout_;          // retransmission timeout
-        uint8_t is_retransmission_;     // if last packet is retransmission
-        uint8_t send_wscale_;           // window scale
+        uint64_t rxtcur_;                   // retransmission timeout currently
+        uint64_t srtt_;                     // smoothed round-trip time
+        uint64_t rttvar_;                   // round-trip time variation
+        uint64_t rto_begin_;                // retransmission timeout begin
+        uint64_t rto_timeout_;              // retransmission timeout
+        uint8_t is_retransmission_;         // if last packet is retransmission
+        uint8_t fast_retransmission_;       // if fast retransmission is triggered
+        uint8_t in_retransmission_queue_;   // if in sending queue
+        uint8_t send_wscale_;               // window scale
+        
     };
 
     class TcpListenFlow {
@@ -72,7 +75,7 @@ namespace omnistack::data_plane::tcp_common {
 
         State state_;
 
-        Node* node_;                // node that this flow belongs to
+        node::BasicNode* node_;                // node that this flow belongs to
 
         uint32_t reference_count_;  // reference count for this flow
         uint16_t mss_;              // maximum segment size
@@ -110,8 +113,10 @@ namespace omnistack::data_plane::tcp_common {
         flow->reference_count_ = 1;
 
         flow->receive_variables_.receive_buffer_ = TcpReceiveBuffer::Create(receive_buffer_pool_);
+        flow->receive_variables_.received_ = 0;
 
         flow->send_variables_.send_buffer_ = TcpSendBuffer::Create(send_buffer_pool_);
+        flow->send_variables_.in_retransmission_queue_ = 0;
 
         return flow;
     }
@@ -119,6 +124,7 @@ namespace omnistack::data_plane::tcp_common {
     inline void TcpFlow::Destroy(memory::MemoryPool* flow_pool, memory::MemoryPool* receive_buffer_pool_, memory::MemoryPool* send_buffer_pool_, TcpFlow* flow) {
         TcpReceiveBuffer::Destroy(receive_buffer_pool_, flow->receive_variables_.receive_buffer_);
         TcpSendBuffer::Destroy(send_buffer_pool_, flow->send_variables_.send_buffer_);
+        flow->congestion_control_->~TcpCongestionControlBase();
         flow->~TcpFlow();
         flow_pool->Put(flow);
     }
