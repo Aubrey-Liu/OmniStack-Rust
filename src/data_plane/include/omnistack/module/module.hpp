@@ -60,9 +60,18 @@ namespace omnistack::data_plane {
         */
         virtual Filter GetFilter(uint32_t upstream_node, uint32_t global_id) { return DefaultFilter; }
 
+        /** For MainLogic, TimerLogic, EventCallback,
+         *  if multiple packages are returned, 
+         *  it is recommended to return them in reverse order. 
+        */
+
         virtual Packet* MainLogic(Packet* packet) { return packet; }
 
         virtual Packet* TimerLogic(uint64_t tick) { return nullptr; }
+
+        virtual Packet* EventCallback(Event* event) { return nullptr; }
+
+        virtual std::vector<Event::EventType> RegisterEvents() { return {}; }
 
         /**
          * @brief Initialize module
@@ -74,18 +83,16 @@ namespace omnistack::data_plane {
 
         virtual void Destroy() {};
 
-        virtual Packet* EventCallback(Event* event) { return nullptr; }
-
-        virtual std::vector<Event::EventType> RegisterEvents() { return {}; }
-
         virtual constexpr bool allow_duplication_() { return false; }
 
         virtual constexpr uint32_t name_() { return common::ConstCrc32("BaseModule"); }
 
         virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
 
+        virtual constexpr uint32_t max_burst_() { return 0; }
+
         /* when does this act? will it be done in son-class? */
-        // uint32_t burst_ = 1;
+        // uint32_t max_burst_ = 0;
 
     protected:
         struct FilterGroup {

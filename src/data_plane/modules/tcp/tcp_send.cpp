@@ -32,6 +32,8 @@ namespace omnistack::data_plane::tcp_send {
         constexpr bool allow_duplication_() override { return false; }
 
         constexpr ModuleType type_() override { return ModuleType::kOccupy; }
+
+        constexpr uint32_t max_burst_() override { return 1; }
     
     private:
         Packet* OnFastRetransmission(Event* event);
@@ -167,8 +169,7 @@ namespace omnistack::data_plane::tcp_send {
     }
 
     Packet* TcpSend::TimerLogic(uint64_t tick) {
-        Packet* ret_head = nullptr;
-        Packet* ret_tail = nullptr;
+        Packet* ret = nullptr;
         while(!flow_timers_.empty()) {
             auto flow_timer = flow_timers_.front();
             flow_timers_.pop();
@@ -185,12 +186,9 @@ namespace omnistack::data_plane::tcp_send {
                     flow_timers_.push(FlowTimer(flow, control_packet));
 
                     /* retransmit SYN packet */
-                    auto ret = packet_pool_->Duplicate(control_packet);
-                    if(ret_head == nullptr) ret_head = ret_tail = ret;
-                    else {
-                        ret_tail->next_packet_ = ret;
-                        ret_tail = ret;
-                    }
+                    auto packet = packet_pool_->Duplicate(control_packet);
+                    packet->next_packet_ = ret;
+                    ret = packet;
                 }
                 else if(flow->state_ == TcpFlow::State::kFinWait1 ||
                         flow->state_ == TcpFlow::State::kLastAck ||
@@ -209,12 +207,9 @@ namespace omnistack::data_plane::tcp_send {
                         flow_timers_.push(FlowTimer(flow, control_packet));
 
                         /* retransmit FIN packet */
-                        auto ret = packet_pool_->Duplicate(control_packet);
-                        if(ret_head == nullptr) ret_head = ret_tail = ret;
-                        else {
-                            ret_tail->next_packet_ = ret;
-                            ret_tail = ret;
-                        }
+                        auto packet = packet_pool_->Duplicate(control_packet);
+                        packet->next_packet_ = ret;
+                        ret = packet;
                     }
                 }
                 else {
@@ -250,12 +245,9 @@ namespace omnistack::data_plane::tcp_send {
                         flow_timers_.push(FlowTimer(flow, nullptr));
 
                         /* retransmit packet */
-                        auto ret = BuildDataPacket(flow, send_var.send_una_, send_var.send_buffer_->FrontSent(), packet_pool_);
-                        if(ret_head == nullptr) ret_head = ret_tail = ret;
-                        else {
-                            ret_tail->next_packet_ = ret;
-                            ret_tail = ret;
-                        }
+                        auto packet = BuildDataPacket(flow, send_var.send_una_, send_var.send_buffer_->FrontSent(), packet_pool_);
+                        packet->next_packet_ = ret;
+                        ret = packet;
 
                         /* update congestion control */
                         flow->congestion_control_->OnPacketSent(send_var.send_buffer_->FrontSent()->length_);
@@ -272,12 +264,9 @@ namespace omnistack::data_plane::tcp_send {
                         flow_timers_.push(FlowTimer(flow, nullptr));
 
                         /* retransmit packet */
-                        auto ret = BuildDataPacket(flow, send_var.send_una_, send_var.send_buffer_->FrontSent(), packet_pool_);
-                        if(ret_head == nullptr) ret_head = ret_tail = ret;
-                        else {
-                            ret_tail->next_packet_ = ret;
-                            ret_tail = ret;
-                        }
+                        auto packet = BuildDataPacket(flow, send_var.send_una_, send_var.send_buffer_->FrontSent(), packet_pool_);
+                        packet->next_packet_ = ret;
+                        ret = packet;
 
                         /* update congestion control */
                         flow->congestion_control_->OnPacketSent(send_var.send_buffer_->FrontSent()->length_);
@@ -294,11 +283,9 @@ namespace omnistack::data_plane::tcp_send {
 
                     /* send packet */
                     auto tmp = BuildDataPacket(flow, send_var.send_nxt_, packet, packet_pool_);
-                    if(ret_head == nullptr) ret_head = ret_tail = tmp;
-                    else {
-                        ret_tail->next_packet_ = tmp;
-                        ret_tail = tmp;
-                    }
+                    tmp->next_packet_ = ret;
+                    ret = tmp;
+
                     send_var.send_nxt_ += packet->length_;
                     send_var.send_buffer_->PushSent(packet);
                     bytes_can_send -= packet->length_;
@@ -308,7 +295,7 @@ namespace omnistack::data_plane::tcp_send {
                 }
             }
         }
-        return ret_head;
+        return ret;
     }
 
     void TcpSend::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {

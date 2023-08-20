@@ -88,19 +88,19 @@ namespace omnistack::data_plane::tcp_common {
     }
 
     inline TcpFlow* TcpSharedHandle::GetFlow(uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port) {
-        static thread_local TcpFlow* key;
-        key->local_ip_ = local_ip;
-        key->remote_ip_ = remote_ip;
-        key->local_port_ = local_port;
-        key->remote_port_ = remote_port;
-        return static_cast<TcpFlow*>(flow_table_->Lookup(key));
+        static thread_local TcpFlow key;
+        key.local_ip_ = local_ip;
+        key.remote_ip_ = remote_ip;
+        key.local_port_ = local_port;
+        key.remote_port_ = remote_port;
+        return static_cast<TcpFlow*>(flow_table_->Lookup(&key));
     }
 
     inline TcpListenFlow* TcpSharedHandle::GetListenFlow(uint32_t local_ip, uint16_t local_port) {
-        static thread_local TcpListenFlow* key;
-        key->local_ip_ = local_ip;
-        key->local_port_ = local_port;
-        return static_cast<TcpListenFlow*>(listen_table_->Lookup(key));
+        static thread_local TcpListenFlow key;
+        key.local_ip_ = local_ip;
+        key.local_port_ = local_port;
+        return static_cast<TcpListenFlow*>(listen_table_->Lookup(&key));
     }
 
     inline void TcpSharedHandle::AcquireFlow(TcpFlow* flow) {

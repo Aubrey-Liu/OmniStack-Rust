@@ -29,6 +29,8 @@ namespace omnistack::data_plane::tcp_data_in {
 
         constexpr ModuleType type_() override { return ModuleType::kOccupy; }
     
+        constexpr uint32_t max_burst_() override { return 1; }
+
     private:
         TcpSharedHandle* tcp_shared_handle_;
         PacketPool* packet_pool_; 
@@ -83,7 +85,7 @@ namespace omnistack::data_plane::tcp_data_in {
         if(data_length > 0) [[likely]] {
             if(seq_num == recv_var.recv_nxt_) [[likely]] {
                 uint32_t seq_end = seq_num + data_length;
-                packet->next_packet_ = recv_var.receive_buffer_->Pop(seq_end);
+                packet = recv_var.receive_buffer_->Pop(seq_end, packet);
                 ret = packet;
                 recv_var.recv_nxt_ = seq_end;
             }
