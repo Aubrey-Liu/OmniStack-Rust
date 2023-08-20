@@ -1,5 +1,6 @@
 #include <omnistack/node.h>
 #include <stdexcept>
+#include <omnistack/hashtable/hashtable.h>
 
 namespace omnistack::node {
     constexpr int kCacheNodes = 128;
@@ -8,8 +9,10 @@ namespace omnistack::node {
     static thread_local memory::Pointer<BasicNode> usable_basic_nodes[kCacheNodes];
     static thread_local memory::Pointer<EventNode> usable_event_nodes[kCacheNodes];
     static thread_local uint32_t usable_basic_nodes_idx = kCacheNodes;
+    static thread_local uint32_t usable_event_nodes_idx = kCacheNodes;
 
     static thread_local BasicNode* local_recycled_basic_nodes = nullptr;
+    static thread_local EventNode* local_recycled_event_nodes = nullptr;
     static thread_local uint32_t num_local_recycled_basic_nodes = 0;
     static thread_local uint32_t local_create_channel_idx = 0;
 
@@ -111,7 +114,19 @@ namespace omnistack::node {
     }
 
     void BasicNode::Write(packet::Packet* packet) {
-        channel_->Write(packet);
+        auto ret = channel_->Write(packet);
+        if (ret == 1 && this->enode_.Get()) [[unlikely]] {
+            // Flushed
+            this->enode_->Write((uint64_t)this);
+        }
+    }
+
+    void BasicNode::Flush() {
+        auto ret = channel_->Flush();
+        if (ret == 1 && this->enode_.Get()) [[unlikely]] {
+            // Flushed
+            this->enode_->Write((uint64_t)this);
+        }
     }
 
     void BasicNode::CleanUp() {
@@ -199,11 +214,43 @@ namespace omnistack::node {
         auto header = reinterpret_cast<NodeCommandHeader*>(packet->data_ + packet->offset_);
         header->type = NodeCommandType::kPacket;
         packet->node_.Set(this);
-        protocol_stack_nodes[0]->Write(packet);
+        protocol_stack_nodes[com_user_id_]->Write(packet);
     }
 
     packet::Packet* BasicNode::Read() {
         auto ret = (packet::Packet*)channel_->Read();
         return ret;
+    }
+
+    void Flush() {
+        /// TODO: optimize this
+        for (int i = 0; i < kMaxComUser; i ++)
+            protocol_stack_nodes[i]->Flush();
+    }
+
+    EventNode* CreateEventNode() {
+        if (usable_event_nodes_idx == kCacheNodes) {
+            pthread_mutex_lock(node_lock);
+            for (int i = 0; i < kCacheNodes; i++) {
+                if (*recycled_event_nodes) {
+                    auto cur = *recycled_event_nodes;
+                    (*recycled_event_nodes) = cur->GetNext().Get();
+                    cur->Init();
+                    usable_event_nodes[i] = cur;
+                } else {
+                    auto cur = reinterpret_cast<EventNode*>(memory::AllocateNamedShared("", sizeof(EventNode)));
+                    cur->Init();
+                    usable_event_nodes[i] = cur;
+                }
+            }
+            pthread_mutex_unlock(node_lock);
+            usable_event_nodes_idx = 0;
+        }
+        auto event_node = usable_event_nodes[usable_event_nodes_idx++];
+        return event_node.Get();
+    }
+
+    uint64_t EventNode::Read() {
+        return (uint64_t)channel_->Read();
     }
 }

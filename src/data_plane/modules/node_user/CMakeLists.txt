@@ -1,0 +1,12 @@
+set(node_user_src node_user.cpp)
+
+add_library(omni_data_plane_node_common STATIC include/omnistack/node/node_events.hpp)
+set_target_properties(omni_data_plane_node_common PROPERTIES LINKER_LANGUAGE CXX)
+target_include_directories(omni_data_plane_node_common PUBLIC include)
+target_link_libraries(omni_data_plane_node_common PUBLIC omni_node)
+
+add_library(omni_data_plane_node_user SHARED ${node_user_src})
+
+target_link_libraries(omni_data_plane_node_user PUBLIC ${OMNI_DATA_PLANE_LIB})
+target_link_libraries(omni_data_plane_node_user PUBLIC omni_channel omni_node omni_hashtable)
+target_link_libraries(omni_data_plane_node_user PUBLIC omni_data_plane_tcp_common omni_data_plane_node_common omni_packet)
