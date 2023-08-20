@@ -14,6 +14,7 @@
 #include <cstring>
 #include <mutex>
 #include <map>
+#include <omnistack/common/hash.hpp>
 #endif
 
 /** WARNING HASHTABLE CAN ONLY BE USED LOCALLY **/
@@ -31,17 +32,44 @@ namespace omnistack::hashtable {
         
             static void Destroy(Hashtable* hashtable);
         
-            int32_t Insert(const void* key, void* value, HashValue hash_value);
+            inline int32_t Insert(const void* key, void* value, HashValue hash_value) {
+                return rte_hash_add_key_with_hash_data(hash_table_, key, hash_value, value);
+            }
 
-            int32_t InsertKey(const void* key, HashValue hash_value);
+            inline int32_t Insert(const void* key, void* value) {
+                return rte_hash_add_key_with_hash_data(hash_table_, key, rte_hash_crc(key, key_len_, 0), value);
+            }
 
-            int32_t Delete(const void* key, HashValue hash_value);
+            inline int32_t Delete(const void* key, HashValue hash_value) {
+                return rte_hash_del_key_with_hash(hash_table_, key, hash_value);
+            }
 
-            void* Lookup(const void* key, HashValue hash_value);
+            inline int32_t Delete(const void* key) {
+                return rte_hash_del_key_with_hash(hash_table_, key, rte_hash_crc(key, key_len_, 0));
+            }
 
-            bool LookupKey(const void* key, HashValue hash_value);
+            inline void* Lookup(const void* key, HashValue hash_value) {
+                void* value;
+                if(rte_hash_lookup_with_hash_data(hash_table_, key, hash_value, &value) < 0) [[unlikely]]
+                    return nullptr;
+                return value;
+            }
 
-            void Foreach(ForeachCallback callback, void* param);
+            inline void* Lookup(const void* key) {
+                void* value;
+                if(rte_hash_lookup_with_hash_data(hash_table_, key, rte_hash_crc(key, key_len_, 0), &value) < 0) [[unlikely]]
+                    return nullptr;
+                return value;
+            }
+
+            inline void Foreach(ForeachCallback callback, void* param) {
+                const void* key;
+                void* value;
+                uint32_t iter = 0;
+                while(rte_hash_iterate(hash_table_, &key, &value, &iter) >= 0) {
+                    callback(key, value, param);
+                }
+            }
 
         private:
             Hashtable() = default;
@@ -50,13 +78,12 @@ namespace omnistack::hashtable {
             ~Hashtable() = default;
 
             rte_hash* hash_table_;
+            uint32_t key_len_;
         };
 
         extern pthread_once_t init_once_flag;
         extern pthread_spinlock_t create_spinlock;
-        void InitOnce() {
-            pthread_spin_init(&create_spinlock, PTHREAD_PROCESS_PRIVATE);
-        }
+        void InitOnce();
 
         inline Hashtable* Hashtable::Create(uint32_t max_entries, uint32_t key_len) {
             auto hashtable = new Hashtable();
@@ -66,6 +93,7 @@ namespace omnistack::hashtable {
             if(max_entries == 0) max_entries = kDefaultHashtableSize;
             params.entries = max_entries;
             params.key_len = key_len;
+            hashtable->key_len_ = key_len;
             params.hash_func = nullptr;
             params.socket_id = rte_socket_id();
             static int name_id = 0;
@@ -80,30 +108,6 @@ namespace omnistack::hashtable {
         inline void Hashtable::Destroy(Hashtable* hashtable) {
             rte_hash_free(hashtable->hash_table_);
             delete hashtable;
-        }
-
-        inline int32_t Hashtable::Insert(const void* key, void* value, HashValue hash_value) {
-            return rte_hash_add_key_with_hash_data(hash_table_, key, hash_value, value);
-        }
-
-        inline int32_t Hashtable::Delete(const void* key, HashValue hash_value) {
-            return rte_hash_del_key_with_hash(hash_table_, key, hash_value);
-        }
-
-        inline void* Hashtable::Lookup(const void* key, HashValue hash_value) {
-            void* value;
-            if(rte_hash_lookup_with_hash_data(hash_table_, key, hash_value, &value) < 0) [[unlikely]]
-                return nullptr;
-            return value;
-        }
-
-        inline void Hashtable::Foreach(ForeachCallback callback, void* param) {
-            const void* key;
-            void* value;
-            uint32_t iter = 0;
-            while(rte_hash_iterate(hash_table_, &key, &value, &iter) >= 0) {
-                callback(key, value, param);
-            }
         }
     }
 #else
@@ -150,27 +154,6 @@ namespace omnistack::hashtable {
             ::memcmp
         };
 
-        static inline uint32_t
-        hash_crc(const void *data, uint32_t data_len, uint32_t init_val) {
-            unsigned i;
-            uintptr_t pd = (uintptr_t) data;
-            for (i = 0; i < data_len / 8; i++) {
-                init_val = hash_crc_8byte(*(const uint64_t *)pd, init_val);
-                pd += 8;
-            }
-            if (data_len & 0x4) {
-                init_val = hash_crc_4byte(*(const uint32_t *)pd, init_val);
-                pd += 4;
-            }
-            if (data_len & 0x2) {
-                init_val = hash_crc_2byte(*(const uint16_t *)pd, init_val);
-                pd += 2;
-            }
-            if (data_len & 0x1)
-                init_val = hash_crc_1byte(*(const uint8_t *)pd, init_val);
-            return init_val;
-        }
-
         class Hashtable {
         public:
             typedef uint32_t HashValue;
@@ -201,7 +184,16 @@ namespace omnistack::hashtable {
                 return 0;
             }
 
-            int32_t Delete(const void* key, HashValue hash_value) {
+            inline int32_t Insert(const void* key, void* value) {
+                HashValue hash_value = omnistack::common::Crc32(static_cast<const char*>(key), key_len_);
+                std::lock_guard<std::mutex> lock(lock_);
+                auto new_key = malloc(key_len_);
+                memcpy(new_key, key, key_len_);
+                map_.insert(std::make_pair(hash_value, std::make_pair(new_key, value)));
+                return 0;
+            }
+
+            inline int32_t Delete(const void* key, HashValue hash_value) {
                 std::lock_guard<std::mutex> lock(lock_);
                 auto range = map_.equal_range(hash_value);
                 for(auto it = range.first; it != range.second; ++it) {
@@ -215,7 +207,22 @@ namespace omnistack::hashtable {
                 return -1;
             }
 
-            void* Lookup(const void* key, HashValue hash_value) {
+            inline int32_t Delete(const void* key) {
+                HashValue hash_value = omnistack::common::Crc32(static_cast<const char*>(key), key_len_);
+                std::lock_guard<std::mutex> lock(lock_);
+                auto range = map_.equal_range(hash_value);
+                for(auto it = range.first; it != range.second; ++it) {
+                    if(cmp_func_(it->second.first, key, key_len_) == 0) {
+                        if (it->second.second != it->second.first) [[unlikely]]
+                            free(const_cast<void*>(it->second.first));
+                        map_.erase(it);
+                        return 0;
+                    }
+                }
+                return -1;
+            }
+
+            inline void* Lookup(const void* key, HashValue hash_value) {
                 std::lock_guard<std::mutex> lock(lock_);
                 auto range = map_.equal_range(hash_value);
                 for(auto it = range.first; it != range.second; ++it) {
@@ -226,9 +233,9 @@ namespace omnistack::hashtable {
                 return nullptr;
             }
 
-            void* Lookup(const void* key) {
+            inline void* Lookup(const void* key) {
+                HashValue hash_value = omnistack::common::Crc32(static_cast<const char*>(key), key_len_);
                 std::lock_guard<std::mutex> lock(lock_);
-                HashValue hash_value = hash_crc(key, key_len_);
                 auto range = map_.equal_range(hash_value);
                 for(auto it = range.first; it != range.second; ++it) {
                     if(cmp_func_(it->second.first, key, key_len_) == 0) {
@@ -238,7 +245,7 @@ namespace omnistack::hashtable {
                 return nullptr; 
             }
 
-            void Foreach(ForeachCallback callback, void* param) {
+            inline void Foreach(ForeachCallback callback, void* param) {
                 std::lock_guard<std::mutex> lock(lock_);
                 for(auto& it : map_) {
                     callback(it.second.first, it.second.second, param);
