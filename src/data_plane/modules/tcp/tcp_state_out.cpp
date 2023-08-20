@@ -28,7 +28,7 @@ namespace omnistack::data_plane::tcp_state_out {
 
         constexpr bool allow_duplication_() override { return false; }
 
-        constexpr ModuleType type_() override { return ModuleType::kOccupy; }
+        constexpr ModuleType type_() override { return ModuleType::kReadOnly; }
     
     private:
         Packet* OnConnect(Event* event);

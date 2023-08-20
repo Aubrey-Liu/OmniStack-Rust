@@ -26,7 +26,7 @@ namespace omnistack::data_plane::tcp_common {
 
         static void Destroy(memory::MemoryPool* buffer_pool, TcpReceiveBuffer* buffer);
     
-        Packet* Pop(uint32_t& seq);
+        Packet* Pop(uint32_t& seq, Packet* trigger_packet);
 
         void Push(uint32_t seq, Packet* packet);
 
@@ -86,9 +86,8 @@ namespace omnistack::data_plane::tcp_common {
         buffer_pool->Put(buffer);
     }
 
-    inline Packet* TcpReceiveBuffer::Pop(uint32_t& seq) {
-        Packet* ret_head = nullptr;
-        Packet* ret_tail = nullptr;
+    inline Packet* TcpReceiveBuffer::Pop(uint32_t& seq, Packet* trigger_packet) {
+        auto ret = trigger_packet;
         while(!buffer_.empty()) [[unlikely]] {
             auto entry = buffer_.top();
             auto begin_seq = entry.first;
@@ -99,15 +98,12 @@ namespace omnistack::data_plane::tcp_common {
             if(TcpGreaterUint32(end_seq, seq)) [[likely]] {
                 packet->offset_ += seq - begin_seq;
                 seq = end_seq;
-                if(ret_head == nullptr) ret_head = ret_tail = packet;
-                else {
-                    ret_tail->next_packet_ = packet;
-                    ret_tail = packet;
-                }
+                packet->next_packet_ = ret;
+                ret = packet;
             }
             else packet->Release();
         }
-        return ret_head;
+        return ret;
     }
 
     inline void TcpReceiveBuffer::Push(uint32_t seq, Packet* packet) {

@@ -180,15 +180,20 @@ namespace omnistack::data_plane {
 
         /* register events */
         {
-            for(uint32_t i = 0; i < modules_.size(); i ++) {
+            for(auto i = 0; i < modules_.size(); i ++) {
                 auto events = modules_[i]->RegisterEvents();
                 for(auto event : events) event_entries_[event].push_back(i);
             }
         }
 
-        /* TODO: initialize channels to remote engine */
+        /* register module timers */
+        {
+            for(auto i = 0; i < modules_.size(); i ++)
+                if(modules_[i]->max_burst_()) 
+                    timer_list_.push_back(std::make_pair(i, modules_[i]->max_burst_()));
+        }
 
-        /* TODO: register module timers */
+        /* TODO: initialize channels to remote engine */
 
         /* register signal handler */
         signal(SIGINT, SigintHandler);
@@ -251,7 +256,7 @@ namespace omnistack::data_plane {
         for(auto module_id : module_ids) {
             auto ret = modules_[module_id]->EventCallback(event);
             if(ret != nullptr) {
-                if(ret->next_hop_filter_ == 0) ret->next_hop_filter_ = next_hop_filter_default_[module_id];
+                if(!ret->next_hop_filter_) ret->next_hop_filter_ = next_hop_filter_default_[module_id];
                 modules_[module_id]->ApplyDownstreamFilters(ret);
                 ForwardPacket(ret, module_id);
             }
@@ -269,8 +274,25 @@ namespace omnistack::data_plane {
         while(!stop_) {
             /* TODO: receive from remote channels */
 
-            /* TODO: handle timer logic */
+            /* handle timer logic */
             uint64_t tick = common::NowUs();
+            for(auto [node_idx, burst] : timer_list_) {
+                for(auto i = 0; i < burst; i ++) {
+                    auto packet = modules_[node_idx]->TimerLogic(tick);
+                    /* if multiple packets are returned, they will be in reverse order while applying filters */
+                    if(packet != nullptr) [[likely]] {
+                        if(!packet->next_hop_filter_) packet->next_hop_filter_ = next_hop_filter_default_[node_idx];
+                        modules_[node_idx]->ApplyDownstreamFilters(packet);
+                        ForwardPacket(packet, node_idx);
+                    }
+                    else break;
+                    while (packet != nullptr) [[unlikely]] {
+                        if(!packet->next_hop_filter_) packet->next_hop_filter_ = next_hop_filter_default_[node_idx];
+                        modules_[node_idx]->ApplyDownstreamFilters(packet);
+                        ForwardPacket(packet, node_idx);
+                    }
+                }
+            }
 
             /* process packets in queue */
             while(!packet_queue_.empty()) [[likely]] {
@@ -280,6 +302,7 @@ namespace omnistack::data_plane {
 
                 packet->next_hop_filter_ = next_hop_filter_default_[node_idx];
                 auto return_packet = modules_[node_idx]->MainLogic(packet);
+                /* if multiple packets are returned, they will be in reverse order while applying filters */
                 if(return_packet != nullptr) [[likely]] {
                     modules_[node_idx]->ApplyDownstreamFilters(return_packet);
                     ForwardPacket(return_packet, node_idx);
