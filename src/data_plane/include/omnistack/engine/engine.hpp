@@ -7,8 +7,7 @@
 
 #include <omnistack/graph/graph.hpp>
 #include <omnistack/module/module.hpp>
-
-class Channel;
+#include <omnistack/channel/channel.h>
 
 namespace omnistack::data_plane {
     /* Engine receives a SubGraph and runs it */
@@ -39,9 +38,11 @@ namespace omnistack::data_plane {
         std::vector<std::vector<uint32_t>> downstream_links_;
         std::map<uint32_t, uint32_t> local_to_global;
         std::vector<uint32_t> timer_modules_;
-        std::vector<std::pair<Channel, uint32_t>> receive_channels_;
-        std::vector<Channel> send_channels_;
+        // std::vector<std::pair<Channel, uint32_t>> receive_channels_;
+        // std::vector<Channel> send_channels_;
 
+        /* runtime structures */
+        PacketPool* packet_pool_;
 
         /* helper structures */
         std::vector<uint32_t> next_hop_filter_default_;

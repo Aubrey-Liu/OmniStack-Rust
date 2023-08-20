@@ -17,6 +17,7 @@
 #include <set>
 #include <omnistack/packet/packet.hpp>
 #include <omnistack/module/event.hpp>
+#include <omnistack/common/constant.hpp>
 
 namespace omnistack::data_plane {
 
@@ -50,7 +51,7 @@ namespace omnistack::data_plane {
 
         void ApplyDownstreamFilters(Packet* packet);
 
-        virtual Filter GetFilter(std::string_view upstream_module, uint32_t global_id) { return DefaultFilter; }
+        virtual Filter GetFilter(uint32_t upstream_node_, uint32_t global_id) { return DefaultFilter; }
 
         virtual Packet* MainLogic(Packet* packet) { return packet; }
 
@@ -66,7 +67,7 @@ namespace omnistack::data_plane {
 
         virtual constexpr bool allow_duplication_() { return false; }
 
-        virtual constexpr std::string_view name_() { return "BaseModule"; }
+        virtual constexpr uint32_t name_() { return common::ConstCrc32("BaseModule"); }
 
         virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
 
@@ -98,9 +99,10 @@ namespace omnistack::data_plane {
             return factory;
         }
 
-        void Register(const std::string& name, const CreateFunction& func) {
+        void Register(uint32_t name, const CreateFunction& func) {
             if(module_list_.find(name) != module_list_.end()) {
                 /* TODO: report error */
+                std::cerr << "module name conflict: " << name << "\n";
                 return;
             }
             if(func == nullptr) {
@@ -113,19 +115,17 @@ namespace omnistack::data_plane {
             }
         }
 
-        [[nodiscard]] std::unique_ptr<BaseModule> Create(const std::string& name) const {
-            std::cerr << "Create module: " << name << std::endl;
+        [[nodiscard]] std::unique_ptr<BaseModule> Create(uint32_t name) const {
             auto it = module_list_.find(name);
             if(it == module_list_.end()) {
                 /* TODO: report error */
                 return nullptr;
             }
-            std::cerr << "Create module: " << name << " success" << std::endl;
             return it->second();
         }
 
     private:
-        std::map<std::string, CreateFunction> module_list_;
+        std::map<uint32_t, CreateFunction> module_list_;
     };
 
     template<typename T, const char name[]>
@@ -135,11 +135,11 @@ namespace omnistack::data_plane {
             return std::make_unique<T>();
         }
 
-        constexpr std::string_view name_() override { return std::string_view(name); }
+        constexpr uint32_t name_() override { return common::ConstCrc32(name); }
 
         struct FactoryEntry {
             FactoryEntry() {
-                ModuleFactory::instance_().Register(std::string(name), CreateModuleObject);
+                ModuleFactory::instance_().Register(common::ConstCrc32(name), CreateModuleObject);
             }
             inline void DoNothing() const {}
         };

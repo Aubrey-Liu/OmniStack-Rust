@@ -19,7 +19,7 @@ namespace omnistack::data_plane::tcp_flow_cache_out {
 
         static bool DefaultFilter(Packet* packet);
 
-        Filter GetFilter(std::string_view upstream_module, uint32_t global_id) override { return DefaultFilter; }
+        Filter GetFilter(uint32_t upstream_module, uint32_t global_id) override { return DefaultFilter; }
 
         Packet* MainLogic(Packet* packet) override;
 

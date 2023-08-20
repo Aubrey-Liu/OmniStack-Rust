@@ -3,6 +3,8 @@
 //
 
 #include <omnistack/engine/engine.hpp>
+#include <omnistack/common/constant.hpp>
+#include <omnistack/common/time.hpp>
 
 #include <bit>
 #include <csignal>
@@ -27,8 +29,11 @@ namespace omnistack::data_plane {
     }
 
     void Engine::Init(SubGraph &sub_graph, uint32_t core, std::string_view name_prefix) {
-        /* TODO: create packet pool */
-        PacketPool* packet_pool;
+        /* TODO: bind to CPU core */
+
+        /* create packet pool */
+        packet_pool_ = PacketPool::CreatePacketPool(name_prefix, kDefaultPacketPoolSize);
+        
         auto& graph = sub_graph.graph_;
         std::map<uint32_t, uint32_t> global_to_local;
 
@@ -39,11 +44,11 @@ namespace omnistack::data_plane {
             /* create modules and init them */
             for(auto idx : sub_graph.node_ids_) {
                 auto& module_name = graph.node_names_[idx];
-                modules_.push_back(ModuleFactory::instance_().Create(module_name));
+                modules_.push_back(ModuleFactory::instance_().Create(common::Crc32(module_name)));
                 uint32_t module_id = modules_.size() - 1;
                 global_to_local.emplace(idx, module_id);
                 local_to_global.emplace(module_id, idx);
-                modules_.at(module_id)->Initialize(name_prefix, packet_pool);
+                modules_.at(module_id)->Initialize(name_prefix, packet_pool_);
             }
 
             module_num_ = modules_.size();
@@ -171,6 +176,8 @@ namespace omnistack::data_plane {
         for(auto& module : modules_)
             module->Destroy();
 
+        PacketPool::DestroyPacketPool(packet_pool_);
+
         /* TODO: destroy channels */
     }
 
@@ -195,7 +202,9 @@ namespace omnistack::data_plane {
             }
             else if(downstream_node < module_num_) {
                 if(reference_count > 0) [[unlikely]] {
-                    /* TODO: duplicate the packet and enqueue it */
+                    /* duplicate the packet and enqueue it */
+                    auto packet_copy = packet_pool_->Duplicate(packet);
+                    packet_queue_.emplace_back(downstream_node, packet_copy);
                 }
                 else {
                     packet_queue_.emplace_back(downstream_node, packet);
@@ -219,11 +228,11 @@ namespace omnistack::data_plane {
             module_read_only_[i] = modules_[i]->type_() == BaseModule::ModuleType::kReadOnly;
         }
 
-        uint8_t batch_num = 0;
-        while((batch_num ++) || (!stop_)) {
+        while(!stop_) {
             /* TODO: receive from remote channels */
 
             /* TODO: handle timer logic */
+            uint64_t tick = common::NowUs();
 
             /* process packets in queue */
             while(!packet_queue_.empty()) [[likely]] {

@@ -17,7 +17,7 @@ TEST(DataPlaneSampleModule, Create) {
     using namespace omnistack::data_plane;
     auto handle = dlopen("../lib/libomni_data_plane_sample_module.so", RTLD_NOW | RTLD_GLOBAL);
     ASSERT_NE(handle, nullptr);
-    auto sample_module = ModuleFactory::instance_().Create("SampleModule");
+    auto sample_module = ModuleFactory::instance_().Create(omnistack::common::ConstCrc32("SampleModule"));
     ASSERT_NE(sample_module, nullptr);
     dlclose(handle);
 }
@@ -26,11 +26,11 @@ TEST(DataPlaneSampleModule, Functions) {
     using namespace omnistack::data_plane;
     auto handle = dlopen("../lib/libomni_data_plane_sample_module.so", RTLD_NOW | RTLD_GLOBAL);
     ASSERT_NE(handle, nullptr);
-    auto sample_module = ModuleFactory::instance_().Create("SampleModule");
+    auto sample_module = ModuleFactory::instance_().Create(omnistack::common::ConstCrc32("SampleModule"));
     ASSERT_NE(sample_module, nullptr);
     auto result = sample_module->DefaultFilter(nullptr);
     ASSERT_EQ(result, true);
-    result = sample_module->GetFilter("upstream_module", 0)(nullptr);
+    result = sample_module->GetFilter(0, 0)(nullptr);
     ASSERT_EQ(result, true);
     auto packet = sample_module->MainLogic(nullptr);
     ASSERT_EQ(packet, nullptr);
