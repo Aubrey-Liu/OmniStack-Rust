@@ -43,20 +43,33 @@ namespace omnistack::data_plane {
 
         static constexpr bool DefaultFilter(Packet* packet){ return true; }
 
-        void RegisterDownstreamFilters(const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
+        void RegisterDownstreamFilters(const std::vector<std::pair<uint32_t, uint32_t>>& modules, const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
 
         void set_raise_event_(std::function<void(Event* event)> raise_event);
 
-        void set_upstream_nodes_(const std::vector<std::pair<std::string, uint32_t>>& upstream_nodes);
+        void set_upstream_nodes_(const std::vector<std::pair<uint32_t, uint32_t>>& upstream_nodes);
 
         void ApplyDownstreamFilters(Packet* packet);
 
-        virtual Filter GetFilter(uint32_t upstream_node_, uint32_t global_id) { return DefaultFilter; }
+        /**
+         * @brief Get the Filter object for certain upstream node
+         * @param upstream_node upstream node identifier (Crc32 of name)
+         * @param global_id global identifier in graph of this module
+         * @return Filter for certain link
+         * @note This function will be called before Initialize(), and will be called only once for each upstream node
+        */
+        virtual Filter GetFilter(uint32_t upstream_node, uint32_t global_id) { return DefaultFilter; }
 
         virtual Packet* MainLogic(Packet* packet) { return packet; }
 
         virtual Packet* TimerLogic(uint64_t tick) { return nullptr; }
 
+        /**
+         * @brief Initialize module
+         * @param name_prefix name prefix of this module, used to avoid name conflict
+         * @param packet_pool packet pool for this module
+         * @note All protected members will be initialized before this function called
+        */
         virtual void Initialize(std::string_view name_prefix, PacketPool* packet_pool) {};
 
         virtual void Destroy() {};
@@ -76,18 +89,24 @@ namespace omnistack::data_plane {
 
     protected:
         struct FilterGroup {
-            std::vector<Filter> filters_;
-            std::vector<uint32_t> filter_masks_;
-            uint32_t universe_mask_;
-            FilterGroupType type_;
-            uint8_t last_apply_;
+            std::vector<Filter> filters;
+            std::vector<uint32_t> filter_masks;
+            uint32_t universe_mask;
+            FilterGroupType type;
+            uint8_t last_apply;
+        };
+
+        struct DownstreamInfo {
+            uint32_t module_type;
+            uint32_t module_id;
+            uint32_t filter_mask;
         };
 
         /* event must be processed immediately while raising */
         std::function<void(Event* event)> raise_event_;
         std::vector<FilterGroup> filter_groups_;
-        /* TODO: change the forward structure to compile-time hash */
-        std::vector<std::pair<std::string, uint32_t>> upstream_nodes_;
+        std::vector<std::pair<uint32_t, uint32_t>> upstream_nodes_;
+        std::vector<DownstreamInfo> downstream_nodes_;
     };
 
     class ModuleFactory {

@@ -34,9 +34,10 @@ namespace omnistack::data_plane {
         uint32_t module_num_;
         uint32_t assigned_module_idx_;
         std::vector<std::unique_ptr<BaseModule>> modules_;
+        std::vector<uint32_t> module_name_crc32_;
         std::vector<std::vector<uint32_t>> upstream_links_;
         std::vector<std::vector<uint32_t>> downstream_links_;
-        std::map<uint32_t, uint32_t> local_to_global;
+        std::vector<uint32_t> local_to_global;
         std::vector<uint32_t> timer_modules_;
         // std::vector<std::pair<Channel, uint32_t>> receive_channels_;
         // std::vector<Channel> send_channels_;

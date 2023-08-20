@@ -46,9 +46,9 @@ namespace omnistack::data_plane {
                 auto& module_name = graph.node_names_[idx];
                 modules_.push_back(ModuleFactory::instance_().Create(common::Crc32(module_name)));
                 uint32_t module_id = modules_.size() - 1;
+                module_name_crc32_[module_id] = common::Crc32(module_name);
                 global_to_local.emplace(idx, module_id);
-                local_to_global.emplace(module_id, idx);
-                modules_.at(module_id)->Initialize(name_prefix, packet_pool_);
+                local_to_global.push_back(idx);
             }
 
             module_num_ = modules_.size();
@@ -77,7 +77,7 @@ namespace omnistack::data_plane {
                         else {
                             idv = assigned_module_idx_ ++;
                             global_to_local.emplace(global_idv, idv);
-                            local_to_global.emplace(idv, global_idv);
+                            local_to_global.push_back(global_idv);
                         }
                         downstream_links_[idu].push_back(idv);
                     }
@@ -89,7 +89,7 @@ namespace omnistack::data_plane {
                     else {
                         idu = assigned_module_idx_ ++;
                         global_to_local.emplace(global_idu, idu);
-                        local_to_global.emplace(idu, global_idu);
+                        local_to_global.push_back(global_idu);
                     }
                     for(auto global_idv : link.second) {
                         auto idv = global_to_local.at(global_idv);
@@ -103,10 +103,10 @@ namespace omnistack::data_plane {
             for(uint32_t i = 0; i < module_num_; i ++) {
                 auto& links = upstream_links_[i];
                 SortLinks(links);
-                std::vector<std::pair<std::string, uint32_t>> upstream_nodes;
+                std::vector<std::pair<uint32_t, uint32_t>> upstream_nodes;
                 upstream_nodes.reserve(links.size());
                 for(auto idx : links)
-                    upstream_nodes.emplace_back(graph.node_names_[local_to_global[idx]], local_to_global[idx]);
+                    upstream_nodes.emplace_back(module_name_crc32_[idx], local_to_global[idx]);
                 modules_[i]->set_upstream_nodes_(upstream_nodes);
             }
         }
@@ -114,18 +114,21 @@ namespace omnistack::data_plane {
         /* initialize module filters */
         {
             for(uint32_t u = 0; u < module_num_; u ++) {
+                std::vector<std::pair<uint32_t, uint32_t>> modules;
                 std::vector<BaseModule::Filter> filters;
                 std::vector<uint32_t> filter_masks;
                 std::vector<std::set<uint32_t>> groups;
                 std::vector<BaseModule::FilterGroupType> group_types;
                 uint32_t assigned_id = 0;
 
+                modules.reserve(downstream_links_[u].size());
                 filters.reserve(downstream_links_[u].size());
                 filter_masks.reserve(downstream_links_[u].size());
 
                 std::map<uint32_t, uint32_t> local_to_idx;
                 for(uint32_t j = 0; j < downstream_links_[u].size(); j ++) {
                     auto downstream_node = downstream_links_[u][j];
+                    modules.push_back(std::make_pair(modules_[u]->name_(), local_to_global[downstream_node]));
                     filters.push_back(modules_[downstream_node]->GetFilter(modules_[u]->name_(), local_to_global[downstream_node]));
                     filter_masks.push_back(1 << j);
                     local_to_idx.emplace(downstream_node, j);
@@ -157,8 +160,11 @@ namespace omnistack::data_plane {
                         assigned_id ++;
                     }
 
-                modules_[u]->RegisterDownstreamFilters(filters, filter_masks, groups, group_types);
+                modules_[u]->RegisterDownstreamFilters(modules, filters, filter_masks, groups, group_types);
             }
+
+            /* initialize module */
+            for(auto& module : modules_) module->Initialize(name_prefix, packet_pool_);
         }
 
         /* TODO: initialize channels to remote engine */
@@ -190,7 +196,8 @@ namespace omnistack::data_plane {
         }
 
         uint32_t reference_count = packet->reference_count_ - 1;
-        packet->upstream_node_ = local_to_global[node_idx];
+        packet->upstream_node_id_ = local_to_global[node_idx];
+        packet->upstream_node_name_ = module_name_crc32_[node_idx];
         do [[unlikely]] {
             auto idx = std::countr_zero(forward_mask);
             forward_mask ^= (1 << idx);
