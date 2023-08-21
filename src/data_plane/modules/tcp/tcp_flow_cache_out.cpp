@@ -75,6 +75,7 @@ namespace omnistack::data_plane::tcp_flow_cache_out {
             }
         }
 
+        packet->node_ = flow->node_;
         packet->custom_value_ = reinterpret_cast<uint64_t>(flow);
         tcp_shared_handle_->AcquireFlow(flow);
 

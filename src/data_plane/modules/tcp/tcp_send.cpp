@@ -91,17 +91,17 @@ namespace omnistack::data_plane::tcp_send {
 #endif
 
         /* build ipv4 header */
-        auto& header_ipv4 = packet->packet_headers_[packet->header_tail_++];
-        header_ipv4.length_ = sizeof(Ipv4Header);
-        header_ipv4.offset_ = 0;
-        header_tcp.offset_ = header_tcp.offset_ + header_ipv4.length_;
-        packet->data_ = packet->data_ - header_ipv4.length_;
-        packet->length_ += header_ipv4.length_;
-        auto ipv4 = reinterpret_cast<Ipv4Header*>(packet->data_ + header_ipv4.offset_);
-        ipv4->version = 4;
-        ipv4->proto = IP_PROTO_TYPE_TCP;
-        ipv4->src = flow->local_ip_;
-        ipv4->dst = flow->remote_ip_;
+        // auto& header_ipv4 = packet->packet_headers_[packet->header_tail_++];
+        // header_ipv4.length_ = sizeof(Ipv4Header);
+        // header_ipv4.offset_ = 0;
+        // header_tcp.offset_ = header_tcp.offset_ + header_ipv4.length_;
+        // packet->data_ = packet->data_ - header_ipv4.length_;
+        // packet->length_ += header_ipv4.length_;
+        // auto ipv4 = reinterpret_cast<Ipv4Header*>(packet->data_ + header_ipv4.offset_);
+        // ipv4->version = 4;
+        // ipv4->proto = IP_PROTO_TYPE_TCP;
+        // ipv4->src = flow->local_ip_;
+        // ipv4->dst = flow->remote_ip_;
 
         return packet;
     }
