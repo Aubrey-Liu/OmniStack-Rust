@@ -309,6 +309,21 @@ namespace omnistack::socket {
         // ssize_t send(int sockfd, const void *buf, size_t len, int flags);
         // ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
         //             const struct sockaddr* dest_addr, socklen_t addrlen);
+    
+        void close(int fd) {
+            auto cur_fd = global_fd_list[fd];
+            switch (cur_fd->type) {
+                [[likely]] case FileDescriptorType::kBasic: {
+                    cur_fd->basic_node->CloseRef();
+                    ReleaseFd(fd);
+                    break;
+                }
+                case FileDescriptorType::kLinux:
+                    ::close(cur_fd->system_fd);
+                    ReleaseFd(fd);
+                    break;
+            }
+        }
     }
 
     namespace fast {
