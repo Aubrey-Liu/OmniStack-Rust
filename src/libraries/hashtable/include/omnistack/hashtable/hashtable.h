@@ -95,6 +95,7 @@ namespace omnistack::hashtable {
             params.key_len = key_len;
             hashtable->key_len_ = key_len;
             params.hash_func = nullptr;
+            params.extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF;
             params.socket_id = rte_socket_id();
             static int name_id = 0;
             char name[32];

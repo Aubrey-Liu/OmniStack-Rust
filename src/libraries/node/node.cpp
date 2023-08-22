@@ -28,6 +28,8 @@ namespace omnistack::node {
     static channel::MultiWriterChannel* protocol_stack_nodes_control_plane[kMaxComUser];
     static packet::PacketPool* temp_packet_pool;
 
+    static int num_node_user;
+
     void StartControlPlane(int num_com_user) {
         node_lock_control_plane = reinterpret_cast<typeof(node_lock_control_plane)>(
             memory::AllocateNamedShared("omni_node_lock", sizeof(pthread_mutex_t)));
@@ -70,6 +72,7 @@ namespace omnistack::node {
                 channel::GetMultiWriterChannel("omni_protocol_stack_node_channel_" + std::to_string(i));
         }
 
+        num_node_user = num_core_user;
         temp_packet_pool = packet::PacketPool::CreatePacketPool("omni_temp_packet_pool", 16384);
     }
 
@@ -111,6 +114,10 @@ namespace omnistack::node {
             this->channel_ = memory::Pointer(channel::GetChannel("omni_basic_node_channel_" + 
                 std::to_string(memory::process_id) + "_" + std::to_string(memory::thread_id) +
                 "_" + std::to_string(++local_create_channel_idx)));
+        if (this->packet_pool_.Get() == nullptr)
+            this->packet_pool_ = packet::PacketPool::CreatePacketPool("omni_basic_node_packet_pool_" + 
+                std::to_string(memory::process_id) + "_" + std::to_string(memory::thread_id) +
+                "_" + std::to_string(local_create_channel_idx), 16384);
     }
 
     void BasicNode::Write(packet::Packet* packet) {
@@ -203,7 +210,7 @@ namespace omnistack::node {
         auto data = temp_packet->data_ + temp_packet->offset_;
         auto header = reinterpret_cast<NodeCommandHeader*>(data);
 
-        header->type = NodeCommandType::kUpdateNodeInfo;
+        header->type = NodeCommandType::kClearNodeInfo;
         temp_packet->node_ = this;
         protocol_stack_nodes[0]->Write(temp_packet);
     }
@@ -222,7 +229,7 @@ namespace omnistack::node {
         return ret;
     }
 
-    void Flush() {
+    void FlushBottom() {
         /// TODO: optimize this
         for (int i = 0; i < kMaxComUser; i ++)
             protocol_stack_nodes[i]->Flush();
@@ -252,5 +259,9 @@ namespace omnistack::node {
 
     uint64_t EventNode::Read() {
         return (uint64_t)channel_->Read();
+    }
+
+    int GetNumNodeUser() {
+        return num_node_user;
     }
 }

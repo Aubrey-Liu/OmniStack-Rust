@@ -95,15 +95,15 @@ namespace omnistack::data_plane::node_user {
                 case IP_PROTO_TYPE_TCP: {
                     auto l4_hdr = reinterpret_cast<TcpHeader*>(packet->data_ + packet->packet_headers_[2].offset_);
                     tmp_node_info.transport_layer_type = node::TransportLayerType::kTCP;
-                    tmp_node_info.transport.tcp.sport = ntohs(l4_hdr->dport);
-                    tmp_node_info.transport.tcp.dport = ntohs(l4_hdr->sport);
+                    tmp_node_info.transport.tcp.sport = l4_hdr->dport;
+                    tmp_node_info.transport.tcp.dport = l4_hdr->sport;
                     break;
                 }
                 case IP_PROTO_TYPE_UDP: {
                     auto l4_hdr = reinterpret_cast<UdpHeader*>(packet->data_ + packet->packet_headers_[2].offset_);
                     tmp_node_info.transport_layer_type = node::TransportLayerType::kUDP;
-                    tmp_node_info.transport.udp.sport = ntohs(l4_hdr->dport);
-                    tmp_node_info.transport.udp.dport = ntohs(l4_hdr->sport);
+                    tmp_node_info.transport.udp.sport = l4_hdr->dport;
+                    tmp_node_info.transport.udp.dport = l4_hdr->sport;
                     break;
                 }
             }

@@ -75,6 +75,10 @@ namespace omnistack {
                     uint16_t sport;
                     uint16_t dport;
                 } udp;
+                struct {
+                    uint16_t sport;
+                    uint16_t dport;
+                };
             } transport;
             static_assert(sizeof(transport) == 4);
             static_assert(sizeof(network) == 32);
@@ -137,6 +141,8 @@ namespace omnistack {
                 next_ = next;
             }
 
+            memory::Pointer<packet::PacketPool> packet_pool_;
+
         private:
             memory::Pointer<EventNode> enode_;
             memory::Pointer<BasicNode> next_;
@@ -148,7 +154,7 @@ namespace omnistack {
         */
         BasicNode* CreateBasicNode(uint32_t com_user_id);
 
-        void Flush();
+        void FlushBottom();
 
         EventNode* CreateEventNode();
 
@@ -157,6 +163,8 @@ namespace omnistack {
         void StartControlPlane(int num_com_user);
 
         void InitializeSubsystem();
+
+        int GetNumNodeUser();
     }
 }
 
