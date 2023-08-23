@@ -1,9 +1,10 @@
-set(node_user_src node_user.cpp)
+set(node_user_src node_user.cpp classifier.cpp io_node.cpp)
 
-add_library(omni_data_plane_node_common STATIC include/omnistack/node/node_events.hpp)
+add_library(omni_data_plane_node_common STATIC include/omnistack/node/node_events.hpp node_common.cpp)
 set_target_properties(omni_data_plane_node_common PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(omni_data_plane_node_common PUBLIC include)
 target_link_libraries(omni_data_plane_node_common PUBLIC omni_node)
+target_compile_options(omni_data_plane_node_common PUBLIC -fPIC)
 
 add_library(omni_data_plane_node_user SHARED ${node_user_src})
 

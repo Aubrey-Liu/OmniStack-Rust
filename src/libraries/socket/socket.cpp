@@ -327,6 +327,26 @@ namespace omnistack::socket {
     }
 
     namespace fast {
+        int listen(int sockfd, int backlog, const std::vector<uint8_t>& graph_ids) { // Passive Node
+            auto cur_fd = global_fd_list[sockfd];
+            switch (cur_fd->type) {
+                [[likely]] case FileDescriptorType::kBasic: {
+                    auto basic_node = cur_fd->basic_node;
+
+                    basic_node->num_graph_usable_ = graph_ids.size();
+                    for (int i = 0; i < graph_ids.size(); ++i)
+                        basic_node->graph_usable_[i] = graph_ids[i];
+
+                    basic_node->PutIntoHashtable();
+                    return 0;
+                }
+                case FileDescriptorType::kLinux: {
+                    return ::listen(cur_fd->system_fd, backlog);
+                }
+            }
+            return -1;
+        }
+
         ssize_t read(int fd, packet::Packet** packet_) {
             auto cur_fd = global_fd_list[fd];
             switch (cur_fd->type) {

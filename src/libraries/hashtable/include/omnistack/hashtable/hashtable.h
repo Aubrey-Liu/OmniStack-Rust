@@ -3,6 +3,8 @@
 
 #include <functional>
 #include <cstdint>
+#include <string>
+#include <map>
 
 #if defined(OMNIMEM_BACKEND_DPDK)
 #include <rte_hash.h>
@@ -13,7 +15,6 @@
 #include <algorithm>
 #include <cstring>
 #include <mutex>
-#include <map>
 #include <omnistack/common/hash.hpp>
 #endif
 
@@ -28,7 +29,8 @@ namespace omnistack::hashtable {
             typedef uint32_t HashValue;
             typedef std::function<void(const void* key, void* value, void* param)> ForeachCallback;
 
-            static Hashtable* Create(uint32_t max_entries, uint32_t key_len);
+            static Hashtable* Create(uint32_t max_entries, uint32_t key_len, bool need_lock = true);
+            static Hashtable* Create(const std::string& name, uint32_t max_entries, uint32_t key_len);
         
             static void Destroy(Hashtable* hashtable);
         
@@ -83,26 +85,42 @@ namespace omnistack::hashtable {
 
         extern pthread_once_t init_once_flag;
         extern pthread_spinlock_t create_spinlock;
+        extern std::map<std::string, Hashtable*> hashtable_map;
         void InitOnce();
 
-        inline Hashtable* Hashtable::Create(uint32_t max_entries, uint32_t key_len) {
-            auto hashtable = new Hashtable();
+        inline Hashtable* Hashtable::Create(const std::string& name, uint32_t max_entries, uint32_t key_len) {
             pthread_once(&init_once_flag, InitOnce);
             pthread_spin_lock(&create_spinlock);
+            if (hashtable_map.count(name)) {
+                auto hashtable = hashtable_map[name];
+                pthread_spin_unlock(&create_spinlock);
+                return hashtable;
+            }
+            auto hashtable = Hashtable::Create(max_entries, key_len, false);
+            hashtable_map[name] = hashtable;
+            pthread_spin_unlock(&create_spinlock);
+            return hashtable;
+        }
+
+        inline Hashtable* Hashtable::Create(uint32_t max_entries, uint32_t key_len, bool need_lock) {
+            auto hashtable = new Hashtable();
+            pthread_once(&init_once_flag, InitOnce);
+            if (need_lock) pthread_spin_lock(&create_spinlock);
             rte_hash_parameters params{};
             if(max_entries == 0) max_entries = kDefaultHashtableSize;
             params.entries = max_entries;
             params.key_len = key_len;
             hashtable->key_len_ = key_len;
             params.hash_func = nullptr;
-            params.extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF;
+            params.extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF
+                | RTE_HASH_EXTRA_FLAGS_MULTI_WRITER_ADD;
             params.socket_id = rte_socket_id();
             static int name_id = 0;
             char name[32];
             sprintf(name, "hashtable_%d", name_id++);
             params.name = name;
             hashtable->hash_table_ = rte_hash_create(&params);
-            pthread_spin_unlock(&create_spinlock);
+            if (need_lock) pthread_spin_unlock(&create_spinlock);
             return hashtable;
         }
 

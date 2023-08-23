@@ -9,6 +9,7 @@
 #include <omnistack/node/node_events.hpp>
 #include <omnistack/memory/memory.h>
 #include <omnistack/common/protocol_headers.hpp>
+#include <omnistack/node/node_common.h>
 
 namespace omnistack::data_plane::node_user {
 
@@ -45,19 +46,14 @@ namespace omnistack::data_plane::node_user {
         int id_;
 
         channel::MultiWriterChannel* node_channel_;
-        static hashtable::Hashtable* node_table_;
+        hashtable::Hashtable* node_table_;
         memory::MemoryPool* event_pool_;
         packet::PacketPool* packet_pool_;
     };
 
     void NodeUser::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
-        {
-            std::unique_lock<std::mutex> lock(init_lock);
-            id_ = node_id ++;
-            if (id_ == 0)
-                node_table_ = hashtable::Hashtable::Create(1024, sizeof(node::NodeInfo));
-        }
-
+        id_ = node_common::GetCurrentGraphId(std::string(name_prefix));
+        node_table_ = hashtable::Hashtable::Create("omni_node_table", 1024, sizeof(node::NodeInfo));
         node_channel_ = channel::GetMultiWriterChannel("omni_node_user_channel_" + std::to_string(id_));
         event_pool_ = memory::AllocateMemoryPool("omni_data_plane_node_user_event_pool_" + std::to_string(id_), kEventMaxLength, 512);
         packet_pool_ = packet_pool;
@@ -146,6 +142,7 @@ namespace omnistack::data_plane::node_user {
                 if (node_table_->Insert(&info, packet->node_.Get(), hash_val))
                     throw std::runtime_error("Failed to insert node info into hashtable");
                 packet->node_->in_hashtable_ = true;
+                raise_event_(new(event_pool_->Get()) NodeEventAnyInsert(packet->node_.Get()));
                 if (info.network_layer_type == node::NetworkLayerType::kIPv4) [[likely]] {
                     if (info.transport_layer_type == node::TransportLayerType::kTCP && info.transport.tcp.dport != 0) [[likely]]
                         raise_event_(new(event_pool_->Get()) NodeEventTcpConnect(packet->node_.Get()));
@@ -164,9 +161,9 @@ namespace omnistack::data_plane::node_user {
                 {
                     case node::NetworkLayerType::kIPv4: {
                         if (info.transport_layer_type == node::TransportLayerType::kTCP) [[likely]]
-                            raise_event_(new(event_pool_->Get()) NodeEventTcpClosed(info.network.ipv4.sip, info.network.ipv4.dip, info.transport.tcp.sport, info.transport.tcp.dport));
+                            raise_event_(new(event_pool_->Get()) NodeEventTcpClosed(packet->node_.Get()));
                         else if (info.transport_layer_type == node::TransportLayerType::kUDP)
-                            raise_event_(new(event_pool_->Get()) NodeEventUdpClosed(info.network.ipv4.sip, info.network.ipv4.dip, info.transport.udp.sport, info.transport.udp.dport));
+                            raise_event_(new(event_pool_->Get()) NodeEventUdpClosed(packet->node_.Get()));
                         break;
                     }
                     default:
@@ -223,6 +220,7 @@ namespace omnistack::data_plane::node_user {
         new_node->in_hashtable_ = true;
         if (node_table_->Insert(&tmp_node_info, new_node, tmp_node_info.GetHash()))
             throw std::runtime_error("Failed to insert node info into hashtable");
+        raise_event_(new(event_pool_->Get()) node_common::NodeEventAnyInsert(new_node));
         tmp_node_info.network.Set(static_cast<uint32_t>(0), evt->local_ipv4_);
         tmp_node_info.transport.tcp.dport = 0;
         auto passive_node = reinterpret_cast<node::BasicNode*>(node_table_->Lookup(&tmp_node_info, tmp_node_info.GetHash()));

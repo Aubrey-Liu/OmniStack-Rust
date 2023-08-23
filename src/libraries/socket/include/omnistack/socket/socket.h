@@ -3,6 +3,7 @@
 
 #include <unistd.h>
 #include <sys/types.h>
+#include <vector>
 #include <sys/socket.h>
 
 #include <omnistack/packet/packet.hpp>
@@ -35,6 +36,8 @@ namespace omnistack {
             void close(int fd);
         }
         namespace fast {
+            int listen(int sockfd, int backlog, const std::vector<uint8_t>& graph_ids);
+
             ssize_t read(int fd, packet::Packet** packet);
             ssize_t recv(int sockfd, packet::Packet** packet, int flags);
             ssize_t recvfrom(int sockfd, packet::Packet** packet, int flags,

@@ -74,6 +74,10 @@ namespace omnistack::packet {
         uint32_t upstream_node_id_;
 
         char mbuf_[kPacketMbufSize];
+
+        inline char* GetHeaderPayload(const int& index) const {
+            return data_ + static_cast<uint32_t>(packet_headers_[index].offset_);
+        }
     };
 
     class PacketPool {
