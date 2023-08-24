@@ -251,7 +251,7 @@ namespace omnistack {
 #endif
             }
 
-            inline T* operator+(const uint32_t& a) {
+            inline T* operator+(const uint32_t& a) const {
 #if defined (OMNIMEM_BACKEND_DPDK)
                 return ptr_ + a;
 #else
@@ -260,7 +260,7 @@ namespace omnistack {
 #endif
             }
 
-            inline T* operator-(const uint32_t& a) {
+            inline T* operator-(const uint32_t& a) const {
 #if defined (OMNIMEM_BACKEND_DPDK)
                 return ptr_ - a;
 #else

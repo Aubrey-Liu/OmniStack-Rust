@@ -109,6 +109,7 @@ namespace omnistack::node {
         this->next_.Set(nullptr);
         this->enode_.Set(nullptr);
         this->in_hashtable_ = false;
+        this->num_graph_usable_ = 0;
         pthread_spin_init(&this->user_proc_ref_lock_, 1);
         if (this->channel_.Get() == nullptr)
             this->channel_ = memory::Pointer(channel::GetChannel("omni_basic_node_channel_" + 

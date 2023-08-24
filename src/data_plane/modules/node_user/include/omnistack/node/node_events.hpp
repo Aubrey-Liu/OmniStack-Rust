@@ -11,17 +11,15 @@ namespace omnistack::data_plane::node_common {
     constexpr Event::EventType kNodeEventTypeTcpNewNode = Event::GenerateEventType("node.tcp.new_node");
     constexpr Event::EventType kNodeEventTypeTcpConnect = Event::GenerateEventType("node.tcp.connect");
     constexpr Event::EventType kNodeEventTypeUdpClosed = Event::GenerateEventType("node.udp.closed");
+    constexpr Event::EventType kNodeEventTypeAnyInsert = Event::GenerateEventType("node.any.insert");
 
     class NodeEventTcpClosed : public Event {
     public:
         NodeEventTcpClosed() : Event(kNodeEventTypeTcpClosed) {}
-        NodeEventTcpClosed(uint32_t local_ipv4, uint32_t remote_ipv4, uint16_t local_port, uint16_t remote_port) :
-            Event(kNodeEventTypeTcpClosed), local_ipv4_(local_ipv4), remote_ipv4_(remote_ipv4), local_port_(local_port), remote_port_(remote_port) {}
-    
-        uint32_t local_ipv4_;
-        uint32_t remote_ipv4_;
-        uint16_t local_port_;
-        uint16_t remote_port_;
+        NodeEventTcpClosed(omnistack::node::BasicNode* node) :
+            Event(kNodeEventTypeTcpClosed), node_(node) {}
+        
+        omnistack::node::BasicNode* node_;
     };
     static_assert(sizeof(NodeEventTcpClosed) <= kEventMaxLength, "NodeEventTcpClosed too large");
 
@@ -48,15 +46,22 @@ namespace omnistack::data_plane::node_common {
     class NodeEventUdpClosed : public Event {
     public:
         NodeEventUdpClosed() : Event(kNodeEventTypeUdpClosed) {}
-        NodeEventUdpClosed(uint32_t local_ipv4, uint32_t remote_ipv4, uint16_t local_port, uint16_t remote_port) :
-            Event(kNodeEventTypeUdpClosed), local_ipv4_(local_ipv4), remote_ipv4_(remote_ipv4), local_port_(local_port), remote_port_(remote_port) {}
-    
-        uint32_t local_ipv4_;
-        uint32_t remote_ipv4_;
-        uint16_t local_port_;
-        uint16_t remote_port_;
+        NodeEventUdpClosed(omnistack::node::BasicNode* node) :
+            Event(kNodeEventTypeUdpClosed), node_(node) {}
+        
+        omnistack::node::BasicNode* node_;
     };
     static_assert(sizeof(NodeEventUdpClosed) <= kEventMaxLength, "NodeEventUdpClosed too large");
+
+    class NodeEventAnyInsert : public Event {
+    public:
+        NodeEventAnyInsert() : Event(kNodeEventTypeAnyInsert) {}
+        NodeEventAnyInsert(omnistack::node::BasicNode* node) :
+            Event(kNodeEventTypeAnyInsert), node_(node) {}
+        
+        omnistack::node::BasicNode* node_;
+    };
+    static_assert(sizeof(NodeEventAnyInsert) <= kEventMaxLength, "NodeEventAnyInsert too large");
 }
 
 #endif

@@ -84,7 +84,7 @@ namespace omnistack {
             static_assert(sizeof(network) == 32);
             static_assert(sizeof(TransportLayerType) == 4);
             static_assert(sizeof(NetworkLayerType) == 4);
-            uint32_t padding;
+            uint32_t padding = 0;
 
             uint32_t GetHash() {
                 constexpr int raw_length = sizeof(NodeInfo) / sizeof(uint32_t);
@@ -116,6 +116,9 @@ namespace omnistack {
 
             uint32_t user_proc_ref_;
             pthread_spinlock_t user_proc_ref_lock_;
+
+            uint8_t graph_usable_[128];
+            int num_graph_usable_;
             
             void Write(packet::Packet* packet);
             packet::Packet* Read();
