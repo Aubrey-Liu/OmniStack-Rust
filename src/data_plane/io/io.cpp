@@ -8,6 +8,6 @@ namespace omnistack::io {
 
 
     void BaseIoAdapter::RedirectFlow(packet::Packet* packet) {}
-    std::vector<int> BaseIoAdapter::AcquireUsablePortIds() { return {}; }
-    std::vector<std::string> BaseIoAdapter::AcquireUsablePortNames() { return {}; }
+    std::vector<int> BaseIoFunction::AcquireUsablePortIds() { return {}; }
+    std::vector<std::string> BaseIoFunction::AcquireUsablePortNames() { return {}; }
 }
