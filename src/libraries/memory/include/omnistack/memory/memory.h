@@ -306,6 +306,8 @@ namespace omnistack {
             return *(Type*)(virt_base_addrs[process_id] + p.offset_);
 #endif
         }
+
+        int GetCurrentSocket();
     }
 }
 

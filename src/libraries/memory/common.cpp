@@ -30,6 +30,7 @@
 #include <rte_eal.h>
 #include <rte_malloc.h>
 #include <numa.h>
+#include <rte_mempool.h>
 #endif
 
 static inline
@@ -1183,6 +1184,24 @@ namespace omnistack::memory {
         return nullptr;
     }
 
+    static thread_local int current_cpu = -1;
+    static thread_local int current_node = -1;
+
+    /**
+     * @brief Calling from running thread to only report that you have binded to a cpu core not used to bind cpu
+    */
+    void BindedCPU(int cpu) {
+        local_rpc_request.type = RpcRequestType::kThreadBindCPU;
+        local_rpc_request.thread_bind_cpu.cpu_idx = cpu;
+        local_rpc_request.thread_bind_cpu.thread_id = thread_id;
+        auto resp = SendLocalRpcRequest();
+        if (resp.status != RpcResponseStatus::kSuccess)
+            throw std::runtime_error("Failed to report binding cpu");
+        
+        current_cpu = cpu;
+        current_node = numa_node_of_cpu(cpu);
+    }
+
     void FreeNamedShared(void* ptr) {
         local_rpc_request.type = RpcRequestType::kFreeMemory;
 #if defined (OMNIMEM_BACKEND_DPDK)
@@ -1330,6 +1349,9 @@ namespace omnistack::memory {
     MemoryPool* AllocateMemoryPool(const std::string& name, size_t chunk_size, size_t chunk_count) {
         local_rpc_request.type = RpcRequestType::kGetMemoryPool;
         if (name.length() >= kMaxNameLength) throw std::runtime_error("Name too long");
+#if defined(OMNIMEM_BACKEND_DPDK)
+        if (name.length() >= RTE_MEMPOOL_NAMESIZE) throw std::runtime_error("Name too long");
+#endif
         local_rpc_request.get_memory_pool.chunk_size = chunk_size;
         local_rpc_request.get_memory_pool.chunk_count = chunk_count;
         local_rpc_request.get_memory_pool.thread_id = thread_id;
@@ -1420,5 +1442,9 @@ namespace omnistack::memory {
 #if !defined(OMNIMEM_BACKEND_DPDK)
         virt_base_addrs[process_id] = virt_base_addrs[old_process_id];
 #endif
+    }
+
+    int GetCurrentSocket() {
+        return current_node;
     }
 }
