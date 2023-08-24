@@ -70,7 +70,7 @@ namespace omnistack::data_plane::ipv4_sender {
 
     void Ipv4Sender::EditIpv4Header(Ipv4Header* header, uint8_t ihl, uint16_t len, uint8_t proto, uint32_t src, uint32_t dst)
     {
-        // assume all args are small edian
+        // assume all args are small-edian
         header->ihl = ihl;
         header->version = 4;
         header->len = htons(len);
