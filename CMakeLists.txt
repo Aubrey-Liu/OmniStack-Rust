@@ -12,6 +12,7 @@ endif()
 if (${OMNIMEM_BACKEND_DPDK})
     pkg_search_module(DPDK REQUIRED libdpdk IMPORTED_TARGET GLOBAL)
 endif()
+pkg_search_module(JSONCPP REQUIRED jsoncpp IMPORTED_TARGET GLOBAL)
 
 project(OmniStack)
 

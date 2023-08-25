@@ -1,4 +1,5 @@
 {
+    "type": "Graph",
     "name": "TCP_COMMON",
     "modules": [
         "classifier_main",  "classifier_nic",   "ethernet_out",
