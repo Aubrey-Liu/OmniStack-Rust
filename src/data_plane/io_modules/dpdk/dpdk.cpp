@@ -354,6 +354,7 @@ namespace omnistack::io_module::dpdk {
         ret->length_ = cur_mbuf->pkt_len;
         ret->flow_hash_ = cur_mbuf->hash.rss;
         ret->data_.Set(rte_pktmbuf_mtod(cur_mbuf, char*));
+        ret->iova_ = rte_pktmbuf_iova(cur_mbuf);
         return ret;
     }
 }
