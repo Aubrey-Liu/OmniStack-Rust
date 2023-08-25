@@ -27,6 +27,8 @@ namespace omnistack::data_plane::io_node {
     private:
         static std::once_flag driver_init_flag_;
         static io::BaseIoAdapter* adapters_[kMaxAdapters];
+        static io::IoRecvQueue* recv_queues_[kMaxAdapters];
+        static io::IoSendQueue* send_queues_[kMaxAdapters];
         static int num_adapters_;
         static int num_initialized_port_;
         static std::mutex initialized_port_mutex_;
@@ -51,15 +53,15 @@ namespace omnistack::data_plane::io_node {
         }
     };
 
-    
-
     void IoNode::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
         std::call_once(driver_init_flag_, IoNode::InitializeDrivers, this);
         packet_pool_ = packet_pool;
         id_ = node_common::GetCurrentGraphId(std::string(name_prefix));
 
         for (int i = 0; i < num_adapters_; i ++) {
-            adapters_[i]->InitializeQueue(id_, packet_pool);
+            auto queues = adapters_[i]->InitializeQueue(id_, packet_pool);
+            recv_queues_[i] = queues.second;
+            send_queues_[i] = queues.first;
             need_flush_[i] = false;
         }
         need_flush_stack_top_ = 0;
@@ -78,7 +80,7 @@ namespace omnistack::data_plane::io_node {
 
     Packet* IoNode::MainLogic(Packet* packet) {
         const auto nic = packet->nic_;
-        adapters_[nic]->SendPacket(id_, packet);
+        send_queues_[nic]->SendPacket(packet);
         if (!need_flush_[nic]) {
             need_flush_[nic] = true;
             need_flush_stack_[need_flush_stack_top_ ++] = nic;
@@ -90,13 +92,13 @@ namespace omnistack::data_plane::io_node {
         if (need_flush_stack_top_) [[unlikely]] {
             while (need_flush_stack_top_) {
                 auto nic = need_flush_stack_[-- need_flush_stack_top_];
-                adapters_[nic]->FlushSendPacket(id_);
+                send_queues_[nic]->FlushSendPacket();
                 need_flush_[nic] = false;
             }
         }
 
         for (int i = 0; i < num_adapters_; i ++) {
-            auto pkt = adapters_[i]->RecvPackets(id_);
+            auto pkt = recv_queues_[i]->RecvPacket();
             if (pkt != nullptr) [[likely]] {
                 return pkt;
             }

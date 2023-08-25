@@ -1,7 +1,3 @@
-//
-// Created by liuhao on 23-5-30.
-//
-
 #ifndef OMNISTACK_IO_IO_ADAPTER_H
 #define OMNISTACK_IO_IO_ADAPTER_H
 
@@ -44,6 +40,26 @@ namespace omnistack {
             virtual constexpr uint32_t name_() { return common::ConstCrc32("BaseIoFunction"); }
         };
 
+        class IoSendQueue {
+        public:
+            IoSendQueue() = default;
+            virtual ~IoSendQueue() = default;
+
+            virtual void SendPacket(packet::Packet* packet) = 0;
+            /** Periodcally called **/
+            virtual void FlushSendPacket() = 0;
+        };
+
+        class IoRecvQueue {
+        public:
+            IoRecvQueue() = default;
+            virtual ~IoRecvQueue() = default;
+
+            virtual packet::Packet* RecvPacket() = 0;
+
+            virtual void RedirectFlow(packet::Packet* packet);
+        };
+
         class BaseIoAdapter : public BaseIoFunction {
         public:
             BaseIoAdapter() = default;
@@ -51,19 +67,11 @@ namespace omnistack {
 
             virtual void InitializeAdapter(int port_id, int num_queues) = 0;
 
-            virtual void InitializeQueue(int queue_id, packet::PacketPool* packet_pool) = 0;
-
-            virtual void SendPacket(int queue_id, packet::Packet* packet) = 0;
-            /** Periodcally called **/
-            virtual void FlushSendPacket(int queue_id) = 0;
+            virtual std::pair<IoSendQueue*, IoRecvQueue*> InitializeQueue(int queue_id, packet::PacketPool* packet_pool) = 0;
 
             virtual void Start() = 0;
 
-            virtual packet::Packet* RecvPackets(int queue_id) = 0;
-
-            virtual void RedirectFlow(packet::Packet* packet);
-
-            constexpr uint32_t name_() const { return common::ConstCrc32("BaseIoAdapter"); }
+            virtual constexpr uint32_t name_() const { return common::ConstCrc32("BaseIoAdapter"); }
         };
 
         class ModuleFactory {
@@ -117,8 +125,6 @@ namespace omnistack {
         template<typename T, const char name[]>
         class IoAdapter : public BaseIoAdapter {
         public:
-            IoAdapter() { factory_entry_.DoNothing(); }
-            virtual ~IoAdapter() { factory_entry_.DoNothing(); }
         
             static std::unique_ptr<BaseIoAdapter> CreateModuleObject() {
                 return std::make_unique<T>();
@@ -134,7 +140,13 @@ namespace omnistack {
             };
 
             static const FactoryEntry factory_entry_;
+
+            IoAdapter() { factory_entry_.DoNothing(); }
+            virtual ~IoAdapter() { factory_entry_.DoNothing(); }
         };
+
+        template<typename T, const char name[]>
+        inline const typename IoAdapter<T, name>::FactoryEntry IoAdapter<T, name>::factory_entry_;
     }
 }
 

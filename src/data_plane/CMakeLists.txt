@@ -12,8 +12,9 @@ set(MODULE_SRCS module/module.cpp)
 
 add_library(${OMNI_DATA_PLANE_LIB} ${ENGINE_SRCS} ${GRAPH_SRCS} ${IO_SRCS} ${MODULE_SRCS})
 target_include_directories(${OMNI_DATA_PLANE_LIB} PUBLIC include)
-message(STATUS "${OMNI_LIBRARIES}")
 target_link_libraries(${OMNI_DATA_PLANE_LIB} PUBLIC ${OMNI_LIBRARIES})
+# target_compile_options(${OMNI_DATA_PLANE_LIB} PUBLIC -fPIC)
+set_property(TARGET ${OMNI_DATA_PLANE_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 add_subdirectory(modules)
 add_subdirectory(io_modules)

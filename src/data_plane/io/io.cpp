@@ -5,9 +5,7 @@
 #include <omnistack/io/io_adapter.hpp>
 
 namespace omnistack::io {
-
-
-    void BaseIoAdapter::RedirectFlow(packet::Packet* packet) {}
+    void IoRecvQueue::RedirectFlow(packet::Packet* packet) {}
     std::vector<int> BaseIoFunction::AcquireUsablePortIds() { return {}; }
     std::vector<std::string> BaseIoFunction::AcquireUsablePortNames() { return {}; }
 }
