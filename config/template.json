@@ -1,0 +1,43 @@
+{
+    "type": "Stack",
+    "name": "TEMPLATE",
+    "nic": [
+        {
+            "driver_name": "Dpdk",
+            "port": 1,
+            "ipv4": "192.168.10.1",
+            "netmask": "255.255.255.0"
+        },
+        {
+            "driver_name": "ef_vi",
+            "port": 2,
+            "ipv4": "192.168.11.1",
+            "netmask": "255.255.255.0"
+        }
+    ],
+    "arp": [
+        {
+            "ipv4": "192.168.10.2",
+            "mac": "00:00:00:00:00:02"
+        }
+    ],
+    "graphs": [
+        {
+            "cpus": [0],
+            "name": "General",
+            "structure": "TCP_COMMON"
+        },
+        {
+            "cpus": [3,4],
+            "name": "RedisOptimized",
+            "structure": "TCP_COMMON"
+        }
+    ],
+    "routes": [
+        {
+            "ipv4": "192.168.10.0",
+            "cidr": 24,
+            "nic": 0
+        }
+    ]
+}

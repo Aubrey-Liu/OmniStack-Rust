@@ -308,6 +308,15 @@ namespace omnistack {
         }
 
         int GetCurrentSocket();
+
+        inline uint64_t GetIova(void* ptr) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+                auto meta = (RegionMeta*) (reinterpret_cast<char*>(ptr) - kMetaHeadroomSize);
+                return meta->iova;
+#else
+                return 0;
+#endif
+        }
     }
 }
 

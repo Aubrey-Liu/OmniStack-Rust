@@ -1,4 +1,5 @@
 {
+    "type": "Graph",
     "name": "TEMPLATE",
     "modules": [
         "module0", "module1", "module2", "module3", "module4"

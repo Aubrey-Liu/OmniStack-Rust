@@ -1,4 +1,5 @@
 {
+    "type": "Graph",
     "name": "UDP_COMMON",
     "modules": [
         "classifier_nic",   "com_nic_out",      "classifier_main",
