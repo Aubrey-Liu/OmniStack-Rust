@@ -69,6 +69,8 @@ namespace omnistack::packet {
         Pointer<node::BasicNode> node_;        // pointer to the node which the packet belongs to
         /* a cache line ends here */
 
+        uint64_t iova_; // Warning : Not optimized
+
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         uint32_t upstream_node_name_;   /* identify the upstream node of current packet */
         uint32_t upstream_node_id_;
@@ -166,6 +168,7 @@ namespace omnistack::packet {
         packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom + (packet->data_.Get() - packet->mbuf_);
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
+        packet_copy->iova_ = memory::GetIova(packet_copy) + offsetof(Packet, mbuf_) + kPacketMbufHeadroom;
 #if defined (OMNIMEM_BACKEND_DPDK)
         rte_memcpy(packet_copy->data_.Get(), packet->data_.Get(), packet->length_);
 #else 
@@ -194,6 +197,7 @@ namespace omnistack::packet {
         packet_copy->data_ = packet->data_;
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
+        packet_copy->iova_ = packet->iova_;
         while(packet_copy->header_tail_ != packet->header_tail_) {
             auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
             header.length_ = packet->packet_headers_[packet_copy->header_tail_].length_;

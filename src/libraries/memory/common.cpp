@@ -252,7 +252,7 @@ namespace omnistack::memory {
             thread_cpu
         )));
         region_meta->addr = region_meta;
-        region_meta->iova = rte_mem_virt2iova(region_meta);
+        region_meta->iova = rte_mem_virt2iova(region_meta) + kMetaHeadroomSize;
 #else
         auto usable_iter = usable_region.lower_bound(
                 std::make_pair(aligned_size, 0));
@@ -632,7 +632,7 @@ namespace omnistack::memory {
                                             for (int j = 0; j < current_block->cnt; j ++) {
                                                 auto chunk = chunk_region_begin + (i + j) * mempool->chunk_size_;
                                                 auto single_chunk_meta = reinterpret_cast<RegionMeta*>(chunk);
-                                                single_chunk_meta->iova = (chunk - reinterpret_cast<uint8_t*>(chunk_meta)) + chunk_meta->iova;
+                                                single_chunk_meta->iova = (chunk - reinterpret_cast<uint8_t*>(chunk_meta)) + memory::GetIova(chunk_meta);
                                                 current_block->addrs[j] = chunk;
                                             }
                                             current_block->next = mempool->full_block_ptr_;

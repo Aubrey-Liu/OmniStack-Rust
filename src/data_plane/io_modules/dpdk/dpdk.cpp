@@ -264,12 +264,80 @@ namespace omnistack::io_module::dpdk {
         }
     }
 
-    void DpdkSendQueue::SendPacket(packet::Packet* packet) {
+    static void FreePacket(void* addr, void* packet) {
+        memory::MemoryPool::PutBack((packet::Packet*)packet);
+    }
 
+    static_assert(sizeof(common::EthernetHeader) == 14);
+    void DpdkSendQueue::SendPacket(packet::Packet* packet) {
+        auto iova_addr = memory::GetIova(packet);
+        auto cur_mbuf = buffer_[index_++];
+        if (iova_addr != 0) [[likely]] {
+            struct rte_mbuf_ext_shared_info* shared_info = rte_pktmbuf_mtod(cur_mbuf, struct rte_mbuf_ext_shared_info*);
+            shared_info->free_cb = FreePacket;
+            shared_info->fcb_opaque = packet;
+            rte_mbuf_ext_refcnt_set(shared_info, 1);
+            rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
+                packet->iova_ + packet->offset_, packet->length_, shared_info);
+        }
+
+        cur_mbuf->pkt_len = cur_mbuf->data_len = packet->length_;
+        cur_mbuf->nb_segs = 1;
+        cur_mbuf->next = NULL;
+
+        cur_mbuf->l2_len = sizeof(common::EthernetHeader);
+        const auto header_tail = packet->header_tail_ - 1;
+        common::EthernetHeader* ethh = (common::EthernetHeader*)packet->GetHeaderPayload(header_tail);
+
+        switch (ethh->type) {
+            [[likely]] case ETH_PROTO_TYPE_IPV4: {
+                common::Ipv4Header* ipv4h = (common::Ipv4Header*)packet->GetHeaderPayload(header_tail-1);
+                cur_mbuf->ol_flags |= RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_IPV4;
+                cur_mbuf->l3_len = (ipv4h->ihl << 2);
+                ipv4h->chksum = 0;
+                switch (ipv4h->proto) {
+                    [[likely]] case IP_PROTO_TYPE_TCP: {
+                        cur_mbuf->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
+                        auto tcph = (common::TcpHeader*)packet->GetHeaderPayload(header_tail-2);
+                        tcph->chksum = rte_ipv4_phdr_cksum((const struct rte_ipv4_hdr*)ipv4h, cur_mbuf->ol_flags);
+                        break;
+                    }
+                    case IP_PROTO_TYPE_UDP: {
+                        cur_mbuf->ol_flags |= RTE_MBUF_F_TX_UDP_CKSUM;
+                        auto udph = (common::UdpHeader*)packet->GetHeaderPayload(header_tail-2);
+                        udph->chksum = rte_ipv4_phdr_cksum((const struct rte_ipv4_hdr*)ipv4h, cur_mbuf->ol_flags);
+                        break;
+                    }
+                }
+                break;
+            }
+            case ETH_PROTO_TYPE_IPV6: {
+                cur_mbuf->ol_flags |= RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_IPV6;
+                break;
+            }
+        }
+
+        if (iova_addr == 0) [[unlikely]] {
+            rte_memcpy(rte_pktmbuf_mtod(cur_mbuf, char*), packet->data_ + packet->offset_, packet->length_);
+        }
+        if (index_ == kSendQueueSize) FlushSendPacket();
     }
 
     void DpdkSendQueue::FlushSendPacket() {
-
+        struct rte_mbuf **pkts = buffer_;
+        const int sent = index_;
+        do {
+            auto ret = rte_eth_tx_burst(port_id_, queue_id_, pkts, index_);
+            pkts += ret;
+            index_ -= ret;
+        } while (index_ > 0);
+        for (int i = 0; i < sent; i++) {
+            buffer_[i] = rte_pktmbuf_alloc(mempool_);
+            if (buffer_[i] == nullptr) [[unlikely]] {
+                std::cerr << "Failedt to refill send queue" << std::endl;
+                exit(1);
+            }
+        }
     }
 
     packet::Packet* DpdkRecvQueue::RecvPacket() {
@@ -281,6 +349,11 @@ namespace omnistack::io_module::dpdk {
             }
         }
         auto ret = packet_pool_->Allocate();
+        auto cur_mbuf = buffer_[index_++];
+        ret->mbuf_type_ = packet::Packet::MbufType::kDpdk;
+        ret->length_ = cur_mbuf->pkt_len;
+        ret->flow_hash_ = cur_mbuf->hash.rss;
+        ret->data_.Set(rte_pktmbuf_mtod(cur_mbuf, char*));
         return ret;
     }
 }
