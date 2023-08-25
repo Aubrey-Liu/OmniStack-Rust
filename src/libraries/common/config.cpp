@@ -17,6 +17,9 @@ namespace omnistack::config
         }
     }
 
+    std::map<std::string, GraphConfig*> ConfigManager::graph_configs_;
+    std::map<std::string, StackConfig*> ConfigManager::stack_configs_;
+
     void ConfigManager::LoadFromFile(const std::string& path) {
         std::ifstream ifs(path);
         if (!ifs.is_open()) {
