@@ -182,7 +182,7 @@ namespace omnistack::data_plane {
     };
 
     template<typename T, const char name[]>
-    const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;
+    inline const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;
 }
 
 #endif //OMNISTACK_MODULE_MODULE_HPP
