@@ -5,12 +5,14 @@
 #include <omnistack/engine/engine.hpp>
 #include <omnistack/common/constant.hpp>
 #include <omnistack/common/time.hpp>
+#include <omnistack/common/cpu.hpp>
 
 #include <bit>
 #include <csignal>
 
 namespace omnistack::data_plane {
     thread_local volatile bool Engine::stop_ = false;
+    thread_local Engine* Engine::current_engine_ = nullptr;
 
     bool Engine::CompareLinks(uint32_t x, uint32_t y) {
         int t1 = x < module_num_;
@@ -28,11 +30,21 @@ namespace omnistack::data_plane {
                 else break;
     }
 
+    Engine* Engine::Create(EngineCreateInfo& info) {
+        auto engine = new Engine();
+        engine->Init(*info.sub_graph, info.logic_core, info.name_prefix);
+        return engine;
+    }
+
     void Engine::Init(SubGraph &sub_graph, uint32_t core, std::string_view name_prefix) {
         /* set up current engine pointer per thread */
         current_engine_ = this;
 
-        /* TODO: bind to CPU core */
+        /* bind to CPU core */
+        auto ret = common::CoreAffinitize(core);
+        if(ret < 0) {
+            /* TODO: report error */
+        }
 
         /* create packet pool */
         packet_pool_ = PacketPool::CreatePacketPool(name_prefix, kDefaultPacketPoolSize);
@@ -199,7 +211,11 @@ namespace omnistack::data_plane {
         signal(SIGINT, SigintHandler);
     }
 
-    void Engine::Destroy() {
+    void Engine::Destroy(Engine* engine) {
+        delete engine;
+    }
+
+    Engine::~Engine() {
         packet_queue_.clear();
 
         /* destroy modules */

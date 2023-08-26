@@ -71,6 +71,7 @@ namespace omnistack::packet {
         /* a cache line ends here */
 
         uint64_t iova_; // Warning : Not optimized
+        Pointer<void> root_packet_; // dpdk packet use this as pointer to rte_mbuf
 
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         uint32_t upstream_node_name_;   /* identify the upstream node of current packet */
@@ -127,11 +128,12 @@ namespace omnistack::packet {
                     break;
 #if defined(OMNIMEM_BACKEND_DPDK)
                 case MbufType::kDpdk:
-                    rte_pktmbuf_free(reinterpret_cast<rte_mbuf*>(data_ - RTE_PKTMBUF_HEADROOM - sizeof(rte_mbuf)));
+                    rte_pktmbuf_free(reinterpret_cast<rte_mbuf*>(root_packet_.Get()));
+                    // rte_pktmbuf_free(reinterpret_cast<rte_mbuf*>(data_ - RTE_PKTMBUF_HEADROOM - sizeof(rte_mbuf)));
                     break;
 #endif
                 case MbufType::kIndirect: {
-                    auto packet = reinterpret_cast<Packet*>(data_ - kPacketMbufHeadroom - offsetof(Packet, mbuf_));
+                    auto packet = reinterpret_cast<Packet*>(root_packet_.Get());
                     packet->Release();
                     break;
                 }
@@ -156,6 +158,7 @@ namespace omnistack::packet {
     }
 
     inline Packet* PacketPool::Duplicate(Packet* packet) {
+        if(packet->mbuf_type_ == Packet::MbufType::kIndirect) packet = reinterpret_cast<Packet*>(packet->root_packet_.Get());
         auto packet_copy = reinterpret_cast<Packet*>(memory_pool_->Get());
         if(packet_copy == nullptr) return nullptr;
         packet_copy->reference_count_ = 1;
@@ -166,7 +169,8 @@ namespace omnistack::packet {
         packet_copy->mbuf_type_ = Packet::MbufType::kOrigin;
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
-        packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom + (packet->data_.Get() - packet->mbuf_);
+        if(packet->mbuf_type_ == Packet::MbufType::kDpdk) packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom;
+        else if(packet->mbuf_type_ == Packet::MbufType::kOrigin) packet_copy->data_ = packet_copy->mbuf_ + (packet->data_.Get() - packet->mbuf_);
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
         packet_copy->iova_ = memory::GetIova(packet_copy) + offsetof(Packet, mbuf_) + kPacketMbufHeadroom;
@@ -185,6 +189,7 @@ namespace omnistack::packet {
     }
 
     inline Packet* PacketPool::Reference(Packet* packet) {
+        if(packet->mbuf_type_ == Packet::MbufType::kIndirect) packet = reinterpret_cast<Packet*>(packet->root_packet_.Get());
         auto packet_copy = reinterpret_cast<Packet*>(memory_pool_->Get());
         if(packet_copy == nullptr) return nullptr;
         packet_copy->reference_count_ = 1;
@@ -199,6 +204,7 @@ namespace omnistack::packet {
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
         packet_copy->iova_ = packet->iova_;
+        packet->root_packet_ = reinterpret_cast<void*>(packet);
         while(packet_copy->header_tail_ != packet->header_tail_) {
             auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
             header.length_ = packet->packet_headers_[packet_copy->header_tail_].length_;

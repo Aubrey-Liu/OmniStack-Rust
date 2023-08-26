@@ -44,7 +44,7 @@ namespace omnistack::data_plane {
               std::vector<std::vector<uint32_t>>&& equal_links);
         Graph(const Graph&) = delete;
 
-        SubGraph& sub_graph(uint32_t idx) { return sub_graphs_.at(idx); }
+        SubGraph& sub_graph_(uint32_t idx) { return sub_graphs_.at(idx); }
 
         std::vector<std::string> node_names_;
         std::vector<uint32_t> node_sub_graph_ids_;

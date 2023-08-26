@@ -15,19 +15,35 @@ namespace omnistack::data_plane {
 
     /* TODO: add functionality to link to any module in graph */
 
+    struct EngineCreateInfo {
+        uint32_t engine_id;
+        SubGraph* sub_graph;
+        uint32_t logic_core;
+        std::string_view name_prefix;
+    };
+
     class Engine {
     public:
-        void Init(SubGraph& sub_graph, uint32_t core, std::string_view name_prefix);
+        static Engine* Create(EngineCreateInfo& info);
 
         void Run();
 
-        void Destroy();
+        static void Destroy(Engine* engine);
 
         static void RaiseEvent(Event* event) { current_engine_->HandleEvent(event); }
 
         static void SigintHandler(int sig) { stop_ = true; }
 
+        volatile bool* GetStopFlag() { return &stop_; }
+
     private:
+        Engine() = default;
+        ~Engine();
+        Engine(const Engine&) = delete;
+        Engine(Engine&&) = delete;
+
+        void Init(SubGraph& sub_graph, uint32_t core, std::string_view name_prefix);
+
         void HandleEvent(Event* event);
 
         void ForwardPacket(Packet* &packet, uint32_t node_idx);
