@@ -5,6 +5,7 @@
 #include <omnistack/engine/engine.hpp>
 #include <omnistack/common/constant.hpp>
 #include <omnistack/common/time.hpp>
+#include <omnistack/common/cpu.hpp>
 
 #include <bit>
 #include <csignal>
@@ -39,7 +40,11 @@ namespace omnistack::data_plane {
         /* set up current engine pointer per thread */
         current_engine_ = this;
 
-        /* TODO: bind to CPU core */
+        /* bind to CPU core */
+        auto ret = common::CoreAffinitize(core);
+        if(ret < 0) {
+            /* TODO: report error */
+        }
 
         /* create packet pool */
         packet_pool_ = PacketPool::CreatePacketPool(name_prefix, kDefaultPacketPoolSize);

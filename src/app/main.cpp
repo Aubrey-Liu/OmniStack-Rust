@@ -1,8 +1,12 @@
 #include <omnistack/common/config.h>
+#include <omnistack/common/constant.hpp>
+#include <omnistack/common/cpu.hpp>
+#include <omnistack/common/thread.hpp>
 #include <omnistack/memory/memory.h>
 #include <omnistack/token/token.h>
 #include <omnistack/node.h>
 #include <omnistack/engine/engine.hpp>
+#include <csignal>
 
 namespace omnistack {
 
@@ -54,20 +58,32 @@ namespace omnistack {
         return graph;
     }
 
-    static int EngineThreadEntry(void* arg) {
+    static pthread_t engine_threads[common::kMaxThread];
+    static volatile bool* stop_flag[common::kMaxThread];
+
+    static void* EngineThreadEntry(void* arg) {
+        memory::InitializeSubsystemThread();
         auto create_info = reinterpret_cast<data_plane::EngineCreateInfo*>(arg);
         auto engine = data_plane::Engine::Create(*create_info);
+        stop_flag[create_info->engine_id] = engine->GetStopFlag();
         engine->Run();
         data_plane::Engine::Destroy(engine);
-        return 0;
+        return nullptr;
     }
+
+    static void SigintHandler(int sig) {
+        for(int i = 0; i < common::kMaxThread; i ++) {
+            if(stop_flag[i] != nullptr)
+                *stop_flag[i] = true;
+        }
+    } 
 
 }
 
 int main(int argc, char **argv) {
     /* 1. load configurations */
-    omnistack::config::ConfigManager::LoadFromDirectory("config");
-    omnistack::config::ConfigManager::LoadFromDirectory("graph_config");
+    omnistack::config::ConfigManager::LoadFromDirectory("../../config");
+    omnistack::config::ConfigManager::LoadFromDirectory("../../graph_config");
     std::string config_name = argc > 1 ? argv[1] : "config";
     auto stack_config = omnistack::config::ConfigManager::GetStackConfig(config_name);
 
@@ -75,7 +91,7 @@ int main(int argc, char **argv) {
     omnistack::InitializeMemory();
     omnistack::InitializeToken();
     omnistack::InitializeChannel();
-    // omnistack::InitializeNode();
+    omnistack::InitializeNode();
 
     /* 3. create graphs, directly using graph config at present, each graph has only one subgraph */
     std::vector<omnistack::data_plane::Graph*> graphs;
@@ -97,13 +113,20 @@ int main(int argc, char **argv) {
     for(int i = 0; i < sub_graphs.size(); i ++) {
         std::string name(graph_names[i]);
         name += "_subgraph_0";
-        engine_create_infos.emplace_back(sub_graphs[i], sub_graph_cpus[i], name);
+        engine_create_infos.emplace_back(i, sub_graphs[i], sub_graph_cpus[i], name);
     }
     for(auto& info : engine_create_infos) {
-        /* TODO: */
+        auto ret = omnistack::common::CreateThread(&omnistack::engine_threads[info.engine_id], omnistack::EngineThreadEntry, &info);
     }
 
-    /* 5. start omnistack control plane */
+    /* 5. register sigint handler */
+    signal(SIGINT, omnistack::SigintHandler);
+
+    /* 6. start omnistack control plane */
+
+    /* 7. join threads */
+    for(int i = 0; i < engine_create_infos.size(); i ++)
+        omnistack::common::JoinThread(omnistack::engine_threads[i], nullptr);
 
     return 0;
 }

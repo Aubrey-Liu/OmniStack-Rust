@@ -11,6 +11,8 @@ namespace omnistack::common {
 
     constexpr uint32_t kCacheLineSize = 64;
     constexpr uint32_t kMtu = 1500;
+    
+    constexpr uint32_t kMaxThread = 1024;
 
     constexpr uint32_t kDefaultPacketPoolSize = 65536;
 }
