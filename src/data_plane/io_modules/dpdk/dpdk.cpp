@@ -277,8 +277,27 @@ namespace omnistack::io_module::dpdk {
             shared_info->free_cb = FreePacket;
             shared_info->fcb_opaque = packet;
             rte_mbuf_ext_refcnt_set(shared_info, 1);
-            rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
-                packet->iova_ + packet->offset_, packet->length_ - packet->offset_, shared_info);
+            auto orig_packet = packet;
+            if (packet->mbuf_type_ == packet::Packet::MbufType::kIndirect) [[likely]] {
+                packet = reinterpret_cast<packet::Packet*>(packet->root_packet_.Get());
+            }
+            switch (orig_packet->mbuf_type_) {
+                case packet::Packet::MbufType::kDpdk: {
+                    auto root_mbuf = reinterpret_cast<struct rte_mbuf*>(orig_packet->root_packet_.Get());
+                    auto iova = rte_pktmbuf_iova(root_mbuf) + (orig_packet->data_.Get() - rte_pktmbuf_mtod(root_mbuf, char*)) + packet->offset_;
+                    rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
+                        iova, packet->length_ - packet->offset_, shared_info);
+                    break;
+                }
+                case packet::Packet::MbufType::kOrigin: {
+                    auto iova = packet->iova_ + (packet->data_.Get() - packet->mbuf_) + packet->offset_;
+                    rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
+                        iova, packet->length_ - packet->offset_, shared_info);
+                    break;
+                }
+                default:
+                    throw std::runtime_error("Unknown packet mbuf type");
+            }
         }
 
         cur_mbuf->pkt_len = cur_mbuf->data_len = packet->length_ - packet->offset_;
@@ -354,7 +373,7 @@ namespace omnistack::io_module::dpdk {
         ret->length_ = cur_mbuf->pkt_len;
         ret->flow_hash_ = cur_mbuf->hash.rss;
         ret->data_.Set(rte_pktmbuf_mtod(cur_mbuf, char*));
-        ret->iova_ = rte_pktmbuf_iova(cur_mbuf);
+        ret->root_packet_.Set(cur_mbuf);
         return ret;
     }
 }

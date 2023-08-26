@@ -126,6 +126,7 @@ namespace omnistack::data_plane::node_user {
             switch (header->type)
             {
             [[likely]] case node::NodeCommandType::kPacket:
+                packet->offset_ += sizeof(node::NodeCommandHeader);
                 if (!ret) [[unlikely]] {
                     ret = packet;
                     tail = packet;
@@ -147,6 +148,7 @@ namespace omnistack::data_plane::node_user {
                     if (info.transport_layer_type == node::TransportLayerType::kTCP && info.transport.tcp.dport != 0) [[likely]]
                         raise_event_(new(event_pool_->Get()) NodeEventTcpConnect(packet->node_.Get()));
                 }
+                packet->Release();
                 break;
             }
             case node::NodeCommandType::kClearNodeInfo: {
@@ -170,6 +172,7 @@ namespace omnistack::data_plane::node_user {
                         throw std::runtime_error("Unknown network layer type");
                 }
                 node::ReleaseBasicNode(packet->node_.Get());
+                packet->Release();
                 break;
             }
             default:

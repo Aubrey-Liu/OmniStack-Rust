@@ -21,7 +21,7 @@ namespace omnistack {
                 next_ = next;
             }
         private:
-            channel::MultiWriterChannel* channel_;
+            memory::Pointer<channel::MultiWriterChannel> channel_;
             memory::Pointer<EventNode> next_;
         };
 

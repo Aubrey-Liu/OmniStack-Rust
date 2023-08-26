@@ -262,6 +262,17 @@ namespace omnistack::node {
         return (uint64_t)channel_->Read();
     }
 
+    void EventNode::Write(uint64_t tnode_id) {
+        channel_->Write((void*)tnode_id);
+    }
+
+    void EventNode::Init() {
+        this->next_.Set(nullptr);
+        this->channel_ = memory::Pointer(channel::GetMultiWriterChannel("omni_event_node_channel_" + 
+            std::to_string(memory::process_id) + "_" + std::to_string(memory::thread_id) +
+            "_" + std::to_string(++local_create_channel_idx)));
+    }
+
     int GetNumNodeUser() {
         return num_node_user;
     }
