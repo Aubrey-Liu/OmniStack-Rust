@@ -269,6 +269,16 @@ namespace omnistack {
 #endif
             }
 
+            inline Pointer<T>& operator-=(const uint32_t& a) {
+#if defined (OMNIMEM_BACKEND_DPDK)
+                ptr_ -= a;
+                return *this;
+#else
+                offset_ -= a * sizeof(T);
+                return *this;
+#endif
+            }
+
             template<typename Type> friend inline Type& operator*(const Pointer<Type>& p);
 
             /**

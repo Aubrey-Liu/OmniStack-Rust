@@ -13,6 +13,7 @@
 #if defined (OMNIMEM_BACKEND_DPDK)
 #include <rte_mbuf.h>
 #include <rte_memcpy.h>
+#include <rte_mempool.h>
 #else
 #include <cstring>
 #endif
@@ -124,7 +125,7 @@ namespace omnistack::packet {
             switch (mbuf_type_) {
                 case MbufType::kOrigin:
                     break;
-#if defined (OMNIMEM_BACKEND_DPDK)
+#if defined(OMNIMEM_BACKEND_DPDK)
                 case MbufType::kDpdk:
                     rte_pktmbuf_free(reinterpret_cast<rte_mbuf*>(data_ - RTE_PKTMBUF_HEADROOM - sizeof(rte_mbuf)));
                     break;

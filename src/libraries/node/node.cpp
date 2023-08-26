@@ -218,7 +218,7 @@ namespace omnistack::node {
 
     void BasicNode::WriteBottom(packet::Packet* packet) {
         packet->length_ += sizeof(NodeCommandHeader);
-        packet->offset_ -= sizeof(NodeCommandHeader);
+        packet->data_ -= sizeof(NodeCommandHeader);
         auto header = reinterpret_cast<NodeCommandHeader*>(packet->data_ + packet->offset_);
         header->type = NodeCommandType::kPacket;
         packet->node_.Set(this);

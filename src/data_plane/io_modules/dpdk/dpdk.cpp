@@ -278,10 +278,10 @@ namespace omnistack::io_module::dpdk {
             shared_info->fcb_opaque = packet;
             rte_mbuf_ext_refcnt_set(shared_info, 1);
             rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
-                packet->iova_ + packet->offset_, packet->length_, shared_info);
+                packet->iova_ + packet->offset_, packet->length_ - packet->offset_, shared_info);
         }
 
-        cur_mbuf->pkt_len = cur_mbuf->data_len = packet->length_;
+        cur_mbuf->pkt_len = cur_mbuf->data_len = packet->length_ - packet->offset_;
         cur_mbuf->nb_segs = 1;
         cur_mbuf->next = NULL;
 
@@ -318,7 +318,7 @@ namespace omnistack::io_module::dpdk {
         }
 
         if (iova_addr == 0) [[unlikely]] {
-            rte_memcpy(rte_pktmbuf_mtod(cur_mbuf, char*), packet->data_ + packet->offset_, packet->length_);
+            rte_memcpy(rte_pktmbuf_mtod(cur_mbuf, char*), packet->data_ + packet->offset_, cur_mbuf->pkt_len);
         }
         if (index_ == kSendQueueSize) FlushSendPacket();
     }
