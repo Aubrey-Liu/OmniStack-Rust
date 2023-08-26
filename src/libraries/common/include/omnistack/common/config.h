@@ -178,7 +178,7 @@ namespace omnistack {
                 }
                 if (!root["groups"].isNull()) {
                     for (auto group : root["groups"]) {
-                        std::vector<int> group_vec;
+                        std::vector<uint32_t> group_vec;
                         for (auto eid : group) {
                             if (!eid.isInt()) {
                                 std::cerr << ("Group element is not an integer");
@@ -197,14 +197,14 @@ namespace omnistack {
 
             inline const std::vector<std::string>& GetModules() const {return modules_;}
             inline const std::vector<std::pair<std::string, std::string>>& GetLinks() const {return links_;}
-            inline const std::vector<std::vector<int>>& GetGroups() const {return groups_;}
+            inline const std::vector<std::vector<uint32_t>>& GetGroups() const {return groups_;}
             inline const std::string& GetName() const {return name_;}
 
         private:
             std::string name_;
             std::vector<std::string> modules_;
             std::vector<std::pair<std::string, std::string>> links_;
-            std::vector<std::vector<int>> groups_;
+            std::vector<std::vector<uint32_t>> groups_;
         };
 
         class ConfigManager {

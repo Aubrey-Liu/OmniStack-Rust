@@ -139,14 +139,14 @@ namespace omnistack {
                 inline void DoNothing() const {}
             };
 
-            static const FactoryEntry factory_entry_;
+            inline static const FactoryEntry factory_entry_;
 
             IoAdapter() { factory_entry_.DoNothing(); }
             virtual ~IoAdapter() { factory_entry_.DoNothing(); }
         };
 
-        template<typename T, const char name[]>
-        inline const typename IoAdapter<T, name>::FactoryEntry IoAdapter<T, name>::factory_entry_;
+        // template<typename T, const char name[]>
+        // inline const typename IoAdapter<T, name>::FactoryEntry IoAdapter<T, name>::factory_entry_;
     }
 }
 

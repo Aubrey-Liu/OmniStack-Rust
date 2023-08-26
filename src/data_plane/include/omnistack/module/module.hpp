@@ -45,9 +45,9 @@ namespace omnistack::data_plane {
 
         void RegisterDownstreamFilters(const std::vector<std::pair<uint32_t, uint32_t>>& modules, const std::vector<Filter>& filters, const std::vector<uint32_t>& filter_masks, const std::vector<std::set<uint32_t>>& groups, const std::vector<FilterGroupType>& group_types);
 
-        void set_raise_event_(std::function<void(Event* event)> raise_event);
+        void set_raise_event_(std::function<void(Event* event)> raise_event) { raise_event_ = raise_event; }
 
-        void set_upstream_nodes_(const std::vector<std::pair<uint32_t, uint32_t>>& upstream_nodes);
+        void set_upstream_nodes_(const std::vector<std::pair<uint32_t, uint32_t>>& upstream_nodes) { upstream_nodes_ = upstream_nodes; }
 
         void ApplyDownstreamFilters(Packet* packet);
 
@@ -117,6 +117,29 @@ namespace omnistack::data_plane {
         std::vector<DownstreamInfo> downstream_nodes_;
     };
 
+    inline void BaseModule::ApplyDownstreamFilters(Packet *packet) {
+        auto& mask = packet->next_hop_filter_;
+        for(auto& group : filter_groups_) {
+            auto cantidate = mask & group.universe_mask;
+            if(!cantidate) [[unlikely]] continue;
+            if(group.type == FilterGroupType::kMutex) [[likely]] {
+                do {
+                    auto idx = std::countr_zero(cantidate);
+                    if(group.filters[idx](packet)) [[likely]] {
+                        mask &= group.filter_masks[idx];
+                        break;
+                    }
+                    else cantidate ^= (1 << idx);
+                } while(cantidate);
+                auto idx = std::countr_zero(cantidate);
+            }
+            else {
+                auto idx = packet->flow_hash_ % group.filters.size();
+                mask &= group.filter_masks[idx];
+            }
+        }
+    }
+
     class ModuleFactory {
     public:
         typedef std::function<std::unique_ptr<BaseModule>()> CreateFunction;
@@ -171,7 +194,7 @@ namespace omnistack::data_plane {
             inline void DoNothing() const {}
         };
 
-        static const FactoryEntry factory_entry_;
+        inline static const FactoryEntry factory_entry_;
 
         Module() {
             factory_entry_.DoNothing();
@@ -181,8 +204,10 @@ namespace omnistack::data_plane {
         }
     };
 
-    template<typename T, const char name[]>
-    inline const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;
+    /* not need in C++17 */
+    // template<typename T, const char name[]>
+    // inline const typename Module<T, name>::FactoryEntry Module<T, name>::factory_entry_;
+
 }
 
 #endif //OMNISTACK_MODULE_MODULE_HPP
