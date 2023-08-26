@@ -9,6 +9,7 @@
 
 #include <omnistack/common/constant.hpp>
 #include <omnistack/memory/memory.h>
+#include <stdexcept>
 
 #if defined (OMNIMEM_BACKEND_DPDK)
 #include <rte_mbuf.h>
@@ -81,6 +82,23 @@ namespace omnistack::packet {
 
         inline char* GetHeaderPayload(const int& index) const {
             return data_ + static_cast<uint32_t>(packet_headers_[index].offset_);
+        }
+
+        inline uint64_t GetIova() const {
+            auto cur_packet = const_cast<Packet*>(this);
+            if(mbuf_type_ == MbufType::kIndirect) cur_packet = reinterpret_cast<Packet*>(root_packet_.Get());
+            switch (cur_packet->mbuf_type_) {
+                case MbufType::kOrigin:
+                    return iova_ + (data_.Get() - cur_packet->mbuf_);
+#if defined(OMNIMEM_BACKEND_DPDK)
+                case MbufType::kDpdk: {
+                    auto mbuf = reinterpret_cast<rte_mbuf*>(cur_packet->root_packet_.Get());
+                    return rte_pktmbuf_iova(mbuf) + (data_.Get() - rte_pktmbuf_mtod(mbuf, char*));
+                }
+#endif
+                default:
+                    return 0;
+            }
         }
     };
 
@@ -169,11 +187,19 @@ namespace omnistack::packet {
         packet_copy->mbuf_type_ = Packet::MbufType::kOrigin;
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
-        if(packet->mbuf_type_ == Packet::MbufType::kDpdk) packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom;
-        else if(packet->mbuf_type_ == Packet::MbufType::kOrigin) packet_copy->data_ = packet_copy->mbuf_ + (packet->data_.Get() - packet->mbuf_);
+        switch (packet->mbuf_type_) {
+            case Packet::MbufType::kDpdk:
+                packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom;
+                break;
+            case Packet::MbufType::kOrigin:
+                packet_copy->data_ = packet_copy->mbuf_ + (packet->data_.Get() - packet->mbuf_);
+                break;
+            default:
+                throw std::runtime_error("Unkonwn packet type");
+        }
+        packet_copy->iova_ = memory::GetIova(packet_copy) + offsetof(Packet, mbuf_);
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
-        packet_copy->iova_ = memory::GetIova(packet_copy) + offsetof(Packet, mbuf_) + kPacketMbufHeadroom;
 #if defined (OMNIMEM_BACKEND_DPDK)
         rte_memcpy(packet_copy->data_.Get(), packet->data_.Get(), packet->length_);
 #else 

@@ -270,34 +270,15 @@ namespace omnistack::io_module::dpdk {
 
     static_assert(sizeof(common::EthernetHeader) == 14);
     void DpdkSendQueue::SendPacket(packet::Packet* packet) {
-        auto iova_addr = memory::GetIova(packet);
+        auto iova_addr = packet->GetIova();
         auto cur_mbuf = buffer_[index_++];
         if (iova_addr != 0) [[likely]] {
             struct rte_mbuf_ext_shared_info* shared_info = rte_pktmbuf_mtod(cur_mbuf, struct rte_mbuf_ext_shared_info*);
             shared_info->free_cb = FreePacket;
             shared_info->fcb_opaque = packet;
             rte_mbuf_ext_refcnt_set(shared_info, 1);
-            auto orig_packet = packet;
-            if (packet->mbuf_type_ == packet::Packet::MbufType::kIndirect) [[likely]] {
-                packet = reinterpret_cast<packet::Packet*>(packet->root_packet_.Get());
-            }
-            switch (orig_packet->mbuf_type_) {
-                case packet::Packet::MbufType::kDpdk: {
-                    auto root_mbuf = reinterpret_cast<struct rte_mbuf*>(orig_packet->root_packet_.Get());
-                    auto iova = rte_pktmbuf_iova(root_mbuf) + (orig_packet->data_.Get() - rte_pktmbuf_mtod(root_mbuf, char*)) + packet->offset_;
-                    rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
-                        iova, packet->length_ - packet->offset_, shared_info);
-                    break;
-                }
-                case packet::Packet::MbufType::kOrigin: {
-                    auto iova = packet->iova_ + (packet->data_.Get() - packet->mbuf_) + packet->offset_;
-                    rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
-                        iova, packet->length_ - packet->offset_, shared_info);
-                    break;
-                }
-                default:
-                    throw std::runtime_error("Unknown packet mbuf type");
-            }
+            rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
+                iova_addr, packet->length_ - packet->offset_, shared_info);
         }
 
         cur_mbuf->pkt_len = cur_mbuf->data_len = packet->length_ - packet->offset_;
