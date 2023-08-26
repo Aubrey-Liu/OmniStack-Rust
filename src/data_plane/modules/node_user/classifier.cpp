@@ -155,7 +155,7 @@ namespace omnistack::data_plane::classifier {
                 break;
             }
             case ETH_PROTO_TYPE_IPV6: {
-                memory::MemoryPool::PutBack(packet);
+                packet->Release();
                 return nullptr;
             }
             default:
@@ -219,7 +219,7 @@ namespace omnistack::data_plane::classifier {
             }
             entry = reinterpret_cast<PacketEntry*>(node_table_->Lookup(&tmp_info, tmp_info.GetHash()));
             if (entry == nullptr) [[unlikely]] {
-                memory::MemoryPool::PutBack(packet);
+                packet->Release();
                 return nullptr;
             }
             is_determined = false;

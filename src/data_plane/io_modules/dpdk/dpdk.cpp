@@ -265,7 +265,7 @@ namespace omnistack::io_module::dpdk {
     }
 
     static void FreePacket(void* addr, void* packet) {
-        memory::MemoryPool::PutBack((packet::Packet*)packet);
+        reinterpret_cast<packet::Packet*>(packet)->Release();
     }
 
     static_assert(sizeof(common::EthernetHeader) == 14);
