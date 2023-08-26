@@ -29,9 +29,10 @@
 #if defined (OMNIMEM_BACKEND_DPDK)
 #include <rte_eal.h>
 #include <rte_malloc.h>
-#include <numa.h>
 #include <rte_mempool.h>
 #endif
+
+#include <numa.h>
 
 static inline
 int readAll(int sockfd, char* buf, size_t len, const bool* stopped = nullptr) {

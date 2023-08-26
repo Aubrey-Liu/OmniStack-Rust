@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <map>
+#include <mutex>
 
 #if defined(OMNIMEM_BACKEND_DPDK)
 #include <rte_hash.h>
@@ -14,7 +15,6 @@
 #include <smmintrin.h>
 #include <algorithm>
 #include <cstring>
-#include <mutex>
 #include <omnistack/common/hash.hpp>
 #endif
 
@@ -29,7 +29,7 @@ namespace omnistack::hashtable {
             typedef uint32_t HashValue;
             typedef std::function<void(const void* key, void* value, void* param)> ForeachCallback;
 
-            static Hashtable* Create(uint32_t max_entries, uint32_t key_len, bool need_lock = true);
+            static Hashtable* Create(uint32_t max_entries, uint32_t key_len);
             static Hashtable* Create(const std::string& name, uint32_t max_entries, uint32_t key_len);
         
             static void Destroy(Hashtable* hashtable);
@@ -81,31 +81,26 @@ namespace omnistack::hashtable {
 
             rte_hash* hash_table_;
             uint32_t key_len_;
+
+            static inline std::map<std::string, Hashtable*> hashtable_map_;
+            static inline std::mutex create_lock_;
+            static inline std::mutex anoy_create_lock_;
         };
 
-        extern pthread_once_t init_once_flag;
-        extern pthread_spinlock_t create_spinlock;
-        extern std::map<std::string, Hashtable*> hashtable_map;
-        void InitOnce();
-
         inline Hashtable* Hashtable::Create(const std::string& name, uint32_t max_entries, uint32_t key_len) {
-            pthread_once(&init_once_flag, InitOnce);
-            pthread_spin_lock(&create_spinlock);
-            if (hashtable_map.count(name)) {
-                auto hashtable = hashtable_map[name];
-                pthread_spin_unlock(&create_spinlock);
+            std::unique_lock<std::mutex> lock(create_lock_);
+            if (hashtable_map_.count(name)) {
+                auto hashtable = hashtable_map_[name];
                 return hashtable;
             }
-            auto hashtable = Hashtable::Create(max_entries, key_len, false);
-            hashtable_map[name] = hashtable;
-            pthread_spin_unlock(&create_spinlock);
+            auto hashtable = Hashtable::Create(max_entries, key_len);
+            hashtable_map_[name] = hashtable;
             return hashtable;
         }
 
-        inline Hashtable* Hashtable::Create(uint32_t max_entries, uint32_t key_len, bool need_lock) {
+        inline Hashtable* Hashtable::Create(uint32_t max_entries, uint32_t key_len) {
+            std::unique_lock<std::mutex> lock(anoy_create_lock_);
             auto hashtable = new Hashtable();
-            pthread_once(&init_once_flag, InitOnce);
-            if (need_lock) pthread_spin_lock(&create_spinlock);
             rte_hash_parameters params{};
             if(max_entries == 0) max_entries = kDefaultHashtableSize;
             params.entries = max_entries;
@@ -120,7 +115,6 @@ namespace omnistack::hashtable {
             sprintf(name, "hashtable_%d", name_id++);
             params.name = name;
             hashtable->hash_table_ = rte_hash_create(&params);
-            if (need_lock) pthread_spin_unlock(&create_spinlock);
             return hashtable;
         }
 
@@ -189,6 +183,19 @@ namespace omnistack::hashtable {
                 }
                 ret->key_len_ = key_len;
                 return ret;
+            }
+
+            static inline std::mutex create_lock_;
+            static inline std::map<std::string, Hashtable*> hashtable_map_;
+            inline static Hashtable* Create(const std::string& name, uint32_t max_entries, uint32_t key_len) {
+                std::unique_lock<std::mutex> lock(create_lock_);
+                if (hashtable_map_.count(name)) {
+                    auto hashtable = hashtable_map_[name];
+                    return hashtable;
+                }
+                auto hashtable = Create(max_entries, key_len);
+                hashtable_map_[name] = hashtable;
+                return hashtable;
             }
         
             inline static void Destroy(Hashtable* hashtable) {

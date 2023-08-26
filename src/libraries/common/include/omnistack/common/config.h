@@ -161,11 +161,18 @@ namespace omnistack {
                     for (auto module : root["modules"])
                         modules_.emplace_back(module.asString());
                 }
-                if (!root["links"].isNull()) {
-                    for (auto link : root["links"]) {
-                        std::string src, dst;
-                        REQUIRED_STR(link, "src", src);
-                        REQUIRED_STR(link, "dst", dst);
+                if (!root["edges"].isNull()) {
+                    for (auto link : root["edges"]) {
+                        if (link[0].isNull() || !link[0].isString()) {
+                            std::cerr << ("Link source is not a string");
+                            exit(1);
+                        }
+                        if (link[1].isNull() || !link[1].isString()) {
+                            std::cerr << ("Link destination is not a string");
+                            exit(1);
+                        }
+                        std::string src = link[0].asString();
+                        std::string dst = link[1].asString();
                         links_.emplace_back(std::make_pair(src, dst));
                     }
                 }
@@ -210,6 +217,8 @@ namespace omnistack {
         private:
             static std::map<std::string, StackConfig*> stack_configs_;
             static std::map<std::string, GraphConfig*> graph_configs_;
+
+            ConfigManager() {}
         };
     }
 }
