@@ -31,8 +31,8 @@ namespace omnistack {
         channel::InitializeSubsystem();
     }
 
-    static inline void InitializeNode() {
-        node::StartControlPlane(node::GetNumNodeUser());
+    static inline void InitializeNode(int num_graph) {
+        node::StartControlPlane(num_graph);
         node::InitializeSubsystem();
     }
 
@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
     omnistack::InitializeMemory();
     omnistack::InitializeToken();
     omnistack::InitializeChannel();
-    omnistack::InitializeNode();
+    omnistack::InitializeNode(stack_config.GetGraphEntries().size());
 
     std::cerr << "[OmniStack] libraries initialized\n";
 
