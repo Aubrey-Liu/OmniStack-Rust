@@ -1215,6 +1215,15 @@ namespace omnistack::memory {
             throw std::runtime_error("Failed to free shared memory");
     }
 
+    RegionMeta* MemoryPool::GetChunkMeta() {
+#if defined(OMNIMEM_BACKEND_DPDK)
+        auto meta = reinterpret_cast<RegionMeta*>(region_ptr_);
+#else
+        auto meta = reinterpret_cast<RegionMeta*>(virt_base_addrs[process_id] + region_offset_);
+#endif
+        return meta;
+    }
+
     void MemoryPool::Put(void* ptr) {
         auto real_ptr = reinterpret_cast<uint8_t*>(ptr) - kMetaHeadroomSize;
         auto cache = local_free_cache_[thread_id];
@@ -1350,9 +1359,6 @@ namespace omnistack::memory {
     MemoryPool* AllocateMemoryPool(const std::string& name, size_t chunk_size, size_t chunk_count) {
         local_rpc_request.type = RpcRequestType::kGetMemoryPool;
         if (name.length() >= kMaxNameLength) throw std::runtime_error("Name too long");
-#if defined(OMNIMEM_BACKEND_DPDK)
-        if (name.length() >= RTE_MEMPOOL_NAMESIZE) throw std::runtime_error("Name too long");
-#endif
         local_rpc_request.get_memory_pool.chunk_size = chunk_size;
         local_rpc_request.get_memory_pool.chunk_count = chunk_count;
         local_rpc_request.get_memory_pool.thread_id = thread_id;
