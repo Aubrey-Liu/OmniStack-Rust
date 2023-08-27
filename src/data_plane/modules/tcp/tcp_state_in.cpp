@@ -518,7 +518,7 @@ namespace omnistack::data_plane::tcp_state_in {
         for(auto son : downstream_nodes_) {
             if(son.module_type == ConstCrc32("TcpSend")) tcp_send_mask |= son.filter_mask;
             else if(son.module_type == ConstCrc32("TcpDataIn")) tcp_data_in_mask |= son.filter_mask;
-            else if(son.module_type == ConstCrc32("Ipv4Send")) ipv4_send_mask |= son.filter_mask;
+            else if(son.module_type == ConstCrc32("Ipv4Sender")) ipv4_send_mask |= son.filter_mask;
         }
         next_hop_filter_mask_send_ = ~(tcp_data_in_mask | ipv4_send_mask);
         next_hop_filter_mask_data_ = ~(tcp_send_mask | ipv4_send_mask);
