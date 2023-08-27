@@ -14,7 +14,7 @@ namespace omnistack {
     namespace memory {
         constexpr uint64_t kMetaHeadroomSize = 64;
         constexpr uint64_t kMaxTotalAllocateSize = 16ll * 1024 * 1024 * 1024;
-        constexpr uint64_t kMaxNameLength = 64;
+        constexpr uint64_t kMaxNameLength = 128;
         constexpr int kMaxProcess = 1024;
         constexpr int kMaxThread = 8192;
         constexpr int kMaxControlPlane = 8;

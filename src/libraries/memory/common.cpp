@@ -1359,9 +1359,6 @@ namespace omnistack::memory {
     MemoryPool* AllocateMemoryPool(const std::string& name, size_t chunk_size, size_t chunk_count) {
         local_rpc_request.type = RpcRequestType::kGetMemoryPool;
         if (name.length() >= kMaxNameLength) throw std::runtime_error("Name too long");
-#if defined(OMNIMEM_BACKEND_DPDK)
-        if (name.length() >= RTE_MEMPOOL_NAMESIZE) throw std::runtime_error("Name too long");
-#endif
         local_rpc_request.get_memory_pool.chunk_size = chunk_size;
         local_rpc_request.get_memory_pool.chunk_count = chunk_count;
         local_rpc_request.get_memory_pool.thread_id = thread_id;
