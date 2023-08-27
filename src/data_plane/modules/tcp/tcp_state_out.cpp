@@ -111,7 +111,7 @@ namespace omnistack::data_plane::tcp_state_out {
         flow->state_ = TcpFlow::State::kClosed;
     }
 
-    Packet* TcpStateOut::OnConnect(Event* event) {
+    inline Packet* TcpStateOut::OnConnect(Event* event) {
         auto tcp_event = static_cast<TcpEventConnect*>(event);
         uint32_t local_ip = tcp_event->local_ipv4_;
         uint32_t remote_ip = tcp_event->remote_ipv4_;
@@ -137,7 +137,7 @@ namespace omnistack::data_plane::tcp_state_out {
         return packet;
     }
 
-    Packet* TcpStateOut::OnDisconnect(Event* event) {
+    inline Packet* TcpStateOut::OnDisconnect(Event* event) {
         auto tcp_event = static_cast<TcpEventDisconnect*>(event);
         uint32_t local_ip = tcp_event->local_ipv4_;
         uint32_t remote_ip = tcp_event->remote_ipv4_;

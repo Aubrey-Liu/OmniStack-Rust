@@ -81,6 +81,10 @@ namespace omnistack {
                     for (auto graph : root["graphs"])
                         graphs_.emplace_back(GraphEntry(graph));
                 }
+                if(!root["dynamic_links"].isNull()) {
+                    for(auto dynamic_link : root["dynamic_links"])
+                        dynamic_links_.emplace_back(DynamicLinkEntry(dynamic_link));
+                }
             }
 
             struct NicConfig {
@@ -140,18 +144,32 @@ namespace omnistack {
                     ipv4_raw_ = inet_addr(ipv4_.c_str());
                 }
             };
+            struct DynamicLinkEntry {
+                std::string directory;
+                std::vector<std::string> library_names;
+
+                DynamicLinkEntry(Json::Value root) {
+                    REQUIRED_STR(root, "directory", directory);
+                    if (!root["libraries"].isNull()) {
+                        for (auto library : root["libraries"])
+                            library_names.emplace_back(library.asString());
+                    }
+                }
+            };
 
             inline const std::vector<GraphEntry>& GetGraphEntries() const {return graphs_;}
             inline const std::vector<NicConfig>& GetNicConfigs() const {return nics_;}
             inline const std::vector<ArpEntry>& GetArpEntries() const {return arps_;}
             inline const std::vector<RouteEntry>& GetRouteEntries() const {return routes_;}
-            
+            inline const std::vector<DynamicLinkEntry>& GetDynamicLinkEntries() const {return dynamic_links_;}
+
         private:
             std::string name_;
             std::vector<NicConfig> nics_;
             std::vector<ArpEntry> arps_;
             std::vector<RouteEntry> routes_;
             std::vector<GraphEntry> graphs_;
+            std::vector<DynamicLinkEntry> dynamic_links_;
         };
 
         struct GraphConfig {

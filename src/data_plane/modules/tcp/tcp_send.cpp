@@ -17,10 +17,6 @@ namespace omnistack::data_plane::tcp_send {
 
         Filter GetFilter(uint32_t upstream_module, uint32_t global_id) override { return DefaultFilter; }
 
-        Packet* EventCallback(Event* event) override;
-
-        std::vector<Event::EventType> RegisterEvents() override;
-
         Packet* MainLogic(Packet* packet) override;
 
         Packet* TimerLogic(uint64_t tick) override;
@@ -36,8 +32,6 @@ namespace omnistack::data_plane::tcp_send {
         constexpr uint32_t max_burst_() override { return 1; }
     
     private:
-        Packet* OnFastRetransmission(Event* event);
-
         struct FlowTimer {
             TcpFlow* flow;
             Packet* control_packet;
@@ -104,7 +98,7 @@ namespace omnistack::data_plane::tcp_send {
         // ipv4->dst = flow->remote_ip_;
 
         return packet;
-    }
+    } 
 
     Packet* TcpSend::MainLogic(Packet* packet) {
         auto flow = reinterpret_cast<TcpFlow*>(packet->custom_value_);

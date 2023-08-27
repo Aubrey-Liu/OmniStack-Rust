@@ -25,13 +25,13 @@ namespace omnistack::data_plane::io_node {
         Packet* TimerLogic(uint64_t tick) override;
     
     private:
-        static std::once_flag driver_init_flag_;
-        static io::BaseIoAdapter* adapters_[kMaxAdapters];
-        static io::IoRecvQueue* recv_queues_[kMaxAdapters];
-        static io::IoSendQueue* send_queues_[kMaxAdapters];
-        static int num_adapters_;
-        static int num_initialized_port_;
-        static std::mutex initialized_port_mutex_;
+        inline static std::once_flag driver_init_flag_;
+        inline static io::BaseIoAdapter* adapters_[kMaxAdapters];
+        inline static io::IoRecvQueue* recv_queues_[kMaxAdapters];
+        inline static io::IoSendQueue* send_queues_[kMaxAdapters];
+        inline static int num_adapters_;
+        inline static int num_initialized_port_;
+        inline static std::mutex initialized_port_mutex_;
         
         int id_;
         packet::PacketPool* packet_pool_;

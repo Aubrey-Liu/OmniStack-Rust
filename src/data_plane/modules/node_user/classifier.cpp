@@ -61,13 +61,13 @@ namespace omnistack::data_plane::classifier {
     private:
         hashtable::Hashtable* node_table_;
 
-        static std::mutex init_lock_;
-        static int num_classifier_;
+        inline static std::mutex init_lock_;
+        inline static int num_classifier_;
         int id_;
 
         PacketEntry* flow_table_[kFlowHashEntries];
         int flow_table_counter_[kFlowHashEntries];
-        static memory::MemoryPool* entry_pool_;
+        inline static memory::MemoryPool* entry_pool_;
         
         void CleanUpEntry(node::NodeInfo& key);
         inline void DecRefEntry(PacketEntry* entry);
