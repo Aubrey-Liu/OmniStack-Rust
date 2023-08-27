@@ -269,7 +269,7 @@ namespace omnistack::io_module::ef_vi {
     }
 
     int EFVIAdapter::AcqurieNumAdapters() {
-        return -1;
+        return -1; // efvi
     }
 
     void EFVIAdapter::InitializeAdapter(int port_id, int num_queues) {
