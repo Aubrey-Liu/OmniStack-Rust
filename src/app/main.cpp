@@ -4,10 +4,13 @@
 #include <omnistack/common/thread.hpp>
 #include <omnistack/common/dynamic_link.hpp>
 #include <omnistack/memory/memory.h>
+#include <omnistack/common/logger.h>
 #include <omnistack/token/token.h>
 #include <omnistack/node.h>
 #include <omnistack/engine/engine.hpp>
 #include <csignal>
+
+using namespace omnistack::common;
 
 namespace omnistack {
 
@@ -82,13 +85,16 @@ namespace omnistack {
 }
 
 int main(int argc, char **argv) {
+    /* 0. Initialize Logger */
+    omnistack::common::Logger::Initialize(std::cerr, "log/log");
+
     /* 1. load configurations */
     omnistack::config::ConfigManager::LoadFromDirectory("../../config");
     omnistack::config::ConfigManager::LoadFromDirectory("../../graph_config");
     std::string config_name = argc > 1 ? argv[1] : "config";
     auto stack_config = omnistack::config::ConfigManager::GetStackConfig(config_name);
 
-    std::cerr << "[OmniStack] config loaded\n";
+    OMNI_LOG(omnistack::common::kInfo) << "Stack config loaded\n";
 
     /* 2. init libraries */
     omnistack::InitializeMemory();
@@ -96,7 +102,7 @@ int main(int argc, char **argv) {
     omnistack::InitializeChannel();
     omnistack::InitializeNode(stack_config.GetGraphEntries().size());
 
-    std::cerr << "[OmniStack] libraries initialized\n";
+    OMNI_LOG(omnistack::common::kInfo) << "Libraries initialized\n";
 
     /* 3. load dynamic link libraries */
     auto dynamic_links = stack_config.GetDynamicLinkEntries();
@@ -106,7 +112,7 @@ int main(int argc, char **argv) {
         omnistack::common::DynamicLink::Load(directory, library_names);
     }
 
-    std::cerr << "[OmniStack] dynamic link libraries loaded\n";
+    OMNI_LOG(omnistack::common::kInfo) << "Dynamic link libraries loaded\n";
 
     /* 4. create graphs, directly using graph config at present, each graph has only one subgraph */
     std::vector<omnistack::data_plane::Graph*> graphs;
@@ -123,7 +129,7 @@ int main(int argc, char **argv) {
         sub_graph_cpus.push_back(cpus[0]);
     }
 
-    std::cerr << "[OmniStack] graphs created\n";
+    OMNI_LOG(kInfo) << "Graphs created\n";
 
     /* 5. create engines */
     std::vector<omnistack::data_plane::EngineCreateInfo> engine_create_infos;
@@ -136,7 +142,7 @@ int main(int argc, char **argv) {
         auto ret = omnistack::common::CreateThread(&omnistack::engine_threads[info.engine_id], omnistack::EngineThreadEntry, &info);
     }
 
-    std::cerr << "[OmniStack] engines created\n";
+    OMNI_LOG(kInfo) << "Engines created\n";
 
     /* 6. register sigint handler */
     signal(SIGINT, omnistack::SigintHandler);
