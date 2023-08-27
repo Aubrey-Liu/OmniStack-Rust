@@ -2,22 +2,20 @@
     "type": "Graph",
     "name": "UDP_COMMON",
     "modules": [
-        "classifier_nic",   "com_nic_out",      "classifier_main",
-        "ethernet_in",      "ethernet_out",     "ipv4_in",
-        "ipv4_out",         "classifier_udp",   "udp_out",
-        "arp_out",          "com_user"
+        "IoNode",       "NodeClassifier",   "NodeUser",
+        "EthSender",    "EthRecver",        "Ipv4Sender",
+        "Ipv4Recver",   "UdpSender",        "UdpRecver"
     ],
     "edges": [
-        ["classifier_nic", "ethernet_in"],
-        ["ethernet_in", "ipv4_in"],
-        ["ipv4_in", "classifier_udp"],
-        ["classifier_udp", "classifier_main"],
-        ["classifier_main", "com_user"],
-        ["com_user", "udp_out"],
-        ["udp_out", "ipv4_out"],
-        ["ipv4_out", "arp_out"],
-        ["arp_out", "ethernet_out"],
-        ["ethernet_out", "com_nic_out"]
+        ["IoNode",          "EthRecver"],
+        ["EthRecver",       "Ipv4Recver"],
+        ["Ipv4Recver",      "UdpRecver"],
+        ["UdpRecver",       "NodeClassifier"],
+        ["NodeClassifier",  "NodeUser"],
+        ["NodeUser",        "UdpSender"],
+        ["UdpSender",       "Ipv4Sender"],
+        ["Ipv4Sender",      "EthSender"],
+        ["EthSender",       "IoNode"]
     ],
     "groups": []
 }

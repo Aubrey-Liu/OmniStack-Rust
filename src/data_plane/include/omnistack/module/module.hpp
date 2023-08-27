@@ -96,8 +96,10 @@ namespace omnistack::data_plane {
 
     protected:
         struct FilterGroup {
-            std::vector<Filter> filters;
-            std::vector<uint32_t> filter_masks;
+            /* indexed by index in downstream_filters_ */
+            std::vector<uint32_t> filter_masks_true;
+            std::vector<uint32_t> filter_masks_false;
+            std::vector<uint32_t> filter_idx;   /* index in downstream_filters_ */
             uint32_t universe_mask;
             FilterGroupType type;
         };
@@ -113,6 +115,7 @@ namespace omnistack::data_plane {
         */
         std::function<void(Event* event)> raise_event_;
         std::vector<FilterGroup> filter_groups_;
+        std::vector<Filter> downstream_filters_;
         std::vector<std::pair<uint32_t, uint32_t>> upstream_nodes_;
         std::vector<DownstreamInfo> downstream_nodes_;
     };
@@ -125,17 +128,21 @@ namespace omnistack::data_plane {
             if(group.type == FilterGroupType::kMutex) [[likely]] {
                 do {
                     auto idx = std::countr_zero(cantidate);
-                    if(group.filters[idx](packet)) [[likely]] {
-                        mask &= group.filter_masks[idx];
+                    if(downstream_filters_[idx](packet)) [[likely]] {
+                        mask &= group.filter_masks_true[idx];
                         break;
                     }
-                    else cantidate ^= (1 << idx);
+                    else {
+                        mask &= group.filter_masks_false[idx];
+                        cantidate &= group.filter_masks_false[idx];
+                    }
                 } while(cantidate);
-                auto idx = std::countr_zero(cantidate);
             }
             else {
-                auto idx = packet->flow_hash_ % group.filters.size();
-                mask &= group.filter_masks[idx];
+                auto idx = packet->flow_hash_ % group.filter_idx.size();
+                idx = group.filter_idx[idx];
+                if(downstream_filters_[idx](packet)) [[likely]] mask &= group.filter_masks_true[idx];
+                else mask &= group.filter_masks_false[idx];
             }
         }
     }

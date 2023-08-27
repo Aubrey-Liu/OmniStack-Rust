@@ -134,7 +134,6 @@ namespace omnistack::data_plane {
                 std::vector<uint32_t> filter_masks;
                 std::vector<std::set<uint32_t>> groups;
                 std::vector<BaseModule::FilterGroupType> group_types;
-                uint32_t assigned_id = 0;
 
                 modules.reserve(downstream_links_[u].size());
                 filters.reserve(downstream_links_[u].size());
@@ -160,7 +159,6 @@ namespace omnistack::data_plane {
                             auto v = global_to_local[global_idv];
                             groups.rbegin()->insert(local_to_idx[v]);
                         }
-                        assigned_id ++;
                     }
 
                 auto& equal_links = sub_graph.equal_links_;
@@ -172,7 +170,6 @@ namespace omnistack::data_plane {
                             auto v = global_to_local[global_idv];
                             groups.rbegin()->insert(local_to_idx[v]);
                         }
-                        assigned_id ++;
                     }
 
                 modules_[u]->RegisterDownstreamFilters(modules, filters, filter_masks, groups, group_types);
