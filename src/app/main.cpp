@@ -10,6 +10,8 @@
 #include <omnistack/engine/engine.hpp>
 #include <csignal>
 
+using namespace omnistack::common;
+
 namespace omnistack {
 
     static inline void InitializeMemory() {
@@ -127,7 +129,7 @@ int main(int argc, char **argv) {
         sub_graph_cpus.push_back(cpus[0]);
     }
 
-    std::cerr << "[OmniStack] graphs created\n";
+    OMNI_LOG(kInfo) << "Graphs created\n";
 
     /* 5. create engines */
     std::vector<omnistack::data_plane::EngineCreateInfo> engine_create_infos;
@@ -140,7 +142,7 @@ int main(int argc, char **argv) {
         auto ret = omnistack::common::CreateThread(&omnistack::engine_threads[info.engine_id], omnistack::EngineThreadEntry, &info);
     }
 
-    std::cerr << "[OmniStack] engines created\n";
+    OMNI_LOG(kInfo) << "Engines created\n";
 
     /* 6. register sigint handler */
     signal(SIGINT, omnistack::SigintHandler);

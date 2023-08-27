@@ -7,6 +7,7 @@
 
 #include <dlfcn.h>
 #include <omnistack/common/hash.hpp>
+#include <omnistack/common/logger.h>
 #include <string>
 #include <vector>
 #include <map>
@@ -35,10 +36,10 @@ namespace omnistack::common {
         static void* LoadDynamicLibrary(const std::string& path) {
             auto handle = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
             if(handle == nullptr) {
-                std::cerr << "[OmniStack] Failed to load dynamic library " << path << std::endl;
-                std::cerr << dlerror() << std::endl;
+                OMNI_LOG(kError) << "Failed to load dynamic library " << path << "\n";
+                OMNI_LOG(kError) << dlerror() << "\n";
             }
-            else std::cout << "[OmniStack] Loaded dynamic library " << path << std::endl;
+            else OMNI_LOG(kInfo) << "Loaded dynamic library " << path << "\n";
             return handle;
         }
 
