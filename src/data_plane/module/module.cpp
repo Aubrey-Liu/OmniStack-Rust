@@ -12,6 +12,7 @@ namespace omnistack::data_plane {
                                                const std::vector<std::set<uint32_t>> &groups,
                                                const std::vector<FilterGroupType> &group_types) {
         downstream_nodes_.resize(modules.size());
+        downstream_filters_.resize(modules.size());
         for(int i = 0; i < modules.size(); i ++) {
             auto& [type, id] = modules[i];
             downstream_nodes_[i].module_type = type;

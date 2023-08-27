@@ -19,10 +19,10 @@ namespace omnistack::data_plane {
 
     SubGraph::SubGraph(omnistack::data_plane::Graph &graph, uint32_t sub_graph_id) : graph_(graph), sub_graph_id_(sub_graph_id) {
         /* add nodes */
-        for(auto p : graph.node_sub_graph_ids_)
-            if(p == sub_graph_id)
-                node_ids_.push_back(p);
-
+        for(uint32_t i = 0; i < graph.node_sub_graph_ids_.size(); i ++)
+            if(graph.node_sub_graph_ids_[i] == sub_graph_id)
+                node_ids_.push_back(i);
+        
         /* add links */
         for(auto p : graph.links_) {
             auto u = p.first;

@@ -176,6 +176,7 @@ namespace omnistack::data_plane {
             auto it = module_list_.find(name);
             if(it == module_list_.end()) {
                 /* TODO: report error */
+                std::cerr << "module not found: " << name << "\n";
                 return nullptr;
             }
             return it->second();

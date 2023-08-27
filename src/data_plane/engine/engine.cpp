@@ -54,15 +54,13 @@ namespace omnistack::data_plane {
 
         /* initialize forward structure from graph info */
         {
-            packet_queue_.clear();
-
             /* create modules and init them */
             for(auto idx : sub_graph.node_ids_) {
                 auto& module_name = graph.node_names_[idx];
-                modules_.push_back(ModuleFactory::instance_().Create(common::Crc32(module_name)));
-                uint32_t module_id = modules_.size() - 1;
-                module_name_crc32_[module_id] = common::Crc32(module_name);
-                global_to_local.emplace(idx, module_id);
+                uint32_t module_id = modules_.size();
+                module_name_crc32_.emplace_back(common::Crc32(module_name));
+                modules_.emplace_back(ModuleFactory::instance_().Create(module_name_crc32_[module_id]));
+                global_to_local[idx] = module_id;
                 local_to_global.push_back(idx);
             }
 
@@ -72,8 +70,8 @@ namespace omnistack::data_plane {
 
             for(auto& link : sub_graph.local_links_) {
                 auto global_idu = link.first;
+                auto idu = global_to_local.at(global_idu);
                 for(auto global_idv : link.second) {
-                    auto idu = global_to_local.at(global_idu);
                     auto idv = global_to_local.at(global_idv);
                     downstream_links_[idu].push_back(idv);
                     upstream_links_[idv].push_back(idu);
