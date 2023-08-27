@@ -76,7 +76,7 @@ namespace omnistack {
 
         class ModuleFactory {
         public:
-            typedef std::function<std::unique_ptr<BaseIoAdapter>()> CreateFunction;
+            typedef std::function<BaseIoAdapter*()> CreateFunction;
             typedef std::function<void(BaseIoFunction* function)> IterateFunction;
 
             static ModuleFactory& instance_() {
@@ -98,13 +98,14 @@ namespace omnistack {
                     /* TODO: report error */
                     return;
                 }
-                driver_instance_list_.emplace_back(Create(name).get());
+                driver_instance_list_.emplace_back(Create(name));
             }
 
-            [[nodiscard]] std::unique_ptr<BaseIoAdapter> Create(uint32_t name) const {
+            [[nodiscard]] BaseIoAdapter* Create(uint32_t name) const {
                 auto it = driver_list_.find(name);
                 if(it == driver_list_.end()) {
                     /* TODO: report error */
+                    std::cerr << "module not found: " << name << "\n";
                     return nullptr;
                 }
                 return it->second();
@@ -112,7 +113,7 @@ namespace omnistack {
 
             void Iterate(IterateFunction func) {
                 for(auto& instance : driver_instance_list_) {
-                    func(reinterpret_cast<BaseIoFunction*>(instance));
+                    func(static_cast<BaseIoFunction*>(instance));
                 }
             }
 
@@ -126,8 +127,8 @@ namespace omnistack {
         class IoAdapter : public BaseIoAdapter {
         public:
         
-            static std::unique_ptr<BaseIoAdapter> CreateModuleObject() {
-                return std::make_unique<T>();
+            static BaseIoAdapter* CreateModuleObject() {
+                return new T();
             }
 
             constexpr uint32_t name_() override { return common::ConstCrc32(name); }

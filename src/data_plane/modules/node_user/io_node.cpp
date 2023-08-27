@@ -47,7 +47,7 @@ namespace omnistack::data_plane::io_node {
             for (int i = 0; i < 10; i ++) { /// TODO: iterate all needed nic
                 auto adapter = io::ModuleFactory::instance_().Create(common::ConstCrc32("DpdkAdapter"));
                 adapter->InitializeAdapter(i, 3); /// TODO: num of queues
-                adapters_[i] = adapter.release();
+                adapters_[i] = adapter;
             }
             num_adapters_ = 10;
         }
