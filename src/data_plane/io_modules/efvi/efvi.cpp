@@ -44,7 +44,7 @@ namespace omnistack::io_module::ef_vi {
         virtual void Start() override;
 
     private:
-        static ef_driver_handle driver_handle_;
+        inline static ef_driver_handle driver_handle_;
         ef_pd prot_domain_;
         int port_id_;
         int num_queues_;
