@@ -1215,6 +1215,15 @@ namespace omnistack::memory {
             throw std::runtime_error("Failed to free shared memory");
     }
 
+    RegionMeta* MemoryPool::GetChunkMeta() {
+#if defined(OMNIMEM_BACKEND_DPDK)
+        auto meta = reinterpret_cast<RegionMeta*>(region_ptr_);
+#else
+        auto meta = reinterpret_cast<RegionMeta*>(virt_base_addrs[process_id] + region_offset_);
+#endif
+        return meta;
+    }
+
     void MemoryPool::Put(void* ptr) {
         auto real_ptr = reinterpret_cast<uint8_t*>(ptr) - kMetaHeadroomSize;
         auto cache = local_free_cache_[thread_id];

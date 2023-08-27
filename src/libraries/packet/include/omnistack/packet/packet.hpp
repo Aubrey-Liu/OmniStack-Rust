@@ -46,6 +46,7 @@ namespace omnistack::packet {
             kOrigin,
             kDpdk,
             kIndirect,
+            kEFVI
         };
 
         /**
