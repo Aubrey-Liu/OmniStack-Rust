@@ -2,6 +2,12 @@
 #include <mutex>
 #include <omnistack/io/io_adapter.hpp>
 #include <omnistack/node/node_common.h>
+#include <omnistack/common/config.h>
+#include <omnistack/common/logger.h>
+
+namespace omnistack {
+    extern config::StackConfig* kStackConfig;
+}
 
 namespace omnistack::data_plane::io_node {
     using namespace omnistack::common;
@@ -44,12 +50,18 @@ namespace omnistack::data_plane::io_node {
                 func->InitializeDriver();
             };
             io::ModuleFactory::instance_().Iterate(init_func);
-            for (int i = 0; i < 10; i ++) { /// TODO: iterate all needed nic
-                auto adapter = io::ModuleFactory::instance_().Create(common::ConstCrc32("DpdkAdapter"));
-                adapter->InitializeAdapter(i, 3); /// TODO: num of queues
-                adapters_[i] = adapter;
+            auto adapter_configs = kStackConfig->GetNicConfigs();
+            for (int i = 0; i < adapter_configs.size(); i ++) { /// TODO: iterate all needed nic
+                auto adapter_config = adapter_configs[i];
+                auto adapter = io::ModuleFactory::instance_().Create(common::Crc32(adapter_config.driver_name_));
+                if (adapter == nullptr) {
+                    OMNI_LOG(common::kFatal) << "Cannot find driver " << adapter_config.driver_name_ << "\n";
+                    exit(1);
+                }
+                adapter->InitializeAdapter(adapter_config.port_, kStackConfig->GetGraphEntries().size());
+                adapters_[i];
             }
-            num_adapters_ = 10;
+            num_adapters_ = adapter_configs.size();
         }
     };
 
@@ -70,10 +82,12 @@ namespace omnistack::data_plane::io_node {
             std::lock_guard<std::mutex> lock(initialized_port_mutex_);
             num_initialized_port_ ++;
 
-            if (num_initialized_port_ == 3) { /// TODO: set number of queues
+            if (num_initialized_port_ == kStackConfig->GetGraphEntries().size()) { /// TODO: set number of queues
                 for (int i = 0; i < num_adapters_; i ++) {
                     adapters_[i]->Start();
                 }
+
+                OMNI_LOG(common::kInfo) << "All NIC initialized and started\n";
             }
         }
     }

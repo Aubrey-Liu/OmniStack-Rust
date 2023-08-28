@@ -1,0 +1,33 @@
+{
+    "type": "Graph",
+    "name": "TCP_DEBUG",
+    "modules": [
+        "IoNode",       "NodeClassifier",   "NodeUser",
+        "EthSender",    "EthRecver",        "Ipv4Sender",
+        "Ipv4Recver",   "TcpParser",        "TcpFlowCacheIn",
+        "TcpStateIn",   "TcpDataIn",        "TcpFlowCacheOut",
+        "TcpStateOut",  "TcpSend"
+    ],
+    "edges": [
+        ["IoNode",          "EthRecver"],
+        ["EthRecver",       "Ipv4Recver"],
+        ["Ipv4Recver",      "TcpParser"],
+        ["TcpParser",       "NodeClassifier"],
+        ["NodeClassifier",  "TcpFlowCacheIn"],
+        ["TcpFlowCacheIn",  "TcpStateIn"],
+        ["TcpStateIn",      "TcpDataIn"],
+        ["TcpStateIn",      "TcpSend"],
+        ["TcpStateIn",      "Ipv4Sender"],
+        ["TcpDataIn",       "Ipv4Sender"],
+        ["TcpDataIn",       "NodeUser"],
+        ["NodeUser",        "TcpFlowCacheOut"],
+        ["TcpFlowCacheOut", "TcpSend"],
+        ["TcpStateOut",     "TcpSend"],
+        ["TcpSend",         "Ipv4Sender"],
+        ["Ipv4Sender",      "EthSender"],
+        ["EthSender",       "IoNode"]
+    ],
+    "groups": [
+        [6, 7, 8], [9, 10]
+    ]
+}

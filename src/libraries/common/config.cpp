@@ -1,4 +1,5 @@
 #include <omnistack/common/config.h>
+#include <omnistack/common/logger.h>
 #include <filesystem>
 #include <fstream>
 
@@ -34,36 +35,46 @@ namespace omnistack::config
             exit(1);
         }
         if (root["type"].isNull()) {
-            std::cerr << "Config file " << path << " does not have a type" << std::endl;
+            OMNI_LOG(common::kFatal) << "Config file " << path << " does not have a type\n";
             exit(1);
         }
         if (!root["type"].isString()) {
-            std::cerr << "Config file " << path << " has a non-string type" << std::endl;
+            OMNI_LOG(common::kFatal) << "Config file " << path << " has a non-string type\n";
             exit(1);
         }
         if (root["name"].isNull()) {
-            std::cerr << "Config file " << path << " does not have a name" << std::endl;
+            OMNI_LOG(common::kFatal) << "Config file " << path << " does not have a name\n";
             exit(1);
         }
         if (!root["name"].isString()) {
-            std::cerr << "Config file " << path << " has a non-string name" << std::endl;
+            OMNI_LOG(common::kFatal) << "Config file " << path << " has a non-string name\n";
             exit(1);
         }
         std::string type = root["type"].asString();
         std::string name = root["name"].asString();
         if (type == "Graph") {
+            if (graph_configs_.count(name)) {
+                OMNI_LOG(common::kFatal) << "Graph config " << name << " already exists\n";
+                exit(1);
+            }
             graph_configs_[name] = new GraphConfig(root);
+            OMNI_LOG(common::kInfo) << "Graph config " << name << " loaded\n";
         } else if (type == "Stack") {
+            if (stack_configs_.count(name)) {
+                OMNI_LOG(common::kFatal) << "Stack config " << name << " already exists\n";
+                exit(1);
+            }
             stack_configs_[name] = new StackConfig(root);
+            OMNI_LOG(common::kInfo) << "Stack config " << name << " loaded\n";
         } else {
-            std::cerr << "Config file " << path << " has an unknown type " << type << std::endl;
+            OMNI_LOG(common::kFatal) << "Config file " << path << " has an unknown type " << type << "\n";
             exit(1);
         }
     }
 
     const GraphConfig& ConfigManager::GetGraphConfig(const std::string& name) {
         if (graph_configs_.find(name) == graph_configs_.end()) {
-            std::cerr << "Graph config " << name << " not found" << std::endl;
+            OMNI_LOG(common::kFatal) << "Graph config " << name << " not found\n";
             exit(1);
         }
         return *graph_configs_[name];
@@ -71,7 +82,7 @@ namespace omnistack::config
 
     const StackConfig& ConfigManager::GetStackConfig(const std::string& name) {
         if (stack_configs_.find(name) == stack_configs_.end()) {
-            std::cerr << "Stack config " << name << " not found" << std::endl;
+            OMNI_LOG(common::kFatal) << "Stack config " << name << " not found\n";
             exit(1);
         }
         return *stack_configs_[name];

@@ -10,6 +10,7 @@
 
 #include <omnistack/packet/packet.hpp>
 #include <omnistack/common/hash.hpp>
+#include <omnistack/common/logger.h>
 
 namespace omnistack {
     namespace io {
@@ -86,16 +87,15 @@ namespace omnistack {
 
             void Register(uint32_t name, const CreateFunction& func) {
                 if(driver_list_.find(name) != driver_list_.end()) {
-                    /* TODO: report error */
-                    std::cerr << "module name conflict: " << name << "\n";
+                    OMNI_LOG(common::kFatal) << "Module name conflict: " << name << "\n";
                     return;
                 }
                 if(func == nullptr) {
-                    /* TODO: report error */
+                    OMNI_LOG(common::kFatal) << "Module create function is null: " << name << "\n";
                     return;
                 }
                 if(!driver_list_.insert(std::make_pair(name, func)).second) {
-                    /* TODO: report error */
+                    OMNI_LOG(common::kFatal) << "Module register failed: " << name << "\n";
                     return;
                 }
                 driver_instance_list_.emplace_back(Create(name));
@@ -104,8 +104,7 @@ namespace omnistack {
             [[nodiscard]] BaseIoAdapter* Create(uint32_t name) const {
                 auto it = driver_list_.find(name);
                 if(it == driver_list_.end()) {
-                    /* TODO: report error */
-                    std::cerr << "module not found: " << name << "\n";
+                    OMNI_LOG(common::kFatal) << "Module not found: " << name << "\n";
                     return nullptr;
                 }
                 return it->second();

@@ -40,7 +40,7 @@
 
 namespace omnistack::common {
 
-    std::string GetDate() {
+    static inline std::string GetDate() {
         auto now = std::chrono::system_clock::now();
         auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch());
         auto sec = static_cast<time_t>(seconds.count());
@@ -52,7 +52,7 @@ namespace omnistack::common {
         return std::string(buff, size);
     }
 
-    std::string GetDateWithMs() {
+    static inline std::string GetDateWithMs() {
         auto now = std::chrono::system_clock::now();
         auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch());
         auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) -
