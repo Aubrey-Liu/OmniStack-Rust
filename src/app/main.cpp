@@ -80,11 +80,7 @@ namespace omnistack {
     }
 
     static void SigintHandler(int sig) {
-<<<<<<< HEAD
         OMNI_LOG(kInfo) << "SIGINT received, stopping all threads\n";
-=======
-        OMNI_LOG(kInfo) << "Sigint received\n";
->>>>>>> 52300633f5a9998400ea4c95862ec3f093d45342
         for(int i = 0; i < common::kMaxThread; i ++) {
             if(stop_flag[i] != nullptr) {
                 OMNI_LOG(kInfo) << "Engine " << i << " stop flag set\n";
