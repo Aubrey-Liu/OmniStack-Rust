@@ -1055,7 +1055,7 @@ namespace omnistack::memory {
             strcpy(argv[0], "./_");
             strcpy(argv[1], "--log-level");
             strcpy(argv[2], "warning");
-            strcpy(argv[3], "--proc-type=auto");
+            strcpy(argv[3], "--proc-type=secondary");
             if (rte_eal_init(argc, argv) < 0)
                 throw std::runtime_error("Failed to init dpdk");
         }

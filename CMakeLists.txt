@@ -14,6 +14,14 @@ if (${OMNIMEM_BACKEND_DPDK})
 endif()
 pkg_search_module(JSONCPP REQUIRED jsoncpp IMPORTED_TARGET GLOBAL)
 
+include(FetchContent)
+FetchContent_Declare(
+  cli11
+  GIT_REPOSITORY git@github.com:CLIUtils/CLI11
+  GIT_TAG        v2.2.0
+)
+FetchContent_MakeAvailable(cli11)
+
 project(OmniStack)
 
 set(OMNISTACK_EXEC omnistack)

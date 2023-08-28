@@ -164,6 +164,7 @@ namespace omnistack::socket {
                     new_node_info.network.Set(addr_->sin_addr.s_addr, 0);
                     new_node_info.transport.sport = addr_->sin_port;
                     new_node_info.transport.dport = 0;
+                    cur_fd->basic_node->UpdateInfo(new_node_info);
                     return 0;
                 }
                 [[unlikely]] case FileDescriptorType::kLinux: {
@@ -241,7 +242,8 @@ namespace omnistack::socket {
                     }
 
                     if (packet != nullptr) [[likely]] {
-                        auto ret = std::min(count, static_cast<size_t>(packet->length_));
+                        auto cur_length = packet->length_ - packet->offset_;
+                        auto ret = std::min(count, static_cast<size_t>(cur_length));
     #if defined(OMNIMEM_BACKEND_DPDK)
                         rte_memcpy(buf,
                             packet->data_ + packet->offset_, ret);
@@ -249,8 +251,7 @@ namespace omnistack::socket {
                         memcpy(buf,
                             packet->data_ + packet->offset_, ret);
     #endif
-                        if (packet->length_ > ret && cur_fd->info.type == SOCK_STREAM) [[unlikely]] {
-                            packet->length_ -= ret;
+                        if (cur_length > ret && cur_fd->info.type == SOCK_STREAM) [[unlikely]] {
                             packet->offset_ += ret;
                             cur_fd->packet_cache = packet;
                         } else [[likely]] {
@@ -360,7 +361,7 @@ namespace omnistack::socket {
 
                     if (packet != nullptr) [[likely]] {
                         *packet_ = packet;
-                        return packet->length_;
+                        return packet->length_ - packet->offset_;
                     } else if (!cur_fd->blocking) [[unlikely]] {
                         errno = EWOULDBLOCK;
                         return -1;
@@ -374,8 +375,20 @@ namespace omnistack::socket {
             return 0;
         }
         packet::Packet* recv(int sockfd, int flags);
-        packet::Packet* recvfrom(int sockfd, int flags,
-                        struct sockaddr* src_addr, socklen_t* addrlen);
+        ssize_t recvfrom(int sockfd, packet::Packet** packet, int flags,
+            struct sockaddr* src_addr, socklen_t* addrlen) {
+            auto flg = read(sockfd, packet);
+            if (flg > 0 && src_addr != nullptr) {
+                auto udp_header = reinterpret_cast<common::UdpHeader*>((*packet)->GetHeaderPayload(2));
+                auto ipv4_header = reinterpret_cast<common::Ipv4Header*>((*packet)->GetHeaderPayload(1));
+                auto src_addr_ = reinterpret_cast<struct sockaddr_in*>(src_addr);
+                src_addr_->sin_family = AF_INET;
+                src_addr_->sin_addr.s_addr = ipv4_header->src;
+                src_addr_->sin_port = udp_header->sport;
+                *addrlen = sizeof(struct sockaddr_in);
+            }
+            return (*packet)->length_ - (*packet)->offset_;
+        }
         void read_over(int fd, packet::Packet* packet) {
             auto cur_fd = global_fd_list[fd];
             cur_fd->basic_node->packet_pool_->Free(packet);
@@ -399,14 +412,24 @@ namespace omnistack::socket {
                 }
                 buf->node_ = cur_fd->basic_node;
                 cur_fd->basic_node->WriteBottom(buf);
+                auto ret = buf->length_ - buf->offset_;
                 node::FlushBottom();
-                return buf->length_;
+                return ret;
             }
             errno = EINVAL;
             return -1;
         }
         // ssize_t send(int sockfd, packet::Packet* buf, int flags);
-        // ssize_t sendto(int sockfd, packet::Packet* buf, int flags,
-        //             const struct sockaddr* dest_addr, socklen_t addrlen);
+        ssize_t sendto(int sockfd, packet::Packet* buf, int flags,
+            const struct sockaddr* dest_addr, socklen_t addrlen) {
+            auto cur_fd = global_fd_list[sockfd];
+            auto cur_node = cur_fd->basic_node;
+
+            buf->peer_addr_ = *(struct sockaddr_in*)dest_addr;
+            cur_node->WriteBottom(buf);
+            auto ret = buf->length_ - buf->offset_;
+            node::FlushBottom();
+            return ret;
+        }
     }    
 }

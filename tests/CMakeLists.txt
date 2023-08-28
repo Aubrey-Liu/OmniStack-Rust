@@ -13,5 +13,6 @@ include(GoogleTest)
 
 add_subdirectory(libraries)
 add_subdirectory(data_plane)
+add_subdirectory(app)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_OLD})

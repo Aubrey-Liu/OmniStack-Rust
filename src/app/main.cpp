@@ -101,7 +101,7 @@ int main(int argc, char **argv) {
     auto stack_config = omnistack::config::ConfigManager::GetStackConfig(config_name);
     omnistack::kStackConfig = &stack_config;
 
-    OMNI_LOG(kInfo) << "Stack config loaded\n";
+    OMNI_LOG(kInfo) << "Stack config loaded" << std::endl;
 
     /* 2. init libraries */
     omnistack::InitializeMemory();
@@ -158,8 +158,14 @@ int main(int argc, char **argv) {
     OMNI_LOG(kInfo) << "Engines created\n";
 
     /* 6. register sigint handler */
-    signal(SIGINT, omnistack::SigintHandler);
-    OMNI_LOG(kInfo) << "Sigint handler registered\n";
+    {
+        auto ret = signal(SIGINT, omnistack::SigintHandler);
+        if (ret == SIG_ERR) {
+            OMNI_LOG(kError) << "Failed to register sigint handler\n";
+            exit(1);
+        } else
+            OMNI_LOG(kInfo) << "Sigint handler registered\n";
+    }
 
     /* 7. start omnistack control plane */
 

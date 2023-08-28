@@ -10,6 +10,8 @@
 #include <omnistack/common/constant.hpp>
 #include <omnistack/memory/memory.h>
 #include <stdexcept>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 #if defined (OMNIMEM_BACKEND_DPDK)
 #include <rte_mbuf.h>
@@ -74,6 +76,7 @@ namespace omnistack::packet {
 
         uint64_t iova_; // Warning : Not optimized
         Pointer<void> root_packet_; // dpdk packet use this as pointer to rte_mbuf
+        struct sockaddr_in peer_addr_; // Used for some specific cases
 
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         uint32_t upstream_node_name_;   /* identify the upstream node of current packet */
