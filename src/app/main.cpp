@@ -156,8 +156,14 @@ int main(int argc, char **argv) {
     OMNI_LOG(kInfo) << "Engines created\n";
 
     /* 6. register sigint handler */
-    signal(SIGINT, omnistack::SigintHandler);
-    OMNI_LOG(kInfo) << "Sigint handler registered\n";
+    {
+        auto ret = signal(SIGINT, omnistack::SigintHandler);
+        if (ret == SIG_ERR) {
+            OMNI_LOG(kError) << "Failed to register sigint handler\n";
+            exit(1);
+        } else
+            OMNI_LOG(kInfo) << "Sigint handler registered\n";
+    }
 
     /* 7. start omnistack control plane */
 

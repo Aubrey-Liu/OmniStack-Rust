@@ -135,6 +135,9 @@ namespace omnistack::common {
                 std::flush(*fstream_);
         }
         virtual ~LockedStream() {
+            std::flush(*stream_);
+            if (fstream_)
+                std::flush(*fstream_);
             lock_.unlock();
         }
         LockedStream(const LockedStream&) = delete;
@@ -144,9 +147,13 @@ namespace omnistack::common {
             *stream_ << value;
             if (fstream_)
                 *fstream_ << value;
-            std::flush(*stream_);
+            return *this;
+        }
+
+        LockedStream& operator<<(std::ostream& (*manipulator)(std::ostream&)) {
+            manipulator(*stream_);
             if (fstream_)
-                std::flush(*fstream_);
+                manipulator(*fstream_);
             return *this;
         }
     
