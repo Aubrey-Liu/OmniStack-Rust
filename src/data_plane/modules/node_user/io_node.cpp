@@ -26,6 +26,8 @@ namespace omnistack::data_plane::io_node {
 
         constexpr ModuleType type_() override { return ModuleType::kOccupy; }
 
+        constexpr uint32_t max_burst_() override { return 64; }
+
         Packet* MainLogic(Packet* packet) override;
 
         Packet* TimerLogic(uint64_t tick) override;
@@ -59,7 +61,7 @@ namespace omnistack::data_plane::io_node {
                     exit(1);
                 }
                 adapter->InitializeAdapter(adapter_config.port_, kStackConfig->GetGraphEntries().size());
-                adapters_[i];
+                adapters_[i] = adapter;
             }
             num_adapters_ = adapter_configs.size();
         }
@@ -114,6 +116,7 @@ namespace omnistack::data_plane::io_node {
         for (int i = 0; i < num_adapters_; i ++) {
             auto pkt = recv_queues_[i]->RecvPacket();
             if (pkt != nullptr) [[likely]] {
+                OMNI_LOG(kDebug) << "Recv packet from nic " << i << "\n";
                 return pkt;
             }
         }

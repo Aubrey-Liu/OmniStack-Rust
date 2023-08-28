@@ -175,7 +175,6 @@ namespace omnistack::packet {
     }
 
     inline void PacketPool::Free(Packet* packet) {
-        printf("free packet\n");
         memory::MemoryPool::PutBack(packet);
     }
 

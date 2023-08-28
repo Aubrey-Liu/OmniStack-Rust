@@ -19,7 +19,7 @@ namespace omnistack::data_plane {
         uint32_t engine_id;
         SubGraph* sub_graph;
         uint32_t logic_core;
-        std::string_view name_prefix;
+        std::string name_prefix;
     };
 
     class Engine {
@@ -31,8 +31,6 @@ namespace omnistack::data_plane {
         static void Destroy(Engine* engine);
 
         static void RaiseEvent(Event* event) { current_engine_->HandleEvent(event); }
-
-        static void SigintHandler(int sig) { stop_ = true; }
 
         volatile bool* GetStopFlag() { return &stop_; }
 
