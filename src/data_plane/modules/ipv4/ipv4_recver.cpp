@@ -4,6 +4,7 @@
 
 #include <omnistack/module/module.hpp>
 #include <omnistack/common/protocol_headers.hpp>
+#include <omnistack/common/logger.h>
 
 namespace omnistack::data_plane::ipv4_recver {
 

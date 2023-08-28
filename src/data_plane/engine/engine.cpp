@@ -229,6 +229,7 @@ namespace omnistack::data_plane {
         auto forward_mask = packet->next_hop_filter_;
         if(forward_mask == 0) [[unlikely]] {
             packet->Release();
+            packet = nullptr;
             return;
         }
 

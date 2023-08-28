@@ -26,6 +26,8 @@ namespace omnistack::data_plane::io_node {
 
         constexpr ModuleType type_() override { return ModuleType::kOccupy; }
 
+        constexpr uint32_t max_burst_() override { return 64; }
+
         Packet* MainLogic(Packet* packet) override;
 
         Packet* TimerLogic(uint64_t tick) override;
@@ -114,7 +116,7 @@ namespace omnistack::data_plane::io_node {
         for (int i = 0; i < num_adapters_; i ++) {
             auto pkt = recv_queues_[i]->RecvPacket();
             if (pkt != nullptr) [[likely]] {
-                OMNI_LOG(kInfo) << "Recv packet from nic " << i << "\n";
+                OMNI_LOG(kDebug) << "Recv packet from nic " << i << "\n";
                 return pkt;
             }
         }

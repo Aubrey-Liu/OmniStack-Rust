@@ -18,6 +18,7 @@
 #include <omnistack/packet/packet.hpp>
 #include <omnistack/module/event.hpp>
 #include <omnistack/common/constant.hpp>
+#include <omnistack/common/logger.h>
 
 namespace omnistack::data_plane {
 
@@ -87,6 +88,8 @@ namespace omnistack::data_plane {
 
         virtual constexpr uint32_t name_() { return common::ConstCrc32("BaseModule"); }
 
+        virtual constexpr std::string_view name_str_() { return "BaseModule"; }
+
         virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
 
         virtual constexpr uint32_t max_burst_() { return 0; }
@@ -130,6 +133,7 @@ namespace omnistack::data_plane {
                     auto idx = std::countr_zero(cantidate);
                     if(downstream_filters_[idx](packet)) [[likely]] {
                         mask &= group.filter_masks_true[idx];
+                        cantidate &= group.filter_masks_true[idx];
                         break;
                     }
                     else {
@@ -194,6 +198,8 @@ namespace omnistack::data_plane {
         }
 
         constexpr uint32_t name_() override { return common::ConstCrc32(name); }
+
+        constexpr std::string_view name_str_() override { return name; }
 
         struct FactoryEntry {
             FactoryEntry() {
