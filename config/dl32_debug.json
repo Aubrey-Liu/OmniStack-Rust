@@ -49,7 +49,8 @@
                 "libomni_data_plane_tcp_send.so",
                 "libomni_io_module_dpdk.so",
                 "libomni_io_module_efvi.so",
-                "libomniuser.so"
+                "libomniuser.so",
+                "libomni_data_plane_speed_test.so"
             ]
         }
     ]

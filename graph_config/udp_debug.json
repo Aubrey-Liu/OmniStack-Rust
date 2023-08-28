@@ -2,7 +2,7 @@
     "type": "Graph",
     "name": "UDP_DEBUG",
     "modules": [
-        "IoNode",
+        "IoNode",       "SpeedTest",
         "EthSender",    "EthRecver",        "Ipv4Sender",
         "Ipv4Recver",   "UdpSender",        "UdpRecver"
     ],
@@ -10,6 +10,7 @@
         ["IoNode",          "EthRecver"],
         ["EthRecver",       "Ipv4Recver"],
         ["Ipv4Recver",      "UdpRecver"],
+        ["UdpRecver",       "SpeedTest"],
         ["UdpSender",       "Ipv4Sender"],
         ["Ipv4Sender",      "EthSender"],
         ["EthSender",       "IoNode"]

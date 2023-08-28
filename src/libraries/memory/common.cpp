@@ -904,7 +904,7 @@ namespace omnistack::memory {
             for (sock_id = 0; sock_id < kMaxControlPlane; sock_id ++) {
                 sock_lock_name = std::filesystem::temp_directory_path().string() + "/omnistack_memory_sock" +
                                  std::to_string(sock_id) + ".lock";
-                sock_lock_fd = open(sock_lock_name.c_str(), O_WRONLY | O_CREAT);
+                sock_lock_fd = open(sock_lock_name.c_str(), O_WRONLY | O_CREAT, 0644);
                 if (sock_lock_fd < 0)
                     continue;
                 if (flock(sock_lock_fd, LOCK_EX | LOCK_NB)) {
