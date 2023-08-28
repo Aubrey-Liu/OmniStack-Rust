@@ -63,8 +63,8 @@ namespace omnistack {
         return graph;
     }
 
-    static pthread_t engine_threads[common::kMaxThread];
-    static volatile bool* stop_flag[common::kMaxThread];
+    static std::vector<pthread_t> engine_threads;
+    static std::vector<volatile bool*> stop_flag;
 
     static void* EngineThreadEntry(void* arg) {
         memory::InitializeSubsystemThread();
@@ -77,11 +77,12 @@ namespace omnistack {
     }
 
     static void SigintHandler(int sig) {
+        OMNI_LOG(kInfo) << "SIGINT received, stopping all threads\n";
         for(int i = 0; i < common::kMaxThread; i ++) {
             if(stop_flag[i] != nullptr)
                 *stop_flag[i] = true;
         }
-    } 
+    }
 
 }
 
@@ -140,6 +141,8 @@ int main(int argc, char **argv) {
         name += "_subgraph_0";
         engine_create_infos.emplace_back(i, sub_graphs[i], sub_graph_cpus[i], name);
     }
+    omnistack::engine_threads.resize(engine_create_infos.size());
+    omnistack::stop_flag.resize(engine_create_infos.size(), nullptr);
     for(auto& info : engine_create_infos) {
         auto ret = omnistack::common::CreateThread(&omnistack::engine_threads[info.engine_id], omnistack::EngineThreadEntry, &info);
     }

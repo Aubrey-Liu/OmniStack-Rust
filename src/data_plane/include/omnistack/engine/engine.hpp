@@ -32,8 +32,6 @@ namespace omnistack::data_plane {
 
         static void RaiseEvent(Event* event) { current_engine_->HandleEvent(event); }
 
-        static void SigintHandler(int sig) { stop_ = true; }
-
         volatile bool* GetStopFlag() { return &stop_; }
 
     private:

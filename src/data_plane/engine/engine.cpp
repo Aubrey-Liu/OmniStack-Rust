@@ -202,8 +202,6 @@ namespace omnistack::data_plane {
 
         /* TODO: initialize channels to remote engine */
 
-        /* register signal handler */
-        signal(SIGINT, SigintHandler);
     }
 
     void Engine::Destroy(Engine* engine) {
