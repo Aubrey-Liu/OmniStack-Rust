@@ -116,7 +116,6 @@ namespace omnistack::data_plane::io_node {
         for (int i = 0; i < num_adapters_; i ++) {
             auto pkt = recv_queues_[i]->RecvPacket();
             if (pkt != nullptr) [[likely]] {
-                OMNI_LOG(kDebug) << "Recv packet from nic " << i << "\n";
                 return pkt;
             }
         }
