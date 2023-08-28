@@ -26,7 +26,7 @@ namespace omnistack::data_plane::io_node {
 
         constexpr ModuleType type_() override { return ModuleType::kOccupy; }
 
-        constexpr uint32_t max_burst_() override { return 64; }
+        constexpr uint32_t max_burst_() override { return 256; }
 
         Packet* MainLogic(Packet* packet) override;
 

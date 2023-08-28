@@ -69,19 +69,13 @@ namespace omnistack::data_plane::ipv4_recver {
         packet->offset_ += ipv4.length_;
 
         // check if the packet is invalid
-        if (ipv4_header->ihl < 5 || ipv4_header->ttl == 0)
+        if (ipv4_header->ihl < 5 || ipv4_header->ttl == 0) [[unlikely]]
         {
             fprintf(ipv4_recver_log, "MainLogic: refused packet with ihl = %d, ttl = %d\n", ipv4_header->ihl, ipv4_header->ttl);
             return nullptr; // drop packet
         }
-        fprintf(ipv4_recver_log, "MainLogic: packet with id %d has survived from ihl and ttl check.\n", ipv4_header->id);
+        // fprintf(ipv4_recver_log, "MainLogic: packet with id %d has survived from ihl and ttl check.\n", ipv4_header->id);
         // due to NIC offload and upper modules, we won't collect frags or check chksum here.
-
-        /* TODO: define a set of log helper */
-#ifdef OMNI_DEBUG
-        LogIpv4Address("[Ipv4Recver] src = ", ipv4_header->src);
-        LogIpv4Address("[Ipv4Recver] dst = ", ipv4_header->dst);
-#endif
 
         return packet;
     }

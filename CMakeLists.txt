@@ -24,6 +24,8 @@ FetchContent_MakeAvailable(cli11)
 
 project(OmniStack)
 
+add_compile_options(-g)
+
 set(OMNISTACK_EXEC omnistack)
 set(OMNISTACK_USERLIB omniuser)
 

@@ -4,6 +4,7 @@
 
 #include <rte_eal.h>
 #include <rte_ethdev.h>
+#include <rte_prefetch.h>
 #include <numa.h>
 
 namespace omnistack::io_module::dpdk {
@@ -351,10 +352,12 @@ namespace omnistack::io_module::dpdk {
         }
         auto ret = packet_pool_->Allocate();
         auto cur_mbuf = buffer_[index_++];
+        auto ptr = rte_pktmbuf_mtod(cur_mbuf, char*);
+        rte_prefetch0(ptr);
+        ret->data_.Set(ptr);
         ret->mbuf_type_ = packet::Packet::MbufType::kDpdk;
         ret->length_ = cur_mbuf->pkt_len;
         ret->flow_hash_ = cur_mbuf->hash.rss;
-        ret->data_.Set(rte_pktmbuf_mtod(cur_mbuf, char*));
         ret->root_packet_.Set(cur_mbuf);
         return ret;
     }
