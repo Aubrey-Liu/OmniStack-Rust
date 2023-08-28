@@ -92,7 +92,7 @@ namespace omnistack {
 
 int main(int argc, char **argv) {
     /* 0. Initialize Logger */
-    omnistack::common::Logger::Initialize(std::cerr, "log/log");
+    Logger::Initialize(std::cerr, "log/log");
 
     /* 1. load configurations */
     omnistack::config::ConfigManager::LoadFromDirectory("../../config");
@@ -101,28 +101,28 @@ int main(int argc, char **argv) {
     auto stack_config = omnistack::config::ConfigManager::GetStackConfig(config_name);
     omnistack::kStackConfig = &stack_config;
 
-    OMNI_LOG(omnistack::common::kInfo) << "Stack config loaded\n";
+    OMNI_LOG(kInfo) << "Stack config loaded\n";
 
     /* 2. init libraries */
     omnistack::InitializeMemory();
     omnistack::InitializeToken();
-    OMNI_LOG(omnistack::common::kInfo) << "Memory and token initialized\n";
+    OMNI_LOG(kInfo) << "Memory and token initialized\n";
     omnistack::InitializeChannel();
-    OMNI_LOG(omnistack::common::kInfo) << "Channel initialized\n";
+    OMNI_LOG(kInfo) << "Channel initialized\n";
     omnistack::InitializeNode(stack_config.GetGraphEntries().size());
-    OMNI_LOG(omnistack::common::kInfo) << "Node initialized\n";
+    OMNI_LOG(kInfo) << "Node initialized\n";
 
-    OMNI_LOG(omnistack::common::kInfo) << "Libraries initialized\n";
+    OMNI_LOG(kInfo) << "Libraries initialized\n";
 
     /* 3. load dynamic link libraries */
     auto dynamic_links = stack_config.GetDynamicLinkEntries();
     for(auto& dynamic_link : dynamic_links) {
         auto& directory = dynamic_link.directory;
         auto& library_names = dynamic_link.library_names;
-        omnistack::common::DynamicLink::Load(directory, library_names);
+        DynamicLink::Load(directory, library_names);
     }
 
-    OMNI_LOG(omnistack::common::kInfo) << "Dynamic link libraries loaded\n";
+    OMNI_LOG(kInfo) << "Dynamic link libraries loaded\n";
 
     /* 4. create graphs, directly using graph config at present, each graph has only one subgraph */
     std::vector<omnistack::data_plane::Graph*> graphs;
@@ -146,13 +146,13 @@ int main(int argc, char **argv) {
     for(int i = 0; i < sub_graphs.size(); i ++) {
         std::string name(graph_names[i]);
         name += "_subgraph_0";
-        OMNI_LOG(kDebug) << "Engine prefix = " << name;
+        OMNI_LOG(kDebug) << "Engine prefix = " << name << "\n";
         engine_create_infos.emplace_back(i, sub_graphs[i], sub_graph_cpus[i], name);
     }
     omnistack::engine_threads.resize(engine_create_infos.size());
     omnistack::stop_flag.resize(engine_create_infos.size(), nullptr);
     for(auto& info : engine_create_infos) {
-        auto ret = omnistack::common::CreateThread(&omnistack::engine_threads[info.engine_id], omnistack::EngineThreadEntry, &info);
+        auto ret = CreateThread(&omnistack::engine_threads[info.engine_id], omnistack::EngineThreadEntry, &info);
     }
 
     OMNI_LOG(kInfo) << "Engines created\n";
@@ -165,7 +165,7 @@ int main(int argc, char **argv) {
 
     /* 8. join threads */
     for(int i = 0; i < engine_create_infos.size(); i ++)
-        omnistack::common::JoinThread(omnistack::engine_threads[i], nullptr);
+        JoinThread(omnistack::engine_threads[i], nullptr);
 
     return 0;
 }

@@ -1,7 +1,7 @@
 {
     "type": "Stack",
     "name": "DL32_DEBUG",
-    "nic": [
+    "nics": [
         {
             "driver_name": "Dpdk",
             "port": 1,
@@ -9,7 +9,7 @@
             "netmask": "255.255.255.0"
         }
     ],
-    "arp": [
+    "arps": [
         {
             "ipv4": "192.168.10.2",
             "mac": "00:00:00:00:00:02"

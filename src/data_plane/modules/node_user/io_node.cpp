@@ -58,8 +58,9 @@ namespace omnistack::data_plane::io_node {
                     OMNI_LOG(common::kFatal) << "Cannot find driver " << adapter_config.driver_name_ << "\n";
                     exit(1);
                 }
+                OMNI_LOG(common::kDebug) << "initialize port = " << adapter_config.port_ << "\n";
                 adapter->InitializeAdapter(adapter_config.port_, kStackConfig->GetGraphEntries().size());
-                adapters_[i];
+                adapters_[i] = adapter;
             }
             num_adapters_ = adapter_configs.size();
         }
