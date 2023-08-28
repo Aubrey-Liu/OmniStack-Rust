@@ -72,7 +72,6 @@ namespace omnistack {
         auto create_info = reinterpret_cast<data_plane::EngineCreateInfo*>(arg);
         auto engine = data_plane::Engine::Create(*create_info);
         stop_flag[create_info->engine_id] = engine->GetStopFlag();
-        OMNI_LOG(kDebug) << "Engine " << create_info->engine_id << " created, Stop ptr = " << (void*)engine->GetStopFlag() << "\n";
         engine->Run();
         OMNI_LOG(kInfo) << "Engine " << create_info->engine_id << " stopped\n";
         data_plane::Engine::Destroy(engine);
@@ -81,7 +80,7 @@ namespace omnistack {
 
     static void SigintHandler(int sig) {
         OMNI_LOG(kInfo) << "SIGINT received, stopping all threads\n";
-        for(int i = 0; i < common::kMaxThread; i ++) {
+        for(int i = 0; i < stop_flag.size(); i ++) {
             if(stop_flag[i] != nullptr) {
                 OMNI_LOG(kInfo) << "Engine " << i << " stop flag set\n";
                 *stop_flag[i] = true;
@@ -147,6 +146,7 @@ int main(int argc, char **argv) {
     for(int i = 0; i < sub_graphs.size(); i ++) {
         std::string name(graph_names[i]);
         name += "_subgraph_0";
+        OMNI_LOG(kDebug) << "Engine prefix = " << name;
         engine_create_infos.emplace_back(i, sub_graphs[i], sub_graph_cpus[i], name);
     }
     omnistack::engine_threads.resize(engine_create_infos.size());

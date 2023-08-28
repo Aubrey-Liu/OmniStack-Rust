@@ -19,7 +19,7 @@
         {
             "cpus": [0],
             "name": "General",
-            "structure": "TCP_DEBUG"
+            "structure": "UDP_DEBUG"
         }
     ],
     "routes": [

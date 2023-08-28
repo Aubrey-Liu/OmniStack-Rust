@@ -19,7 +19,7 @@ namespace omnistack::data_plane {
         uint32_t engine_id;
         SubGraph* sub_graph;
         uint32_t logic_core;
-        std::string_view name_prefix;
+        std::string name_prefix;
     };
 
     class Engine {
