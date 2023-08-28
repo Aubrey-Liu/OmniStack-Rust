@@ -177,6 +177,8 @@ namespace omnistack::common {
 
         static inline
         LockedStream Log(LogLevel level, const char* tag = nullptr, const char* position = __FILE__, const int line = __LINE__) {
+            if (!stream_)
+                stream_ = &(std::cerr);
             return LockedStream(stream_, file_, level, tag, position, line);
         }
 

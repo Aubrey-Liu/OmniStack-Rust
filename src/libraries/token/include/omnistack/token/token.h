@@ -30,7 +30,7 @@ namespace omnistack {
         };
 
         class Token;
-        void SendTokenMessage(RpcRequestType type, Token* token);
+        void SendTokenMessage(RpcRequestType type, Token* token, uint64_t thread_id);
 
         class Token {
         public:
@@ -46,14 +46,14 @@ namespace omnistack {
                 if (token != memory::thread_id) [[unlikely]]
                     return false;
                 if (need_return[memory::thread_id]) [[unlikely]] {
-                    SendTokenMessage(RpcRequestType::kReturn, this);
+                    SendTokenMessage(RpcRequestType::kReturn, this, memory::thread_id);
                     return false;
                 }
                 return true;
             }
             inline void AcquireToken() {
                 if (CheckToken()) return;
-                SendTokenMessage(RpcRequestType::kAcquire, this);
+                SendTokenMessage(RpcRequestType::kAcquire, this, memory::thread_id);
             }
         };
         
@@ -67,6 +67,8 @@ namespace omnistack {
         void ForkSubsystem();
 
         Token* CreateToken();
+
+        Token* CreateTokenForThread(uint64_t thread_id);
 
         ControlPlaneStatus GetControlPlaneStatus();
     }

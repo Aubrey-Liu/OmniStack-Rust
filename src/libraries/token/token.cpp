@@ -1,5 +1,6 @@
 #include <omnistack/token/token.h>
 #include <omnistack/memory/memory.h>
+#include <omnistack/common/logger.h>
 #include <filesystem>
 #include <thread>
 #include <mutex>
@@ -146,6 +147,7 @@ namespace omnistack::token
             cond_control_plane_started.notify_all();
         }
         memory::InitializeSubsystemThread();
+        OMNI_LOG(common::kInfo) << "Starting token control plane, thread_id = " << memory::thread_id << "\n";
         int epfd;
         constexpr int kMaxEvents = 16;
 #if defined (__APPLE__)
@@ -311,7 +313,8 @@ namespace omnistack::token
                         if (!peer_closed) {
                             switch (request.type) {
                                 case RpcRequestType::kCreateToken: {
-                                    auto token = reinterpret_cast<Token*>(memory::AllocateNamedShared("", sizeof(Token)));
+                                    auto target_thread_id = request.thread_id;
+                                    auto token = reinterpret_cast<Token*>(memory::AllocateNamedSharedForThread("", sizeof(Token), target_thread_id));
                                     if (token == nullptr)
                                         throw std::runtime_error("Failed to create token");
                                     token->token_id = 1;
@@ -501,12 +504,12 @@ namespace omnistack::token
         rpc_response_receiver = new std::thread(RpcResponseReceiver);
     }
 
-    void SendTokenMessage(RpcRequestType type, Token* token) {
+    void SendTokenMessage(RpcRequestType type, Token* token, uint64_t thread_id) {
         local_rpc_meta.cond_rpc_finished = false;
         static thread_local RpcRequest local_req;
         local_req.type = type;
         local_req.token_id = token ? token->token_id : ~0;
-        local_req.thread_id = memory::thread_id;
+        local_req.thread_id = thread_id;
 
         {
             std::unique_lock<std::mutex> _(rpc_request_lock);
@@ -535,7 +538,15 @@ namespace omnistack::token
     }
 
     Token* CreateToken() {
-        SendTokenMessage(RpcRequestType::kCreateToken, nullptr);
+        SendTokenMessage(RpcRequestType::kCreateToken, nullptr, memory::thread_id);
+        auto& resp = local_rpc_meta.resp;
+        if (resp.status != RpcResponseStatus::kSuccess)
+            throw std::runtime_error("Failed to create token");
+        return resp.new_token.token.Get();
+    }
+
+    Token* CreateTokenForThread(uint64_t thread_id) {
+        SendTokenMessage(RpcRequestType::kCreateToken, nullptr, thread_id);
         auto& resp = local_rpc_meta.resp;
         if (resp.status != RpcResponseStatus::kSuccess)
             throw std::runtime_error("Failed to create token");

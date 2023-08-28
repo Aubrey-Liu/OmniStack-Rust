@@ -6,6 +6,8 @@
 #include <omnistack/common/constant.hpp>
 #include <omnistack/common/time.hpp>
 #include <omnistack/common/cpu.hpp>
+#include <omnistack/common/logger.h>
+#include <omnistack/memory/memory.h>
 
 #include <bit>
 #include <csignal>
@@ -43,8 +45,10 @@ namespace omnistack::data_plane {
         /* bind to CPU core */
         auto ret = common::CoreAffinitize(core);
         if(ret < 0) {
-            /* TODO: report error */
+            OMNI_LOG(common::kFatal) << "Failed to bind engine to core " << core << "\n";
+            exit(1);
         }
+        memory::BindedCPU(core);
 
         /* create packet pool */
         packet_pool_ = PacketPool::CreatePacketPool(name_prefix, kDefaultPacketPoolSize);

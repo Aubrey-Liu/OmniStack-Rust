@@ -3,6 +3,7 @@
 //
 
 #include <omnistack/memory/memory.h>
+#include <omnistack/common/logger.h>
 #include <thread>
 #include <sys/mman.h>
 #include <fcntl.h>
@@ -246,12 +247,14 @@ namespace omnistack::memory {
     }
 
     static inline
-    RegionMeta* AllocateRegionMeta(size_t size, int thread_cpu, RegionType region_type = RegionType::kNamedShared) {
+    RegionMeta* AllocateRegionMeta(size_t size, int thread_cpu, uint64_t thread_id, RegionType region_type = RegionType::kNamedShared) {
         auto aligned_size = (size + kMetaHeadroomSize + 63) / 64 * 64;
 #if defined (OMNIMEM_BACKEND_DPDK)
-        auto region_meta = (RegionMeta*)rte_malloc_socket(nullptr, aligned_size, 64, (thread_cpu == -1 ? -1 : numa_node_of_cpu(
-            thread_cpu
-        )));
+        auto alloc_node = thread_cpu == -1 ? -1 : numa_node_of_cpu(thread_cpu);
+        if (alloc_node == -1) {
+            OMNI_LOG(common::kWarning) << "Cannot find numa node for thread " << thread_id << " this may cause performance issue.\n";
+        }
+        auto region_meta = (RegionMeta*)rte_malloc_socket(nullptr, aligned_size, 64, alloc_node);
         region_meta->addr = region_meta;
         region_meta->iova = rte_mem_virt2iova(region_meta) + kMetaHeadroomSize;
 #else
@@ -562,7 +565,7 @@ namespace omnistack::memory {
                                 auto region_name = std::string(rpc_request.get_memory.name);
                                 auto thread_cpu = thread_id_to_cpu[rpc_request.get_memory.thread_id];
                                 if (region_name == "" || region_name_to_meta.count(region_name) == 0) {
-                                    auto local_meta = AllocateRegionMeta(rpc_request.get_memory.size, thread_cpu);
+                                    auto local_meta = AllocateRegionMeta(rpc_request.get_memory.size, thread_cpu, rpc_request.get_memory.thread_id);
 #if !defined(OMNIMEM_BACKEND_DPDK)
                                     resp.get_memory.offset = reinterpret_cast<uint8_t*>(local_meta) - virt_shared_region;
 #else
@@ -590,7 +593,7 @@ namespace omnistack::memory {
                                 auto pool_name = std::string(rpc_request.get_memory_pool.name);
                                 auto thread_cpu = thread_id_to_cpu[rpc_request.get_memory_pool.thread_id];
                                 if (pool_name == "" || pool_name_to_meta.count(pool_name) == 0) {
-                                    RegionMeta* mempool_meta = AllocateRegionMeta(sizeof(MemoryPool), thread_cpu, RegionType::kMempool);
+                                    RegionMeta* mempool_meta = AllocateRegionMeta(sizeof(MemoryPool), thread_cpu, rpc_request.get_memory_pool.thread_id, RegionType::kMempool);
                                     used_pools.insert(mempool_meta);
 #if defined (OMNIMEM_BACKEND_DPDK)
                                     resp.get_memory_pool.addr = mempool_meta->addr;
@@ -610,7 +613,7 @@ namespace omnistack::memory {
                                     pthread_mutexattr_destroy(&init_attr);
 
                                     auto aligned_chunk_region_size = mempool->chunk_size_ * mempool->chunk_count_;
-                                    auto chunk_meta = AllocateRegionMeta(aligned_chunk_region_size, thread_cpu);
+                                    auto chunk_meta = AllocateRegionMeta(aligned_chunk_region_size, thread_cpu, rpc_request.get_memory_pool.thread_id);
 #if defined (OMNIMEM_BACKEND_DPDK)
                                     mempool->region_ptr_ = reinterpret_cast<uint8_t*>(chunk_meta);
 #else
@@ -619,7 +622,7 @@ namespace omnistack::memory {
                                     { // Allocate & Set Blocks
                                         auto block_need_allocate = (mempool->chunk_count_ + kMemoryPoolLocalCache) / kMemoryPoolLocalCache + 2 * kMaxThread + 4;
                                         auto all_block_size = block_need_allocate * sizeof(MemoryPoolBatch);
-                                        auto block_meta = AllocateRegionMeta(all_block_size, thread_cpu);
+                                        auto block_meta = AllocateRegionMeta(all_block_size, thread_cpu, rpc_request.get_memory_pool.thread_id);
 #if defined (OMNIMEM_BACKEND_DPDK)
                                         auto chunk_region_begin = mempool->region_ptr_ + kMetaHeadroomSize;
                                         mempool->batch_block_ptr_ = reinterpret_cast<uint8_t*>(block_meta);

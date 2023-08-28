@@ -23,6 +23,7 @@ namespace omnistack {
 #endif
         memory::InitializeSubsystem();
         memory::InitializeSubsystemThread();
+        memory::BindedCPU(0); // Use this to avoid warnings, This may cause performance issues ?
     }
 
     static inline void InitializeToken() {
@@ -71,16 +72,24 @@ namespace omnistack {
         auto create_info = reinterpret_cast<data_plane::EngineCreateInfo*>(arg);
         auto engine = data_plane::Engine::Create(*create_info);
         stop_flag[create_info->engine_id] = engine->GetStopFlag();
+        OMNI_LOG(kDebug) << "Engine " << create_info->engine_id << " created, Stop ptr = " << (void*)engine->GetStopFlag() << "\n";
         engine->Run();
+        OMNI_LOG(kInfo) << "Engine " << create_info->engine_id << " stopped\n";
         data_plane::Engine::Destroy(engine);
         return nullptr;
     }
 
     static void SigintHandler(int sig) {
+<<<<<<< HEAD
         OMNI_LOG(kInfo) << "SIGINT received, stopping all threads\n";
+=======
+        OMNI_LOG(kInfo) << "Sigint received\n";
+>>>>>>> 52300633f5a9998400ea4c95862ec3f093d45342
         for(int i = 0; i < common::kMaxThread; i ++) {
-            if(stop_flag[i] != nullptr)
+            if(stop_flag[i] != nullptr) {
+                OMNI_LOG(kInfo) << "Engine " << i << " stop flag set\n";
                 *stop_flag[i] = true;
+            }
         }
     }
 
@@ -102,8 +111,11 @@ int main(int argc, char **argv) {
     /* 2. init libraries */
     omnistack::InitializeMemory();
     omnistack::InitializeToken();
+    OMNI_LOG(omnistack::common::kInfo) << "Memory and token initialized\n";
     omnistack::InitializeChannel();
+    OMNI_LOG(omnistack::common::kInfo) << "Channel initialized\n";
     omnistack::InitializeNode(stack_config.GetGraphEntries().size());
+    OMNI_LOG(omnistack::common::kInfo) << "Node initialized\n";
 
     OMNI_LOG(omnistack::common::kInfo) << "Libraries initialized\n";
 
@@ -151,6 +163,7 @@ int main(int argc, char **argv) {
 
     /* 6. register sigint handler */
     signal(SIGINT, omnistack::SigintHandler);
+    OMNI_LOG(kInfo) << "Sigint handler registered\n";
 
     /* 7. start omnistack control plane */
 

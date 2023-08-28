@@ -1,6 +1,7 @@
 #include <omnistack/channel/channel.h>
 #include <omnistack/memory/memory.h>
 #include <omnistack/token/token.h>
+#include <omnistack/common/logger.h>
 #include <filesystem>
 #include <thread>
 #include <mutex>
@@ -129,6 +130,7 @@ namespace omnistack::channel {
             cond_control_plane_started.notify_all();
         }
         memory::InitializeSubsystemThread();
+        OMNI_LOG(common::kInfo) << "Channel control plane started, thread_id = " << memory::thread_id << "\n";
         int epfd;
         constexpr int kMaxEvents = 16;
 #if defined (__APPLE__)
@@ -242,18 +244,19 @@ namespace omnistack::channel {
                         switch (request.type) {
                             case RpcRequestType::kGetChannel: {
                                 auto name = std::string(request.get_channel.name);
+                                auto thread_id = request.get_channel.thread_id;
                                 if (name.length() != 0)
                                     name = "__omni_channel_" + name;
-                                auto channel = reinterpret_cast<Channel*>(memory::AllocateNamedSharedForThread(name, sizeof(Channel), request.get_channel.thread_id));
+                                auto channel = reinterpret_cast<Channel*>(memory::AllocateNamedSharedForThread(name, sizeof(Channel), thread_id));
                                 if (channel) {
                                     if (!channel->initialized_) {
                                         channel->initialized_ = true;
 
-                                        channel->writer_token_ = memory::Pointer(token::CreateToken());
-                                        channel->reader_token_ = memory::Pointer(token::CreateToken());
+                                        channel->writer_token_ = memory::Pointer(token::CreateTokenForThread(thread_id));
+                                        channel->reader_token_ = memory::Pointer(token::CreateTokenForThread(thread_id));
 
                                         std::string raw_channel_name = name + "_raw_";
-                                        auto raw_channel = reinterpret_cast<RawChannel*>(memory::AllocateNamedSharedForThread(raw_channel_name, sizeof(RawChannel), request.get_channel.thread_id));
+                                        auto raw_channel = reinterpret_cast<RawChannel*>(memory::AllocateNamedSharedForThread(raw_channel_name, sizeof(RawChannel), thread_id));
 
                                         channel->Init(raw_channel);
                                     }
@@ -286,14 +289,15 @@ namespace omnistack::channel {
                             }
                             case RpcRequestType::kGetMultiWriterChannel: {
                                 auto name = std::string(request.get_channel.name);
+                                auto thread_id = request.get_channel.thread_id;
                                 if (name.length() != 0)
                                     name = "__omni_mul_channel_" + name;
-                                auto channel = reinterpret_cast<MultiWriterChannel*>(memory::AllocateNamedShared(name, sizeof(MultiWriterChannel)));
+                                auto channel = reinterpret_cast<MultiWriterChannel*>(memory::AllocateNamedSharedForThread(name, sizeof(MultiWriterChannel), thread_id));
                                 if (channel) {
                                     if (!channel->initialized) {
                                         channel->initialized = true;
 
-                                        channel->reader_token_ = memory::Pointer(token::CreateToken());
+                                        channel->reader_token_ = memory::Pointer(token::CreateTokenForThread(thread_id));
                                         strcpy(channel->name, name.c_str());
                                         channel->Init();
                                     }
@@ -466,8 +470,6 @@ namespace omnistack::channel {
     }
 
     int MultiWriterChannel::Write(const void* data) {
-        auto region_meta = reinterpret_cast<memory::RegionMeta*>((uint8_t*)data - memory::kMetaHeadroomSize);
-        region_meta->process_id = 0;
         if (!channel_ptrs_[memory::thread_id].Get()) [[unlikely]] {
             channel_ptrs_[memory::thread_id] = \
                 memory::Pointer(GetRawChannel(std::string(name) + "_raw_" + std::to_string(memory::thread_id)));
