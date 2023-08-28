@@ -142,6 +142,7 @@ namespace omnistack::io_module::dpdk {
     void DpdkSendQueue::Init(int port_id, int queue_id, struct rte_mempool* mempool, DpdkAdapter* adapter) {
         int current_socket = memory::GetCurrentSocket();
         index_ = 0;
+        port_id_ = port_id;
         queue_id_ = queue_id;
         mempool_ = mempool;
         
