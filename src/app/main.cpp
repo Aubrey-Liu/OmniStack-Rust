@@ -101,7 +101,7 @@ int main(int argc, char **argv) {
     auto stack_config = omnistack::config::ConfigManager::GetStackConfig(config_name);
     omnistack::kStackConfig = &stack_config;
 
-    OMNI_LOG(kInfo) << "Stack config loaded\n";
+    OMNI_LOG(kInfo) << "Stack config loaded" << std::endl;
 
     /* 2. init libraries */
     omnistack::InitializeMemory();
