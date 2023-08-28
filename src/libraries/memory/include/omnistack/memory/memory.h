@@ -332,6 +332,8 @@ namespace omnistack {
                 return 0;
 #endif
         }
+
+        void BindedCPU(int cpu);
     }
 }
 
