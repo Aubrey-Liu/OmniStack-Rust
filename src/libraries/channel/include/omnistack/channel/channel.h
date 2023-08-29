@@ -130,8 +130,7 @@ public:
             memory::Pointer<RawChannel> channel_ptrs_[memory::kMaxThread + 1];
             memory::Pointer<RawChannel> current_channel_ptr_;
 
-            uint64_t read_tick_[memory::kMaxThread * 4];
-            uint64_t write_tick_[memory::kMaxThread];
+            uint64_t write_tick_[memory::kMaxThread * 2 + 1];
             uint64_t current_channel_thread_id_;
 
 public:

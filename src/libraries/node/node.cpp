@@ -1,6 +1,7 @@
 #include <omnistack/node.h>
 #include <stdexcept>
 #include <omnistack/hashtable/hashtable.h>
+#include <omnistack/common/logger.h>
 
 namespace omnistack::node {
     constexpr int kCacheNodes = 128;
@@ -25,7 +26,6 @@ namespace omnistack::node {
     static memory::Pointer<EventNode*> recycled_event_nodes_control_plane;
 
     static channel::MultiWriterChannel* protocol_stack_nodes[kMaxComUser];
-    static channel::MultiWriterChannel* protocol_stack_nodes_control_plane[kMaxComUser];
     static packet::PacketPool* temp_packet_pool;
 
     static int num_node_user;
@@ -46,11 +46,6 @@ namespace omnistack::node {
         *recycled_basic_nodes_control_plane = nullptr;
         *recycled_event_nodes_control_plane = nullptr;
 
-        for (int i = 0; i < num_com_user; i ++) {
-            protocol_stack_nodes_control_plane[i] = 
-                channel::GetMultiWriterChannel("omni_protocol_stack_node_channel_" + std::to_string(i));
-        }
-
         auto num_core_user_p = reinterpret_cast<int*>(memory::AllocateNamedShared(
             "omni_node_num_core_user", sizeof(int)));
         *num_core_user_p = num_com_user;
@@ -68,8 +63,10 @@ namespace omnistack::node {
             "omni_node_num_core_user", sizeof(int)));
 
         for (int i = 0; i < num_core_user; i ++) {
+            auto stack_name = "omni_node_user_channel_" + std::to_string(i);
             protocol_stack_nodes[i] = 
-                channel::GetMultiWriterChannel("omni_protocol_stack_node_channel_" + std::to_string(i));
+                channel::GetMultiWriterChannel(stack_name);
+            OMNI_LOG(common::kInfo) << "Node user " << i << " channel: " << stack_name << std::endl;
         }
 
         num_node_user = num_core_user;
@@ -178,6 +175,7 @@ namespace omnistack::node {
             header->type = NodeCommandType::kUpdateNodeInfo;
             temp_packet->node_ = this;
             protocol_stack_nodes[0]->Write(temp_packet);
+            protocol_stack_nodes[0]->Flush();
         }
         while (!in_hashtable_) usleep(1);
     }

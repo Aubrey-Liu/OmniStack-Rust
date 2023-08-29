@@ -1,6 +1,7 @@
 #include <omnistack/socket/socket.h>
 #include <omnistack/node.h>
 #include <omnistack/common/protocol_headers.hpp>
+#include <omnistack/common/logger.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -165,6 +166,8 @@ namespace omnistack::socket {
                     new_node_info.transport.sport = addr_->sin_port;
                     new_node_info.transport.dport = 0;
                     cur_fd->basic_node->UpdateInfo(new_node_info);
+                    if (cur_fd->info.type == SOCK_DGRAM)
+                        basic_node->PutIntoHashtable();
                     return 0;
                 }
                 [[unlikely]] case FileDescriptorType::kLinux: {
@@ -355,7 +358,7 @@ namespace omnistack::socket {
                     auto packet = cur_fd->packet_cache == nullptr ? 
                         cur_fd->basic_node->Read() :  cur_fd->packet_cache;
                     cur_fd->packet_cache = nullptr;
-                    while (packet != nullptr && cur_fd->blocking) [[unlikely]] {
+                    while (packet == nullptr && cur_fd->blocking) [[unlikely]] {
                         packet = cur_fd->basic_node->Read();
                     }
 
@@ -387,11 +390,10 @@ namespace omnistack::socket {
                 src_addr_->sin_port = udp_header->sport;
                 *addrlen = sizeof(struct sockaddr_in);
             }
-            return (*packet)->length_ - (*packet)->offset_;
+            return flg;
         }
         void read_over(int fd, packet::Packet* packet) {
-            auto cur_fd = global_fd_list[fd];
-            cur_fd->basic_node->packet_pool_->Free(packet);
+            packet->Release();
         }
 
         packet::Packet* write_begin(int fd) {

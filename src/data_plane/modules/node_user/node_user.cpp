@@ -38,6 +38,8 @@ namespace omnistack::data_plane::node_user {
         Packet* EventCallback(Event* event) override;
 
         std::vector<Event::EventType> RegisterEvents() override;
+
+        constexpr uint32_t max_burst_() override { return 1; }
     private:
         inline Packet* OnConnect(Event* event);
 
@@ -54,7 +56,9 @@ namespace omnistack::data_plane::node_user {
     void NodeUser::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
         id_ = node_common::GetCurrentGraphId(std::string(name_prefix));
         node_table_ = hashtable::Hashtable::Create("omni_node_table", 1024, sizeof(node::NodeInfo));
-        node_channel_ = channel::GetMultiWriterChannel("omni_node_user_channel_" + std::to_string(id_));
+        auto node_channel_name = "omni_node_user_channel_" + std::to_string(id_);
+        node_channel_ = channel::GetMultiWriterChannel(node_channel_name);
+        OMNI_LOG_TAG(kInfo, "NodeUser") << "NodeUser channel " << node_channel_name << " initialized\n";
         event_pool_ = memory::AllocateMemoryPool("omni_data_plane_node_user_event_pool_" + std::to_string(id_), kEventMaxLength, 512);
         packet_pool_ = packet_pool;
     }
@@ -120,7 +124,10 @@ namespace omnistack::data_plane::node_user {
         Packet* tail = nullptr;
         for (int i = 0; i < 32; i ++) {
             auto packet = reinterpret_cast<Packet*>(node_channel_->Read());
-            if (packet == nullptr) break;
+            if (packet == nullptr) {
+                break;
+            }
+            OMNI_LOG(kDebug) << "NodeUser " << id_ << " received packet\n";
 
             auto header = reinterpret_cast<node::NodeCommandHeader*>(packet->data_ + packet->offset_);
             switch (header->type)
@@ -143,6 +150,7 @@ namespace omnistack::data_plane::node_user {
                 if (node_table_->Insert(&info, packet->node_.Get(), hash_val))
                     throw std::runtime_error("Failed to insert node info into hashtable");
                 packet->node_->in_hashtable_ = true;
+                OMNI_LOG(kInfo) << "Node " << info.network.ipv4.sip << " " << info.network.ipv4.dip << " " << info.transport.sport << " " << info.transport.dport << " updated\n";
                 raise_event_(new(event_pool_->Get()) NodeEventAnyInsert(packet->node_.Get()));
                 if (info.network_layer_type == node::NetworkLayerType::kIPv4) [[likely]] {
                     if (info.transport_layer_type == node::TransportLayerType::kTCP && info.transport.tcp.dport != 0) [[likely]]

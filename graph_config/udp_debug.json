@@ -4,13 +4,15 @@
     "modules": [
         "IoNode",       "SpeedTest",
         "EthSender",    "EthRecver",        "Ipv4Sender",
-        "Ipv4Recver",   "UdpSender",        "UdpRecver"
+        "Ipv4Recver",   "UdpSender",        "UdpRecver",
+        "NodeUser"
     ],
     "edges": [
         ["IoNode",          "EthRecver"],
         ["EthRecver",       "Ipv4Recver"],
         ["Ipv4Recver",      "UdpRecver"],
-        ["UdpRecver",       "SpeedTest"],
+        ["UdpRecver",       "NodeUser"],
+        ["NodeUser",        "UdpSender"],
         ["UdpSender",       "Ipv4Sender"],
         ["Ipv4Sender",      "EthSender"],
         ["EthSender",       "IoNode"]

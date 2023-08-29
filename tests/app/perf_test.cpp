@@ -7,6 +7,8 @@
 #include <omnistack/channel/channel.h>
 #include <omnistack/node.h>
 #include <omnistack/common/logger.h>
+#include <omnistack/common/thread.hpp>
+#include <omnistack/common/cpu.hpp>
 
 #include <string>
 #include <arpa/inet.h>
@@ -37,6 +39,7 @@ namespace args {
     static std::string server_server_host = "";
     static int server_port;
     static int size;
+    static int core;
 
     bool is_reversed = false;
     bool is_pingpong = false;
@@ -54,6 +57,7 @@ int main(int argc, char **argv) {
     app.add_flag("--reversed", args::is_reversed, "Reversed test")->default_val(false);
     app.add_flag("--pingpong", args::is_pingpong, "Pingpong test")->default_val(false);
     app.add_option("--size", args::size, "The size per message")->default_val(1430);
+    app.add_option("--core", args::core, "The core to bind")->default_val(-1);
 
     CLI11_PARSE(app, argc, argv);
     OMNI_LOG(common::kInfo) << "Arguments parsed.\n";
@@ -62,6 +66,11 @@ int main(int argc, char **argv) {
         return 1;
     }
     InitOmniStack();
+
+    if (args::core != -1) {
+        common::CoreAffinitize(args::core);
+        memory::BindedCPU(args::core);
+    }
 
     if (args::server_server_host != "") {
         /**Write a socket server based on the API in omnistack::socket**/

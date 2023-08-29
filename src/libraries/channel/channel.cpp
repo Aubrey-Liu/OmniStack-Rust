@@ -505,7 +505,7 @@ namespace omnistack::channel {
         if (!reader_token_->CheckToken())
             reader_token_->AcquireToken();
 
-        uint64_t last_pos;
+        uint64_t last_pos = 1;
         if (current_channel_thread_id_ != 0) [[likely]] {
             auto& channel = current_channel_ptr_;
             auto ret = channel->Read();
@@ -522,11 +522,13 @@ namespace omnistack::channel {
         while (last_pos != 1) {
             auto this_side_c = write_tick_[last_pos];
             auto other_side_c = write_tick_[last_pos^1];
-            if (other_side_c && channel_ptrs_[other_side_c]->IsReadable()) [[likely]] {
+            if (other_side_c && channel_ptrs_[other_side_c].Get() != nullptr && 
+                channel_ptrs_[other_side_c]->IsReadable()) [[likely]] {
                 current_channel_ptr_ = channel_ptrs_[other_side_c];
                 current_channel_thread_id_ = other_side_c;
                 break;
-            } else if (channel_ptrs_[this_side_c]->IsReadable()) {
+            } else if (channel_ptrs_[this_side_c].Get() != nullptr &&
+                channel_ptrs_[this_side_c]->IsReadable()) {
                 current_channel_ptr_ = channel_ptrs_[this_side_c];
                 current_channel_thread_id_ = this_side_c;
                 break;
@@ -656,7 +658,7 @@ namespace omnistack::channel {
     }
 
     void MultiWriterChannel::Init() {
-        for (int i = 0; i < memory::kMaxThread; i ++)
+        for (int i = 0; i <= memory::kMaxThread; i ++)
             channel_ptrs_[i] = memory::Pointer<RawChannel>(nullptr);;
         current_channel_thread_id_ = 0;
         current_channel_ptr_ = memory::Pointer<RawChannel>(nullptr);

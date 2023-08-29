@@ -255,6 +255,10 @@ namespace omnistack::memory {
             OMNI_LOG(common::kWarning) << "Cannot find numa node for thread " << thread_id << " this may cause performance issue.\n";
         }
         auto region_meta = (RegionMeta*)rte_malloc_socket(nullptr, aligned_size, 64, alloc_node);
+        if (region_meta == nullptr) {
+            OMNI_LOG(common::kFatal)  << "Failed to allocate memory for region meta for DPDK no memory\n";
+            exit(1);
+        }
         region_meta->addr = region_meta;
         region_meta->iova = rte_mem_virt2iova(region_meta) + kMetaHeadroomSize;
 #else
@@ -353,7 +357,6 @@ namespace omnistack::memory {
                     auto iter = std::find_if(pool_name_to_meta.begin(), pool_name_to_meta.end(), 
                         [&](std::pair<std::string, RegionMeta*> arg){return arg.second == region_meta;});
                     if (iter != pool_name_to_meta.end()) {
-                        printf("Memory Pool Name is %s\n", iter->first.c_str());
                         pool_name_to_meta.erase(iter);
                     }
                     if (!used_pools.count(region_meta))
@@ -362,8 +365,6 @@ namespace omnistack::memory {
                         used_pools.erase(region_meta);
                         resp.status = RpcResponseStatus::kSuccess;
                     }
-
-                    printf("Memory Pool Successfully Freed\n");
                 } else resp.status = RpcResponseStatus::kSuccess;
             } else resp.status = RpcResponseStatus::kInvalidThreadId;
         } else resp.status = RpcResponseStatus::kInvalidMemory;
@@ -398,7 +399,7 @@ namespace omnistack::memory {
                         used_regions.erase(region_meta);
                         resp.status = RpcResponseStatus::kSuccess;
                     }
-                    printf("Shared Memory Successfully Freed\n");
+                    OMNI_LOG(common::kInfo) << "Shared Memory Successfully Freed" << std::endl;
                 } else resp.status = RpcResponseStatus::kSuccess;
             } else resp.status = RpcResponseStatus::kInvalidThreadId;
         } else resp.status = RpcResponseStatus::kInvalidMemory;

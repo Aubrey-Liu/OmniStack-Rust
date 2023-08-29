@@ -169,9 +169,12 @@ int main(int argc, char **argv) {
 
     /* 7. start omnistack control plane */
 
+
+    OMNI_LOG(kInfo) << "==== Omnistack Started ====" << std::endl;
     /* 8. join threads */
     for(int i = 0; i < engine_create_infos.size(); i ++)
         JoinThread(omnistack::engine_threads[i], nullptr);
+    OMNI_LOG(kInfo) << "All thread joined successfully, OmniStack stopped\n";
 
     return 0;
 }
