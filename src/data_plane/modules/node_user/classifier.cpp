@@ -197,6 +197,7 @@ namespace omnistack::data_plane::classifier {
                 if (!entry->invalid_) [[likely]] {
                     if (Match(entry->info_, tmp_info)) [[likely]] {
                         flow_table_counter_[packet->flow_hash_ & kFlowHashMask] = kCacheCounterThresh;
+                        packet->node_ = entry->node_;
                         return packet;
                     } else {
                         flow_table_counter_[packet->flow_hash_ & kFlowHashMask] --;
@@ -260,6 +261,7 @@ namespace omnistack::data_plane::classifier {
                 flow_table_counter_[packet->flow_hash_ & kFlowHashMask] = kCacheCounterThresh;
                 OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Entry Cached" << std::endl;
             }
+            packet->node_ = entry->node_;
             return packet;
         }
         if (!channel_matrix_[id_][node->com_user_id_]) [[unlikely]] {

@@ -36,8 +36,8 @@ namespace omnistack::data_plane::speed_test {
         if(packet_count_ & 0x3fff) [[unlikely]] {
             uint64_t now = omnistack::common::NowNs();
             if(now - last_time_ > 1000000000ULL) {
-                uint64_t pps = packet_count_ * 1000000000ULL / (now - last_time_);
-                uint64_t bps = byte_count_ * 8 * 1000000000ULL / (now - last_time_);
+                uint64_t pps = 1.0 * packet_count_ * 1000000000ULL / (now - last_time_);
+                uint64_t bps = 1.0 * byte_count_ * 8 * 1000000000ULL / (now - last_time_);
                 double Gbps = (double)bps / 1024.0 / 1024.0 / 1024.0;
                 OMNI_LOG(kInfo) << "Speed test: " << pps << " pps, " << Gbps << " Gbps\n";
                 packet_count_ = 0;

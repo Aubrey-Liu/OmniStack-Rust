@@ -2,18 +2,17 @@
     "type": "Graph",
     "name": "UDP_DEBUG",
     "modules": [
-        "IoNode",       "SpeedTest",
+        "IoNode",
         "EthSender",    "EthRecver",        "Ipv4Sender",
         "Ipv4Recver",   "UdpSender",        "UdpRecver",
         "NodeUser",     "NodeClassifier"
     ],
     "edges": [
-        ["IoNode",          "NodeClassifier"],
-        ["NodeClassifier",  "EthRecver"],
+        ["IoNode",          "EthRecver"],
         ["EthRecver",       "Ipv4Recver"],
         ["Ipv4Recver",      "UdpRecver"],
-        ["UdpRecver",       "NodeUser"],
-        ["NodeUser",        "UdpSender"],
+        ["UdpRecver",       "NodeClassifier"],
+        ["NodeClassifier",  "NodeUser"],
         ["UdpSender",       "Ipv4Sender"],
         ["Ipv4Sender",      "EthSender"],
         ["EthSender",       "IoNode"]

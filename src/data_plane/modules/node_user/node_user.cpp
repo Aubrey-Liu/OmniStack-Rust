@@ -66,21 +66,21 @@ namespace omnistack::data_plane::node_user {
 
     Packet* NodeUser::MainLogic(Packet* packet) {
         /** Debug record per second bandwidth with packet->length_ - packet->offset_**/
-        {
-            static thread_local uint64_t last_report_tick = common::NowUs();
-            static thread_local uint64_t sum_bytes = 0;
-            uint64_t current_tick = common::NowUs();
-            sum_bytes += packet->length_ - packet->offset_;
-            if (current_tick - last_report_tick > 1000000) {
-                OMNI_LOG_TAG(kDebug, "NodeUser") << "NodeUser " << id_ << " bandwidth in last second: " 
-                    << 8.0 * sum_bytes / (current_tick - last_report_tick) << " Mbps\n";
-                last_report_tick = current_tick;
-                sum_bytes = 0;
-            }
+        // {
+        //     static thread_local uint64_t last_report_tick = common::NowUs();
+        //     static thread_local uint64_t sum_bytes = 0;
+        //     uint64_t current_tick = common::NowUs();
+        //     sum_bytes += packet->length_ - packet->offset_;
+        //     if (current_tick - last_report_tick > 1000000) {
+        //         OMNI_LOG_TAG(kDebug, "NodeUser") << "NodeUser " << id_ << " bandwidth in last second: " 
+        //             << 8.0 * sum_bytes / (current_tick - last_report_tick) << " Mbps\n";
+        //         last_report_tick = current_tick;
+        //         sum_bytes = 0;
+        //     }
 
-            packet->Release();
-            return nullptr;
-        }
+        //     packet->Release();
+        //     return nullptr;
+        // }
 
         if (packet->node_.Get() != nullptr) [[likely]] {
             packet->node_->Write(packet);

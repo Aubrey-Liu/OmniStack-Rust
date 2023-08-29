@@ -207,6 +207,10 @@ int main(int argc, char **argv) {
                 }
             }
         } else {
+            if (socket::bsd::listen(socket, 5) < 0) {
+                OMNI_LOG(common::kError) << "Failed to listen.\n";
+                return 1;
+            }
             auto client = socket::bsd::accept(socket, nullptr, nullptr);
             if (args::is_pingpong) {
                 if (!args::is_reversed) {
