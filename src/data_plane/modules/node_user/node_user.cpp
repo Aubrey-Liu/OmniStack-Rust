@@ -10,6 +10,7 @@
 #include <omnistack/memory/memory.h>
 #include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/node/node_common.h>
+#include <omnistack/common/time.hpp>
 
 namespace omnistack::data_plane::node_user {
 
@@ -64,10 +65,29 @@ namespace omnistack::data_plane::node_user {
     }
 
     Packet* NodeUser::MainLogic(Packet* packet) {
+        /** Debug record per second bandwidth with packet->length_ - packet->offset_**/
+        {
+            static thread_local uint64_t last_report_tick = common::NowUs();
+            static thread_local uint64_t sum_bytes = 0;
+            uint64_t current_tick = common::NowUs();
+            sum_bytes += packet->length_ - packet->offset_;
+            if (current_tick - last_report_tick > 1000000) {
+                OMNI_LOG_TAG(kDebug, "NodeUser") << "NodeUser " << id_ << " bandwidth in last second: " 
+                    << 8.0 * sum_bytes / (current_tick - last_report_tick) << " Mbps\n";
+                last_report_tick = current_tick;
+                sum_bytes = 0;
+            }
+
+            packet->Release();
+            return nullptr;
+        }
+
         if (packet->node_.Get() != nullptr) [[likely]] {
             packet->node_->Write(packet);
         } else {
             // Search Hashtable
+            // OMNI_LOG_TAG(kDebug, "NodeUser") << "NodeUser " << id_ << " received packet " << (void*)packet << "\n";
+
             node::NodeInfo tmp_node_info;
             auto l2_hdr = reinterpret_cast<EthernetHeader*>(packet->data_ + packet->packet_headers_[0].offset_);
             uint8_t l4_type = 0;
@@ -103,7 +123,12 @@ namespace omnistack::data_plane::node_user {
                     auto l4_hdr = reinterpret_cast<UdpHeader*>(packet->data_ + packet->packet_headers_[2].offset_);
                     tmp_node_info.transport_layer_type = node::TransportLayerType::kUDP;
                     tmp_node_info.transport.udp.sport = l4_hdr->dport;
-                    tmp_node_info.transport.udp.dport = l4_hdr->sport;
+                    tmp_node_info.transport.udp.dport = 0;
+                    if (l2_hdr->type == ETH_PROTO_TYPE_IPV4) [[likely]] {
+                        tmp_node_info.network.ipv4.dip = 0;
+                    } else {
+                        tmp_node_info.network.ipv6.dip = 0;
+                    }
                     break;
                 }
             }
@@ -127,7 +152,7 @@ namespace omnistack::data_plane::node_user {
             if (packet == nullptr) {
                 break;
             }
-            OMNI_LOG(kDebug) << "NodeUser " << id_ << " received packet\n";
+            OMNI_LOG(kDebug) << "NodeUser " << id_ << " received packet " << (void*)packet << "\n";
 
             auto header = reinterpret_cast<node::NodeCommandHeader*>(packet->data_ + packet->offset_);
             switch (header->type)
@@ -144,13 +169,20 @@ namespace omnistack::data_plane::node_user {
                 break;
             case node::NodeCommandType::kUpdateNodeInfo: {
                 using namespace omnistack::data_plane::node_common;
+                OMNI_LOG_TAG(kDebug, "NodeUser") << "NodeUser " << id_ << " received update node info\n";
                 auto& info = packet->node_->info_;
                 info.padding = 0;
                 auto hash_val = info.GetHash();
-                if (node_table_->Insert(&info, packet->node_.Get(), hash_val))
-                    throw std::runtime_error("Failed to insert node info into hashtable");
+                OMNI_LOG_TAG(kDebug, "NodeUser") << "Node " 
+                    << common::GetIpv4Str(info.network.ipv4.sip)
+                    << " " << common::GetIpv4Str(info.network.ipv4.dip) 
+                    << " " << ntohs(info.transport.sport) << " " << ntohs(info.transport.dport) << " updated\n";
+                if (node_table_->Insert(&info, packet->node_.Get(), hash_val)) {
+                    OMNI_LOG(common::kFatal) << "Failed to insert node info into hashtable" << std::endl;
+                    exit(1);
+                }
+                OMNI_LOG_TAG(kDebug, "NodeUser") << "Inserted to hashtable" << std::endl;
                 packet->node_->in_hashtable_ = true;
-                OMNI_LOG(kInfo) << "Node " << info.network.ipv4.sip << " " << info.network.ipv4.dip << " " << info.transport.sport << " " << info.transport.dport << " updated\n";
                 raise_event_(new(event_pool_->Get()) NodeEventAnyInsert(packet->node_.Get()));
                 if (info.network_layer_type == node::NetworkLayerType::kIPv4) [[likely]] {
                     if (info.transport_layer_type == node::TransportLayerType::kTCP && info.transport.tcp.dport != 0) [[likely]]

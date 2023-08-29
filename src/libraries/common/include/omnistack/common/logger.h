@@ -66,16 +66,21 @@ namespace omnistack::common {
         return std::string(buff, size) + "." + std::to_string(milliseconds.count());
     }
 
+    static inline std::string GetIpv4Str(const uint32_t& addr) {
+        std::string ret;
+        ret += std::to_string(addr & 0xFF) + ".";
+        ret += std::to_string(addr >> 8 & 0xFF) + ".";
+        ret += std::to_string(addr >> 16 & 0xFF) + ".";
+        ret += std::to_string(addr >> 24 & 0xFF);
+        return ret;
+    }
+
     enum LogLevel {
         kDebug,
         kInfo,
         kWarning,
         kError,
         kFatal,
-    };
-
-    enum class LogLevelColor {
-
     };
 
     /**

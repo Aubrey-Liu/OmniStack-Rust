@@ -4,6 +4,7 @@
 #include <omnistack/node.h>
 #include <omnistack/channel/channel.h>
 #include <omnistack/common/protocol_headers.hpp>
+#include <omnistack/common/logger.h>
 #include <mutex>
 #include <stdexcept>
 #include <atomic>
@@ -27,6 +28,8 @@ namespace omnistack::data_plane::classifier {
     int channel_flush_stack[kMaxNumClassifier][kMaxNumClassifier];
     int channel_flush_top[kMaxNumClassifier];
 
+    node::NodeInfo last_insert_info;
+
     struct PacketEntry {
         node::NodeInfo info_;
         std::atomic<int> ref_cnt_;
@@ -40,6 +43,8 @@ namespace omnistack::data_plane::classifier {
             node_ = node;
         }
     };
+
+    static_assert(offsetof(PacketEntry, info_) == 0);
 
     class NodeUserClassifier : public Module<NodeUserClassifier, kName> {
     public:
@@ -143,7 +148,7 @@ namespace omnistack::data_plane::classifier {
     }
 
     Packet* NodeUserClassifier::MainLogic(Packet* packet) {
-        node::NodeInfo tmp_info;
+        node::NodeInfo tmp_info {.padding = 0};
         auto l2_hdr = reinterpret_cast<EthernetHeader*>(packet->GetHeaderPayload(0));
         uint8_t l4_type;
         switch (l2_hdr->type) {
@@ -209,7 +214,26 @@ namespace omnistack::data_plane::classifier {
             }
         } else can_cache = false;
         bool is_determined = true;
+        // OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Looking up Entry" << std::endl;
         entry = reinterpret_cast<PacketEntry*>(node_table_->Lookup(&tmp_info, tmp_info.GetHash()));
+        // OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Looking up node " << common::GetIpv4Str(tmp_info.network.ipv4.sip) 
+        //     << " " << common::GetIpv4Str(tmp_info.network.ipv4.dip)
+        //     << " " << ntohs(tmp_info.transport.sport)
+        //     << " " << ntohs(tmp_info.transport.dport)
+        //     << " " << tmp_info.GetHash() << " from classifier" << std::endl;
+        // OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Hash same ? " << (tmp_info.GetHash() == last_insert_info.GetHash()) << std::endl;
+        // OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Memory same ? " << (memcmp(&tmp_info, &last_insert_info, sizeof(node::NodeInfo)) == 0) << std::endl;
+        // if (memcmp(&tmp_info, &last_insert_info, sizeof(node::NodeInfo)) != 0) {
+        //     uint8_t* bt_a = (uint8_t*)&tmp_info;
+        //     uint8_t* bt_b = (uint8_t*)&last_insert_info;
+        //     for (int i = 0; i < sizeof(node::NodeInfo); i ++) {
+        //         if (bt_a[i] != bt_b[i]) {
+        //             OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Diff at " << i << std::endl;
+        //             OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Diff value: " << (int)bt_a[i] << " " << (int)bt_b[i] << std::endl;
+        //             break;
+        //         }
+        //     }
+        // }
         if (!entry) [[unlikely]] {
             tmp_info.transport.dport = 0;
             if (l2_hdr->type == ETH_PROTO_TYPE_IPV4) [[likely]] {
@@ -234,6 +258,7 @@ namespace omnistack::data_plane::classifier {
                 ++entry->ref_cnt_;
                 flow_table_[packet->flow_hash_ & kFlowHashMask] = entry;
                 flow_table_counter_[packet->flow_hash_ & kFlowHashMask] = kCacheCounterThresh;
+                OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Entry Cached" << std::endl;
             }
             return packet;
         }
@@ -280,6 +305,9 @@ namespace omnistack::data_plane::classifier {
             auto event_ = reinterpret_cast<node_common::NodeEventAnyInsert*>(event);
             auto new_entry = reinterpret_cast<PacketEntry*>(entry_pool_->Get());
             new_entry->Init(event_->node_->info_, event_->node_);
+            last_insert_info = event_->node_->info_;
+            OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Inserting node " << (void*)event_->node_ << " into classifier " 
+                << new_entry->info_.GetHash() << std::endl;
             node_table_->Insert(new_entry, new_entry, new_entry->info_.GetHash());
         } else {
             if (tcp_common::kTcpEventTypeClosed) [[likely]] {

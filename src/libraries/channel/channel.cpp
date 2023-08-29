@@ -474,8 +474,8 @@ namespace omnistack::channel {
             channel_ptrs_[memory::thread_id] = \
                 memory::Pointer(GetRawChannel(std::string(name) + "_raw_" + std::to_string(memory::thread_id)));
         }
-        auto& channel = channel_ptrs_[memory::thread_id];
-        const auto ret_val = channel->Write(data);
+        OMNI_LOG(common::kDebug) << "Write to channel " << name << " ptr " << data << "\n";
+        const auto ret_val = channel_ptrs_[memory::thread_id]->Write(data);
         if (ret_val == 1) [[unlikely]] {
             auto current_pos = memory::thread_id + (memory::kMaxThread - 1);
             while (current_pos) {

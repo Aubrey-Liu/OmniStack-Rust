@@ -5,10 +5,11 @@
         "IoNode",       "SpeedTest",
         "EthSender",    "EthRecver",        "Ipv4Sender",
         "Ipv4Recver",   "UdpSender",        "UdpRecver",
-        "NodeUser"
+        "NodeUser",     "NodeClassifier"
     ],
     "edges": [
-        ["IoNode",          "EthRecver"],
+        ["IoNode",          "NodeClassifier"],
+        ["NodeClassifier",  "EthRecver"],
         ["EthRecver",       "Ipv4Recver"],
         ["Ipv4Recver",      "UdpRecver"],
         ["UdpRecver",       "NodeUser"],

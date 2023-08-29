@@ -6,10 +6,13 @@
 #include <string>
 #include <map>
 #include <mutex>
+#include <omnistack/common/logger.h>
+#include <omnistack/memory/memory.h>
 
 #if defined(OMNIMEM_BACKEND_DPDK)
 #include <rte_hash.h>
 #include <rte_hash_crc.h>
+#include <rte_errno.h>
 #else
 #include <emmintrin.h>
 #include <smmintrin.h>
@@ -35,6 +38,7 @@ namespace omnistack::hashtable {
             static void Destroy(Hashtable* hashtable);
         
             inline int32_t Insert(const void* key, void* value, HashValue hash_value) {
+                OMNI_LOG_TAG(common::kDebug, "Hashtable") << "Insert " << key << " " << value << " " << hash_value << " to " << (void*)hash_table_ << std::endl;
                 return rte_hash_add_key_with_hash_data(hash_table_, key, hash_value, value);
             }
 
@@ -52,8 +56,14 @@ namespace omnistack::hashtable {
 
             inline void* Lookup(const void* key, HashValue hash_value) {
                 void* value;
-                if(rte_hash_lookup_with_hash_data(hash_table_, key, hash_value, &value) < 0) [[unlikely]]
+                if(rte_hash_lookup_with_hash_data(hash_table_, key, hash_value, &value) < 0) [[unlikely]] {
+                    // if (rte_errno == ENOENT) {
+                    //     OMNI_LOG_TAG(common::kDebug, "Hashtable") << "No such element" << std::endl;
+                    // } else {
+                    //     OMNI_LOG_TAG(common::kDebug, "Hashtable") << "Invalid arguments" << std::endl;
+                    // }
                     return nullptr;
+                }
                 return value;
             }
 
@@ -107,11 +117,10 @@ namespace omnistack::hashtable {
             params.key_len = key_len;
             hashtable->key_len_ = key_len;
             params.hash_func = nullptr;
-            params.extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF
-                | RTE_HASH_EXTRA_FLAGS_MULTI_WRITER_ADD;
-            params.socket_id = rte_socket_id();
+            params.extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF;
+            params.socket_id = memory::GetCurrentSocket();
             static int name_id = 0;
-            char name[32];
+            char name[32];  
             sprintf(name, "hashtable_%d", name_id++);
             params.name = name;
             hashtable->hash_table_ = rte_hash_create(&params);

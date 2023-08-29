@@ -17,7 +17,7 @@
     ],
     "graphs": [
         {
-            "cpus": [0],
+            "cpus": [24],
             "name": "General",
             "structure": "UDP_DEBUG"
         }
