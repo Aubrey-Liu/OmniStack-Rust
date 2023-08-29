@@ -43,11 +43,13 @@ namespace omnistack::data_plane::udp_senders {
         packet->offset_ -= udp.length_;
         packet->length_ += sizeof(UdpHeader);
 
+        const auto daddr = packet->peer_addr_;
+
         // edit udp header, assume port are big-edian
         uint16_t src_port = (*packet->node_).info_.transport.udp.sport;
-        uint16_t dst_port = (*packet->node_).info_.transport.udp.dport;
+        uint16_t dst_port = daddr.sin_addr.s_addr;
         udp_header->sport = src_port;
-        udp_header->dport = dst_port;
+        udp_header->dport = daddr.sin_port;
         udp_header->chksum = 0;
         udp_header->len = htons(packet->length_);
         return packet;
