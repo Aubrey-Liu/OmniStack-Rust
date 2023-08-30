@@ -26,7 +26,7 @@ namespace omnistack::data_plane::io_node {
 
         constexpr ModuleType type_() override { return ModuleType::kOccupy; }
 
-        constexpr uint32_t max_burst_() override { return 256; }
+        constexpr bool has_timer_() override { return true; }
 
         Packet* MainLogic(Packet* packet) override;
 
@@ -114,12 +114,9 @@ namespace omnistack::data_plane::io_node {
         }
 
         for (int i = 0; i < num_adapters_; i ++) {
-            auto pkt = recv_queues_[i]->RecvPacket();
-            if (pkt != nullptr) [[likely]] {
-                return pkt;
-            }
+            auto ret = recv_queues_[i]->RecvPackets();
+            if(ret != nullptr) [[likely]] return ret;
         }
-        
         return nullptr;
     }
 }

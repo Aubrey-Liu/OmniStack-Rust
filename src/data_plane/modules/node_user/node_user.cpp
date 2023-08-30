@@ -40,7 +40,7 @@ namespace omnistack::data_plane::node_user {
 
         std::vector<Event::EventType> RegisterEvents() override;
 
-        constexpr uint32_t max_burst_() override { return 1; }
+        constexpr bool has_timer_() override { return true; }
     private:
         inline Packet* OnConnect(Event* event);
 

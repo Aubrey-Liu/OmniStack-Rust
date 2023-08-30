@@ -96,6 +96,8 @@ namespace omnistack::io_module::dpdk {
 
         virtual packet::Packet* RecvPacket() override;
 
+        virtual packet::Packet* RecvPackets() override;
+
         // virtual void RedirectFlow(packet::Packet* packet)  override;
 
         void Init(int port_id, int queue_id, struct rte_mempool* mempool, DpdkAdapter* adapter, packet::PacketPool* packet_pool);
@@ -359,6 +361,25 @@ namespace omnistack::io_module::dpdk {
         ret->length_ = cur_mbuf->pkt_len;
         ret->flow_hash_ = cur_mbuf->hash.rss;
         ret->root_packet_.Set(cur_mbuf);
+        return ret;
+    }
+
+    packet::Packet* DpdkRecvQueue::RecvPackets() {
+        auto size = rte_eth_rx_burst(port_id_, queue_id_, buffer_, kRecvQueueSize);
+        packet::Packet* ret = nullptr;
+        for(uint32_t i = 0; i < size; i ++) {
+            auto packet = packet_pool_->Allocate();
+            auto cur_mbuf = buffer_[i];
+            auto ptr = rte_pktmbuf_mtod(cur_mbuf, char*);
+            rte_prefetch0(ptr);
+            packet->data_.Set(ptr);
+            packet->mbuf_type_ = packet::Packet::MbufType::kDpdk;
+            packet->length_ = cur_mbuf->pkt_len;
+            packet->flow_hash_ = cur_mbuf->hash.rss;
+            packet->root_packet_.Set(cur_mbuf);
+            packet->next_packet_ = ret;
+            ret = packet;
+        }
         return ret;
     }
 }

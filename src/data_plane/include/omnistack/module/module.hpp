@@ -92,10 +92,7 @@ namespace omnistack::data_plane {
 
         virtual constexpr ModuleType type_() { return ModuleType::kOccupy; }
 
-        virtual constexpr uint32_t max_burst_() { return 0; }
-
-        /* when does this act? will it be done in son-class? */
-        // uint32_t max_burst_ = 0;
+        virtual constexpr bool has_timer_() { return false; }
 
     protected:
         struct FilterGroup {

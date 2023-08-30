@@ -58,6 +58,8 @@ namespace omnistack {
 
             virtual packet::Packet* RecvPacket() = 0;
 
+            virtual packet::Packet* RecvPackets() { return RecvPacket(); }
+
             virtual void RedirectFlow(packet::Packet* packet);
         };
 

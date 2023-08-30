@@ -60,7 +60,7 @@ namespace omnistack::data_plane {
         std::unordered_map<Event::EventType, std::vector<uint32_t>> event_entries_;
 
         /* timer info */
-        std::vector<std::pair<uint32_t, uint32_t>> timer_list_;
+        std::vector<uint32_t> timer_list_;
 
         /* graph info */
         uint32_t module_num_;

@@ -29,7 +29,7 @@ namespace omnistack::data_plane::tcp_data_in {
 
         constexpr ModuleType type_() override { return ModuleType::kOccupy; }
     
-        constexpr uint32_t max_burst_() override { return 1; }
+        constexpr bool has_timer_() override { return true; }
 
     private:
         TcpSharedHandle* tcp_shared_handle_;

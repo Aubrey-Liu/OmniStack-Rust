@@ -30,7 +30,7 @@ namespace omnistack::data_plane::tcp_state_in {
 
         constexpr ModuleType type_() override { return ModuleType::kOccupy; }
 
-        constexpr uint32_t max_burst_() override { return 1; }
+        constexpr bool has_timer_() override { return true; }
     
     private:
         void EnterSynReceived(TcpListenFlow* listen_flow, TcpFlow* flow, TcpHeader* tcp_header, uint16_t remote_mss, uint8_t remote_wscale, uint32_t remote_timestamp);

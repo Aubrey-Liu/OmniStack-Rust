@@ -31,6 +31,7 @@
 #include <rte_eal.h>
 #include <rte_malloc.h>
 #include <rte_mempool.h>
+#include <rte_prefetch.h>
 #endif
 
 #include <numa.h>
@@ -1285,7 +1286,11 @@ namespace omnistack::memory {
                 auto container_ptr = full_block_ptr_;
                 full_block_ptr_ = container_ptr->next;
 
-                /// TODO: prefetch
+                /* prefetch all the memory region */
+                // for(uint32_t i = 0; i < container_ptr->cnt; i ++) {
+                //     rte_prefetch0(container_ptr->addrs[i]);
+                //     rte_prefetch0(container_ptr->addrs[i] + kMetaHeadroomSize)
+                // }
 
                 local_cache_[thread_id] = container_ptr;
             }
