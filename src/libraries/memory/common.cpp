@@ -639,6 +639,12 @@ namespace omnistack::memory {
                                                 auto chunk = chunk_region_begin + (i + j) * mempool->chunk_size_;
                                                 auto single_chunk_meta = reinterpret_cast<RegionMeta*>(chunk);
                                                 single_chunk_meta->iova = (chunk - reinterpret_cast<uint8_t*>(chunk_meta)) + memory::GetIova(chunk_meta);
+                                                single_chunk_meta->mempool = mempool;
+                                                single_chunk_meta->addr = (void*)single_chunk_meta;
+                                                single_chunk_meta->size = mempool->chunk_size_;
+                                                single_chunk_meta->process_id = 0;
+                                                single_chunk_meta->type = RegionType::kMempoolChunk;
+                                                single_chunk_meta->ref_cnt = 1;
                                                 current_block->addrs[j] = chunk;
                                             }
                                             current_block->next = mempool->full_block_ptr_;
@@ -664,6 +670,12 @@ namespace omnistack::memory {
                                                 auto chunk = chunk_region_begin + (i + j) * mempool->chunk_size_;
                                                 auto single_chunk_meta = reinterpret_cast<RegionMeta*>(chunk + virt_shared_region);
                                                 single_chunk_meta->iova = 0;
+                                                single_chunk_meta->mempool_offset = (uint8_t*)mempool - virt_shared_region;
+                                                single_chunk_meta->offset = chunk;
+                                                single_chunk_meta->size = mempool->chunk_size_;
+                                                single_chunk_meta->process_id = 0;
+                                                single_chunk_meta->type = RegionType::kMempoolChunk;
+                                                single_chunk_meta->ref_cnt = 1;
                                                 current_block->offsets[j] = chunk;
                                             }
                                             current_block->next = mempool->full_block_offset_;
@@ -1340,18 +1352,6 @@ namespace omnistack::memory {
             auto ret_offset = local_cache_[thread_id]->offsets[local_cache_[thread_id]->used++];
             auto ret = virt_base_addrs[process_id] + ret_offset;
 #endif
-            auto meta = reinterpret_cast<RegionMeta *>(ret);
-#if defined (OMNIMEM_BACKEND_DPDK)
-            meta->mempool = this;
-            meta->addr = ret;
-#else
-            meta->mempool_offset = (uint8_t*)this - virt_base_addrs[process_id];
-            meta->offset = ret_offset;
-#endif
-            meta->size = chunk_size_;
-            meta->process_id = process_id;
-            meta->type = RegionType::kMempoolChunk;
-            meta->ref_cnt = 1;
             return (char*)ret + kMetaHeadroomSize;
         }
         return nullptr;
@@ -1430,19 +1430,6 @@ namespace omnistack::memory {
             auto ret_offset = local_cache_[thread_id]->offsets[local_cache_[thread_id]->used++];
             auto ret = virt_base_addrs[process_id] + ret_offset;
 #endif
-            auto meta = reinterpret_cast<RegionMeta *>(ret);
-#if defined (OMNIMEM_BACKEND_DPDK)
-            meta->mempool = this;
-            meta->addr = ret;
-#else
-            meta->mempool_offset = (uint8_t*)this - virt_base_addrs[process_id];
-            meta->offset = ret_offset;
-#endif
-            meta->size = chunk_size_;
-            meta->process_id = process_id;
-            meta->type = RegionType::kMempoolChunk;
-            meta->ref_cnt = 1;
-
             ptrs[i] = (char*)ret + kMetaHeadroomSize;
         }
     }
