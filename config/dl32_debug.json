@@ -12,14 +12,14 @@
     "arps": [
         {
             "ipv4": "192.168.10.2",
-            "mac": "00:00:00:00:00:02"
+            "mac": "08:c0:eb:24:6c:e3"
         }
     ],
     "graphs": [
         {
             "cpus": [24],
             "name": "General",
-            "structure": "UDP_DEBUG"
+            "structure": "TCP_COMMON"
         }
     ],
     "routes": [

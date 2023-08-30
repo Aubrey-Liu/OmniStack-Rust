@@ -20,7 +20,7 @@ namespace omnistack::io_module::dpdk {
     constexpr int kMBufSize = 
         AlignTo(common::kMtu + sizeof(common::EthernetHeader) + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM, 64);
     constexpr int kSendQueueSize = 32;
-    constexpr int kRecvQueueSize = 128;
+    constexpr int kRecvQueueSize = 64;
     constexpr int kDefaultRxDescSize = 512;
     constexpr int kDefaultTxDescSize = 512;
 
@@ -370,11 +370,11 @@ namespace omnistack::io_module::dpdk {
         auto size = rte_eth_rx_burst(port_id_, queue_id_, buffer_, kRecvQueueSize);
         if(size == 0) return nullptr;
         packet::Packet* ret = nullptr;
-        // auto packet_count = packet_pool_->Allocate(size, ret_packets);
-        // if(packet_count != size) [[unlikely]] throw std::runtime_error("dpdk failed to allocate enough packets from packet pool");
+        auto packet_count = packet_pool_->Allocate(size, ret_packets);
+        if(packet_count != size) [[unlikely]] throw std::runtime_error("dpdk failed to allocate enough packets from packet pool");
         for(uint32_t i = 0; i < size; i ++) {
-            // auto packet = ret_packets[i];
-            auto packet = packet_pool_->Allocate();
+            auto packet = ret_packets[i];
+            // auto packet = packet_pool_->Allocate();
             auto cur_mbuf = buffer_[i];
             auto ptr = rte_pktmbuf_mtod(cur_mbuf, char*);
             rte_prefetch0(ptr);

@@ -48,8 +48,6 @@ namespace omnistack::data_plane {
 
         void set_raise_event_(std::function<void(Event* event)> raise_event) { raise_event_ = raise_event; }
 
-        void set_upstream_nodes_(const std::vector<std::pair<uint32_t, uint32_t>>& upstream_nodes) { upstream_nodes_ = upstream_nodes; }
-
         void ApplyDownstreamFilters(Packet* packet);
 
         /**
@@ -116,7 +114,6 @@ namespace omnistack::data_plane {
         std::function<void(Event* event)> raise_event_;
         std::vector<FilterGroup> filter_groups_;
         std::vector<Filter> downstream_filters_;
-        std::vector<std::pair<uint32_t, uint32_t>> upstream_nodes_;
         std::vector<DownstreamInfo> downstream_nodes_;
     };
 

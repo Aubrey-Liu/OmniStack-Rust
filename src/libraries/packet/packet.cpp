@@ -17,7 +17,7 @@ namespace omnistack::packet {
         header_tail_ = 0;
         next_packet_ = nullptr;
         node_ = nullptr;
-        next_hop_filter_ = 0;
+        // next_hop_filter_ = 0;
         // root_packet_ = this;
     }
 

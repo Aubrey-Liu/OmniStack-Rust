@@ -118,15 +118,8 @@ namespace omnistack::data_plane {
 
             for(auto& links : downstream_links_)
                 SortLinks(links);
-            for(uint32_t i = 0; i < module_num_; i ++) {
-                auto& links = upstream_links_[i];
+            for(auto& links : upstream_links_)
                 SortLinks(links);
-                std::vector<std::pair<uint32_t, uint32_t>> upstream_nodes;
-                upstream_nodes.reserve(links.size());
-                for(auto idx : links)
-                    upstream_nodes.emplace_back(module_name_crc32_[idx], local_to_global[idx]);
-                modules_[i]->set_upstream_nodes_(upstream_nodes);
-            }
         }
 
         /* initialize module filters */
@@ -234,8 +227,6 @@ namespace omnistack::data_plane {
 
         auto reference_count = packet->reference_count_ - 1;
 
-        packet->upstream_node_id_ = local_to_global[node_idx];
-        packet->upstream_node_name_ = module_name_crc32_[node_idx];
         do [[unlikely]] {
             auto idx = std::countr_zero(forward_mask);
             forward_mask ^= (1 << idx);

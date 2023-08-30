@@ -4,6 +4,7 @@
 
 #include <omnistack/memory/memory.h>
 #include <omnistack/common/logger.h>
+#include <omnistack/common/constant.hpp>
 #include <thread>
 #include <sys/mman.h>
 #include <fcntl.h>
