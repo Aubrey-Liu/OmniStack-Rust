@@ -1462,6 +1462,9 @@ namespace omnistack::memory {
             }
             return size;
         }
+        if (local_cache_[thread_id] == nullptr) [[unlikely]] {
+            DoRecycle();
+        }
         if (local_cache_[thread_id]->cnt - local_cache_[thread_id]->used >= size) [[likely]] {
             GetEnough(size, ptrs);
             return size;
