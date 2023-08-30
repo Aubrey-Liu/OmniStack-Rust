@@ -52,6 +52,7 @@ namespace omnistack::data_plane {
 
         /* create packet pool */
         packet_pool_ = PacketPool::CreatePacketPool(name_prefix, kDefaultPacketPoolSize);
+        packet_queue_count_ = 0;
         
         auto& graph = sub_graph.graph_;
         std::map<uint32_t, uint32_t> global_to_local;
@@ -213,11 +214,9 @@ namespace omnistack::data_plane {
     }
 
     Engine::~Engine() {
-        packet_queue_.clear();
-
         /* destroy modules */
-        for(auto& module : modules_)
-            module->Destroy();
+        for(auto& obj : modules_)
+            obj->Destroy();
 
         PacketPool::DestroyPacketPool(packet_pool_);
 
@@ -242,17 +241,17 @@ namespace omnistack::data_plane {
             auto downstream_node = downstream_links_[node_idx][idx];
 
             if(module_read_only_[downstream_node]) {
-                packet_queue_.emplace_back(downstream_node, packet);
+                packet_queue_[packet_queue_count_ ++] = {downstream_node, packet};
                 reference_count ++;
             }
             else if(downstream_node < module_num_) {
                 if(reference_count > 0) [[unlikely]] {
                     /* duplicate the packet and enqueue it */
                     auto packet_copy = packet_pool_->Duplicate(packet);
-                    packet_queue_.emplace_back(downstream_node, packet_copy);
+                    packet_queue_[packet_queue_count_ ++] = {downstream_node, packet_copy};
                 }
                 else {
-                    packet_queue_.emplace_back(downstream_node, packet);
+                    packet_queue_[packet_queue_count_ ++] = {downstream_node, packet};
                     reference_count ++;
                 }
             }
@@ -310,10 +309,10 @@ namespace omnistack::data_plane {
             }
 
             /* process packets in queue */
-            while(!packet_queue_.empty()) [[likely]] {
-                auto node_idx = packet_queue_.back().first;
-                auto packet = packet_queue_.back().second;
-                packet_queue_.pop_back();
+            while(packet_queue_count_) [[likely]] {
+                packet_queue_count_ --;
+                auto node_idx = packet_queue_[packet_queue_count_].first;
+                auto packet = packet_queue_[packet_queue_count_].second;
 
                 packet->next_hop_filter_ = next_hop_filter_default_[node_idx];
                 auto return_packet = modules_[node_idx]->MainLogic(packet);

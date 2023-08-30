@@ -13,6 +13,8 @@
 namespace omnistack::data_plane {
     /* Engine receives a SubGraph and runs it */
 
+    constexpr uint32_t kMaxQueueSize = 65536;
+
     /* TODO: add functionality to link to any module in graph */
 
     struct EngineCreateInfo {
@@ -54,7 +56,8 @@ namespace omnistack::data_plane {
         static thread_local volatile bool stop_;
 
         typedef std::pair<uint32_t, Packet*> QueueItem;
-        std::vector<QueueItem> packet_queue_;
+        QueueItem packet_queue_[kMaxQueueSize];
+        uint32_t packet_queue_count_ = 0;
 
         /* event info */
         std::unordered_map<Event::EventType, std::vector<uint32_t>> event_entries_;
@@ -65,7 +68,7 @@ namespace omnistack::data_plane {
         /* graph info */
         uint32_t module_num_;
         uint32_t assigned_module_idx_;
-        std::vector<std::unique_ptr<BaseModule>> modules_;
+        std::vector<BaseModule*> modules_;
         std::vector<uint32_t> module_name_crc32_;
         std::vector<std::vector<uint32_t>> upstream_links_;
         std::vector<std::vector<uint32_t>> downstream_links_;

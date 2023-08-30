@@ -1289,7 +1289,7 @@ namespace omnistack::memory {
                 /* prefetch all the memory region */
                 // for(uint32_t i = 0; i < container_ptr->cnt; i ++) {
                 //     rte_prefetch0(container_ptr->addrs[i]);
-                //     rte_prefetch0(container_ptr->addrs[i] + kMetaHeadroomSize)
+                //     rte_prefetch0(container_ptr->addrs[i] + kMetaHeadroomSize);
                 // }
 
                 local_cache_[thread_id] = container_ptr;
@@ -1317,7 +1317,11 @@ namespace omnistack::memory {
                 empty_block_ptr_ = local_cache_[thread_id];
 
 
-                /// TODO: prefetch
+                /* prefetch all the memory region */
+                // for(uint32_t i = 0; i < container_ptr->cnt; i ++) {
+                //     rte_prefetch0(container_ptr->addrs[i]);
+                //     rte_prefetch0(container_ptr->addrs[i] + kMetaHeadroomSize);
+                // }
 
                 local_cache_[thread_id] = container_ptr;
             }
