@@ -42,9 +42,11 @@ namespace omnistack::data_plane::node_user {
 
         constexpr bool has_timer_() override { return true; }
     private:
-        inline Packet* OnConnect(Event* event);
+        inline Packet* OnConnected(Event* event);
 
-        inline Packet* OnDisconnect(Event* event);
+        inline Packet* OnPassiveClose(Event* event);
+
+        inline Packet* OnClosed(Event* event);
 
         int id_;
 
@@ -224,24 +226,27 @@ namespace omnistack::data_plane::node_user {
 
     std::vector<Event::EventType> NodeUser::RegisterEvents() {
         return std::vector<Event::EventType>{
-            tcp_common::kTcpEventTypeConnect,
-            tcp_common::kTcpEventTypeDisconnect
+            tcp_common::kTcpEventTypeConnected,
+            tcp_common::kTcpEventTypePassiveClose,
+            tcp_common::kTcpEventTypeClosed
         };
     }
 
     Packet* NodeUser::EventCallback(Event* event) {
         switch (event->type_) {
-            case tcp_common::kTcpEventTypeConnect:
-                return OnConnect(event);
-            case tcp_common::kTcpEventTypeDisconnect:
-                return OnDisconnect(event);
+            case tcp_common::kTcpEventTypeConnected:
+                return OnConnected(event);
+            case tcp_common::kTcpEventTypePassiveClose:
+                return OnPassiveClose(event);
+            case tcp_common::kTcpEventTypeClosed:
+                return OnClosed(event);
             default:
                 return nullptr;
         }
     }
 
-    inline Packet* NodeUser::OnConnect(Event* event) {
-        auto evt = reinterpret_cast<tcp_common::TcpEventConnect*>(event);
+    inline Packet* NodeUser::OnConnected(Event* event) {
+        auto evt = reinterpret_cast<tcp_common::TcpEventConnected*>(event);
         node::NodeInfo tmp_node_info;
         tmp_node_info.network_layer_type = node::NetworkLayerType::kIPv4;
         tmp_node_info.network.Set(evt->local_ipv4_, evt->remote_ipv4_);
@@ -277,8 +282,8 @@ namespace omnistack::data_plane::node_user {
         return nullptr;
     }
 
-    inline Packet* NodeUser::OnDisconnect(Event* event) {
-        auto evt = reinterpret_cast<tcp_common::TcpEventDisconnect*>(event);
+    inline Packet* NodeUser::OnPassiveClose(Event* event) {
+        auto evt = reinterpret_cast<tcp_common::TcpEventPassiveClose*>(event);
         node::NodeInfo tmp_node_info;
         tmp_node_info.network_layer_type = node::NetworkLayerType::kIPv4;
         tmp_node_info.network.Set(evt->local_ipv4_, evt->remote_ipv4_);
@@ -293,5 +298,9 @@ namespace omnistack::data_plane::node_user {
             node->Flush();
         }
         return nullptr;
+    }
+
+    inline Packet* NodeUser::OnClosed(Event* event) {
+        auto evt = reinterpret_cast<tcp_common::TcpEventClosed*>(event);
     }
 }

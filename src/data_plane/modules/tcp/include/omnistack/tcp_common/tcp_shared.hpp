@@ -7,7 +7,6 @@
 
 #include <omnistack/tcp_common/tcp_state.hpp>
 #include <omnistack/tcp_common/tcp_constant.hpp>
-#include <omnistack/tcp_common/tcp_events.hpp>
 #include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/common/time.hpp>
 #include <omnistack/hashtable/hashtable.h>
@@ -29,6 +28,8 @@ namespace omnistack::data_plane::tcp_common {
 
         TcpFlow* GetFlow(uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port);
 
+        TcpListenFlow* CreateListenFlow(uint32_t local_ip, uint16_t local_port, TcpListenOptions options);
+
         TcpListenFlow* GetListenFlow(uint32_t local_ip, uint16_t local_port);
 
         void AcquireFlow(TcpFlow* flow);
@@ -39,6 +40,7 @@ namespace omnistack::data_plane::tcp_common {
         hashtable::Hashtable* flow_table_;
         hashtable::Hashtable* listen_table_;
         memory::MemoryPool* flow_pool_;
+        memory::MemoryPool* listen_pool_;
         memory::MemoryPool* receive_buffer_pool_;
         memory::MemoryPool* send_buffer_pool_;
         uint32_t initialized_;
@@ -84,6 +86,13 @@ namespace omnistack::data_plane::tcp_common {
         auto flow = TcpFlow::Create(flow_pool_, receive_buffer_pool_, send_buffer_pool_, local_ip, remote_ip, local_port, remote_port);
         if(flow == nullptr) [[unlikely]] return nullptr;
         flow_table_->Insert(flow, flow);
+        return flow;
+    }
+
+    inline TcpListenFlow* TcpSharedHandle::CreateListenFlow(uint32_t local_ip, uint16_t local_port, TcpListenOptions options) {
+        auto flow = TcpListenFlow::Create(listen_pool_, local_ip, local_port, options);
+        if(flow == nullptr) [[unlikely]] return nullptr;
+        listen_table_->Insert(flow, flow);
         return flow;
     }
 

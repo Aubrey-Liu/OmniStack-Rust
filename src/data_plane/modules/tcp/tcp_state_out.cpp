@@ -31,9 +31,11 @@ namespace omnistack::data_plane::tcp_state_out {
         constexpr ModuleType type_() override { return ModuleType::kReadOnly; }
     
     private:
-        Packet* OnConnect(Event* event);
+        Packet* OnListen(Event* event);
 
-        Packet* OnDisconnect(Event* event);
+        Packet* OnActiveConnect(Event* event);
+
+        Packet* OnActiveClose(Event* event);
 
         void EnterSynSent(TcpFlow* flow, const char* congestion_control_algorithm);
 
@@ -53,17 +55,20 @@ namespace omnistack::data_plane::tcp_state_out {
 
     std::vector<Event::EventType> TcpStateOut::RegisterEvents() {
         return std::vector<Event::EventType>{
-                kTcpEventTypeConnect,
-                kTcpEventTypeDisconnect
+                kTcpEventTypeListen,
+                kTcpEventTypeActiveConnect,
+                kTcpEventTypeActiveClose
         };
     }
 
     Packet* TcpStateOut::EventCallback(Event* event) {
         switch (event->type_) {
-            case kTcpEventTypeConnect:
-                return OnConnect(event);
-            case kTcpEventTypeDisconnect:
-                return OnDisconnect(event);
+            case kTcpEventTypeListen:
+                return OnListen(event);
+            case kTcpEventTypeActiveConnect:
+                return OnActiveConnect(event);
+            case kTcpEventTypeActiveClose:
+                return OnActiveClose(event);
             default:
                 return nullptr;
         }
@@ -111,19 +116,42 @@ namespace omnistack::data_plane::tcp_state_out {
         flow->state_ = TcpFlow::State::kClosed;
     }
 
-    inline Packet* TcpStateOut::OnConnect(Event* event) {
-        auto tcp_event = static_cast<TcpEventConnect*>(event);
+    inline Packet* TcpStateOut::OnListen(Event* event) {
+        auto tcp_event = static_cast<TcpEventListen*>(event);
+        uint32_t local_ip = tcp_event->local_ipv4_;
+        uint16_t local_port = tcp_event->local_port_;
+        auto options = tcp_event->options_;
+
+        if(tcp_shared_handle_->GetListenFlow(local_ip, local_port) != nullptr) {
+            /* TODO: report error */
+            return nullptr;
+        }
+
+        auto flow = tcp_shared_handle_->CreateListenFlow(local_ip, local_port, options);
+        if(flow == nullptr) {
+            /* TODO: report error */
+            return nullptr;
+        }
+
+        return nullptr;
+    }
+
+    inline Packet* TcpStateOut::OnActiveConnect(Event* event) {
+        auto tcp_event = static_cast<TcpEventActiveConnect*>(event);
         uint32_t local_ip = tcp_event->local_ipv4_;
         uint32_t remote_ip = tcp_event->remote_ipv4_;
         uint16_t local_port = tcp_event->local_port_;
         uint16_t remote_port = tcp_event->remote_port_;
 
         if(tcp_shared_handle_->GetFlow(local_ip, remote_ip, local_port, remote_port) != nullptr) {
-            /* TODO: report error? */
+            /* TODO: report error */
             return nullptr;
         }
         auto flow = tcp_shared_handle_->CreateFlow(local_ip, remote_ip, local_port, remote_port);
-        if(flow == nullptr) return nullptr;
+        if(flow == nullptr) {
+            /* TODO: report error */
+            return nullptr;
+        }
         flow->state_ = TcpFlow::State::kClosed;
         EnterSynSent(flow, kTcpDefaultCongestionControlAlgorithm);
         
@@ -137,8 +165,8 @@ namespace omnistack::data_plane::tcp_state_out {
         return packet;
     }
 
-    inline Packet* TcpStateOut::OnDisconnect(Event* event) {
-        auto tcp_event = static_cast<TcpEventDisconnect*>(event);
+    inline Packet* TcpStateOut::OnActiveClose(Event* event) {
+        auto tcp_event = static_cast<TcpEventActiveClose*>(event);
         uint32_t local_ip = tcp_event->local_ipv4_;
         uint32_t remote_ip = tcp_event->remote_ipv4_;
         uint16_t local_port = tcp_event->local_port_;

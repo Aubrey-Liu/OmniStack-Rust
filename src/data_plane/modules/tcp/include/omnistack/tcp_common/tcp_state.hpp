@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <omnistack/tcp_common/tcp_buffer.hpp>
 #include <omnistack/tcp_common/tcp_congestion_control.hpp>
+#include <omnistack/tcp_common/tcp_events.hpp>
 
 namespace omnistack::data_plane::tcp_common {
 
@@ -50,6 +51,17 @@ namespace omnistack::data_plane::tcp_common {
         uint16_t local_port_;
     
         char* congestion_control_algorithm_;
+    private:
+        TcpListenFlow() = default;
+        TcpListenFlow(const TcpListenFlow&) = default;
+        TcpListenFlow(TcpListenFlow&&) = default;
+        ~TcpListenFlow() = default;
+
+        static TcpListenFlow* Create(memory::MemoryPool* flow_pool, uint32_t local_ip, uint16_t local_port, TcpListenOptions options);
+
+        static void Destroy(memory::MemoryPool* flow_pool, TcpListenFlow* flow);
+
+        friend class TcpSharedHandle;
     };
 
     class TcpFlow {
@@ -101,6 +113,21 @@ namespace omnistack::data_plane::tcp_common {
 
         friend class TcpSharedHandle;
     };
+
+    inline TcpListenFlow* TcpListenFlow::Create(memory::MemoryPool* flow_pool, uint32_t local_ip, uint16_t local_port, TcpListenOptions options) {
+        auto addr = flow_pool->Get();
+        if(addr == nullptr) return nullptr;
+        auto flow = new(addr) TcpListenFlow();
+        flow->local_ip_ = local_ip;
+        flow->local_port_ = local_port;
+        flow->congestion_control_algorithm_ = options.congestion_control_algorithm_;
+        return flow;
+    }
+
+    inline void TcpListenFlow::Destroy(memory::MemoryPool* flow_pool, TcpListenFlow* flow) {
+        flow->~TcpListenFlow();
+        flow_pool->Put(flow);
+    }
 
     inline TcpFlow* TcpFlow::Create(memory::MemoryPool* flow_pool, memory::MemoryPool* receive_buffer_pool_, memory::MemoryPool* send_buffer_pool_, uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port) {
         auto addr = flow_pool->Get();
