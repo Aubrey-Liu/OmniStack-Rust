@@ -187,8 +187,12 @@ namespace omnistack::data_plane::node_user {
                 packet->node_->in_hashtable_ = true;
                 raise_event_(new(event_pool_->Get()) NodeEventAnyInsert(packet->node_.Get()));
                 if (info.network_layer_type == node::NetworkLayerType::kIPv4) [[likely]] {
-                    if (info.transport_layer_type == node::TransportLayerType::kTCP && info.transport.tcp.dport != 0) [[likely]]
-                        raise_event_(new(event_pool_->Get()) NodeEventTcpConnect(packet->node_.Get()));
+                    if (info.transport_layer_type == node::TransportLayerType::kTCP) [[likely]] {
+                        if (info.transport.tcp.dport != 0)
+                            raise_event_(new(event_pool_->Get()) tcp_common::TcpEventActiveConnect(info.network.ipv4.sip, info.network.ipv4.dip, info.transport.tcp.sport, info.transport.tcp.dport));
+                        else
+                            raise_event_(new(event_pool_->Get()) tcp_common::TcpEventListen(info.network.ipv4.sip, info.transport.tcp.sport, tcp_common::TcpListenOptions()));
+                    }
                 }
                 packet->Release();
                 break;

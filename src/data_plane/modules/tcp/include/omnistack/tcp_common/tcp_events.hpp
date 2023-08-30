@@ -18,6 +18,9 @@ namespace omnistack::data_plane::tcp_common {
 
     class TcpListenOptions {
     public:
+        TcpListenOptions() : congestion_control_algorithm_(nullptr) {}
+        TcpListenOptions(char* congestion_control_algorithm) : congestion_control_algorithm_(congestion_control_algorithm) {}
+
         char* congestion_control_algorithm_;
     };
 
