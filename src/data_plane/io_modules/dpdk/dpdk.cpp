@@ -144,6 +144,8 @@ namespace omnistack::io_module::dpdk {
 
     void DpdkSendQueue::Init(int port_id, int queue_id, struct rte_mempool* mempool, DpdkAdapter* adapter) {
         int current_socket = memory::GetCurrentSocket();
+        if (current_socket == -1)
+            OMNI_LOG_TAG(common::kWarning, "IO_DPDK") << "Socket not specified (may cause performance issue)" << std::endl;
         index_ = 0;
         port_id_ = port_id;
         queue_id_ = queue_id;
@@ -166,6 +168,8 @@ namespace omnistack::io_module::dpdk {
 
     void DpdkRecvQueue::Init(int port_id, int queue_id, struct rte_mempool* mempool, DpdkAdapter* adapter, packet::PacketPool* packet_pool) {
         int current_socket = memory::GetCurrentSocket();
+        if (current_socket == -1)
+            OMNI_LOG_TAG(common::kWarning, "IO_DPDK") << "Socket not specified (may cause performance issue)" << std::endl;
         port_id_ = port_id;
         queue_id_ = queue_id;
         mempool_ = mempool;
