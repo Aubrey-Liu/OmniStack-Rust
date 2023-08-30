@@ -122,7 +122,7 @@ namespace omnistack::data_plane {
 
     inline void BaseModule::ApplyDownstreamFilters(Packet *packet) {
         auto& mask = packet->next_hop_filter_;
-        for(auto& group : filter_groups_) {
+        for(const auto& group : filter_groups_) {
             auto cantidate = mask & group.universe_mask;
             if(!cantidate) [[unlikely]] continue;
             if(group.type == FilterGroupType::kMutex) [[likely]] {
@@ -150,7 +150,7 @@ namespace omnistack::data_plane {
 
     class ModuleFactory {
     public:
-        typedef std::function<std::unique_ptr<BaseModule>()> CreateFunction;
+        typedef std::function<BaseModule*()> CreateFunction;
 
         static ModuleFactory& instance_() {
             static ModuleFactory factory;
@@ -173,7 +173,7 @@ namespace omnistack::data_plane {
             }
         }
 
-        [[nodiscard]] std::unique_ptr<BaseModule> Create(uint32_t name) const {
+        [[nodiscard]] BaseModule* Create(uint32_t name) const {
             auto it = module_list_.find(name);
             if(it == module_list_.end()) {
                 /* TODO: report error */
@@ -190,8 +190,8 @@ namespace omnistack::data_plane {
     template<typename T, const char name[]>
     class Module : public BaseModule {
     public:
-        static std::unique_ptr<BaseModule> CreateModuleObject() {
-            return std::make_unique<T>();
+        static BaseModule* CreateModuleObject() {
+            return new T();
         }
 
         constexpr uint32_t name_() override { return common::ConstCrc32(name); }

@@ -124,6 +124,8 @@ namespace omnistack::packet {
 
         inline Packet* Allocate();
 
+        inline int Allocate(uint32_t count, Packet* packets[]);
+
         /**
          * @brief free a packet, the reference count will be ignored
         */
@@ -150,7 +152,6 @@ namespace omnistack::packet {
 #if defined(OMNIMEM_BACKEND_DPDK)
                 case MbufType::kDpdk:
                     rte_pktmbuf_free(reinterpret_cast<rte_mbuf*>(root_packet_.Get()));
-                    // rte_pktmbuf_free(reinterpret_cast<rte_mbuf*>(data_ - RTE_PKTMBUF_HEADROOM - sizeof(rte_mbuf)));
                     break;
 #endif
                 case MbufType::kIndirect: {
@@ -171,6 +172,14 @@ namespace omnistack::packet {
         if(chunk == nullptr) return nullptr;
         auto packet = new(chunk) Packet;
         return packet;
+    }
+
+    inline int PacketPool::Allocate(uint32_t count, Packet* packets[]) {
+        auto ret = memory_pool_->Get(count, reinterpret_cast<void**>(packets));
+        for(uint32_t i = 0; i < ret; i ++) {
+            packets[i] = new(packets[i]) Packet;
+        }
+        return ret;
     }
 
     inline void PacketPool::Free(Packet* packet) {

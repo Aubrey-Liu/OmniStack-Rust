@@ -232,7 +232,8 @@ namespace omnistack::data_plane {
             return;
         }
 
-        uint32_t reference_count = packet->reference_count_ - 1;
+        auto reference_count = packet->reference_count_ - 1;
+
         packet->upstream_node_id_ = local_to_global[node_idx];
         packet->upstream_node_name_ = module_name_crc32_[node_idx];
         do [[unlikely]] {
@@ -267,7 +268,7 @@ namespace omnistack::data_plane {
     }
 
     void Engine::HandleEvent(Event* event) {
-        auto& module_ids = event_entries_[event->type_];
+        const auto& module_ids = event_entries_[event->type_];
         for(auto module_id : module_ids) {
             auto ret = modules_[module_id]->EventCallback(event);
             if(ret != nullptr) {

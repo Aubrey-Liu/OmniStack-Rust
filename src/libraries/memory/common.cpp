@@ -1426,7 +1426,7 @@ namespace omnistack::memory {
         }
     }
 
-    inline void MemoryPool::GetEnough(const int& size, void* ptrs[]) {
+    inline void MemoryPool::GetEnough(int size, void* ptrs[]) {
         for (int i = 0; i < size; i ++) {
 #if defined (OMNIMEM_BACKEND_DPDK)
             auto ret = local_cache_[thread_id]->addrs[local_cache_[thread_id]->used++];
@@ -1451,7 +1451,7 @@ namespace omnistack::memory {
         }
     }
 
-    int MemoryPool::Get(const int& size, void* ptrs[]) {
+    int MemoryPool::Get(int size, void* ptrs[]) {
         if (size > kMemoryPoolLocalCache) [[unlikely]] {
             for (int i = 0; i < size; i ++) {
                 auto ret = Get();

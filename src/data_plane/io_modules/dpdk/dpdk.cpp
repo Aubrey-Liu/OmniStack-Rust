@@ -365,9 +365,15 @@ namespace omnistack::io_module::dpdk {
     }
 
     packet::Packet* DpdkRecvQueue::RecvPackets() {
+        static packet::Packet* ret_packets[kRecvQueueSize];
+
         auto size = rte_eth_rx_burst(port_id_, queue_id_, buffer_, kRecvQueueSize);
+        if(size == 0) return nullptr;
         packet::Packet* ret = nullptr;
+        // auto packet_count = packet_pool_->Allocate(size, ret_packets);
+        // if(packet_count != size) [[unlikely]] throw std::runtime_error("dpdk failed to allocate enough packets from packet pool");
         for(uint32_t i = 0; i < size; i ++) {
+            // auto packet = ret_packets[i];
             auto packet = packet_pool_->Allocate();
             auto cur_mbuf = buffer_[i];
             auto ptr = rte_pktmbuf_mtod(cur_mbuf, char*);

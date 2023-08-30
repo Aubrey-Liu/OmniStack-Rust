@@ -180,7 +180,7 @@ namespace omnistack {
             void SafePut(void* ptr); // This is used by control plane
             void FlushSafePut(); // This is used by control plane
             RegionMeta* GetChunkMeta();
-            int Get(const int& size, void* ptrs[]);
+            int Get(int size, void* ptrs[]);
 
 #if !defined(OMNIMEM_BACKEND_DPDK)
             uint64_t region_offset_; // The offset of payload memory
@@ -211,7 +211,7 @@ namespace omnistack {
             virtual ~MemoryPool();
 
             void DoRecycle();
-            void GetEnough(const int& size, void* ptrs[]);
+            void GetEnough(int size, void* ptrs[]);
         };
 
         MemoryPool* AllocateMemoryPool(const std::string& name, size_t chunk_size, size_t chunk_count);
