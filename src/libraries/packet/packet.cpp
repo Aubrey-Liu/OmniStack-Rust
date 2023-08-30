@@ -14,7 +14,6 @@ namespace omnistack::packet {
         custom_mask_ = 0;
         custom_value_ = 0;
         data_ = mbuf_ + kPacketMbufHeadroom;
-        iova_ = memory::GetIova(this) + offsetof(Packet, mbuf_) + kPacketMbufHeadroom;
         header_tail_ = 0;
         next_packet_ = nullptr;
         node_ = nullptr;

@@ -74,7 +74,6 @@ namespace omnistack::packet {
         Pointer<node::BasicNode> node_;        // pointer to the node which the packet belongs to
         /* a cache line ends here */
 
-        uint64_t iova_; // Warning : Not optimized
         Pointer<void> root_packet_; // dpdk packet use this as pointer to rte_mbuf
         struct sockaddr_in peer_addr_; // Used for some specific cases
 
@@ -93,7 +92,7 @@ namespace omnistack::packet {
             if(mbuf_type_ == MbufType::kIndirect) cur_packet = reinterpret_cast<Packet*>(root_packet_.Get());
             switch (cur_packet->mbuf_type_) {
                 case MbufType::kOrigin:
-                    return iova_ + (data_.Get() - cur_packet->mbuf_);
+                    return memory::GetIova(cur_packet) + (data_.Get() - cur_packet->mbuf_);
 #if defined(OMNIMEM_BACKEND_DPDK)
                 case MbufType::kDpdk: {
                     auto mbuf = reinterpret_cast<rte_mbuf*>(cur_packet->root_packet_.Get());
@@ -200,7 +199,6 @@ namespace omnistack::packet {
             default:
                 throw std::runtime_error("Unkonwn packet type");
         }
-        packet_copy->iova_ = memory::GetIova(packet_copy) + offsetof(Packet, mbuf_);
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
 #if defined (OMNIMEM_BACKEND_DPDK)
@@ -232,7 +230,6 @@ namespace omnistack::packet {
         packet_copy->data_ = packet->data_;
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
-        packet_copy->iova_ = packet->iova_;
         packet->root_packet_ = reinterpret_cast<void*>(packet);
         while(packet_copy->header_tail_ != packet->header_tail_) {
             auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
