@@ -1286,6 +1286,85 @@ namespace omnistack::memory {
                 auto container_ptr = full_block_ptr_;
                 full_block_ptr_ = container_ptr->next;
 
+                local_cache_[thread_id] = container_ptr;
+            }
+#else
+            if (full_block_offset_ != ~0) {
+                auto container_ptr = reinterpret_cast<MemoryPoolBatch *>(virt_base_addrs[process_id] +
+                                                                         full_block_offset_);
+                full_block_offset_ = container_ptr->next;
+
+                local_cache_[thread_id] = container_ptr;
+            }
+#endif
+            pthread_mutex_unlock(&recycle_mutex_);
+        } else if (local_cache_[thread_id]->used == local_cache_[thread_id]->cnt) [[unlikely]] { // chunk ran out
+            pthread_mutex_lock(&recycle_mutex_);
+#if defined (OMNIMEM_BACKEND_DPDK)
+            if (full_block_ptr_ != nullptr) {
+                auto container_ptr = full_block_ptr_;
+                full_block_ptr_ = container_ptr->next;
+
+                local_cache_[thread_id]->next = empty_block_ptr_;
+                empty_block_ptr_ = local_cache_[thread_id];
+
+
+                /// TODO: prefetch
+
+                local_cache_[thread_id] = container_ptr;
+            }
+#else
+            if (full_block_offset_ != ~0) {
+                auto container_ptr = reinterpret_cast<MemoryPoolBatch *>(virt_base_addrs[process_id] +
+                                                                         full_block_offset_);
+                full_block_offset_ = container_ptr->next;
+
+                local_cache_[thread_id]->next = empty_block_offset_;
+                empty_block_offset_ =
+                        reinterpret_cast<uint8_t *>(local_cache_[thread_id]) - virt_base_addrs[process_id];
+
+
+                /// TODO: prefetch
+
+                local_cache_[thread_id] = container_ptr;
+                
+            }
+#endif
+            else local_cache_[thread_id] = nullptr;
+            pthread_mutex_unlock(&recycle_mutex_);
+        }
+        if (local_cache_[thread_id] != nullptr) [[likely]] {
+#if defined (OMNIMEM_BACKEND_DPDK)
+            auto ret = local_cache_[thread_id]->addrs[local_cache_[thread_id]->used++];
+#else
+            auto ret_offset = local_cache_[thread_id]->offsets[local_cache_[thread_id]->used++];
+            auto ret = virt_base_addrs[process_id] + ret_offset;
+#endif
+            auto meta = reinterpret_cast<RegionMeta *>(ret);
+#if defined (OMNIMEM_BACKEND_DPDK)
+            meta->mempool = this;
+            meta->addr = ret;
+#else
+            meta->mempool_offset = (uint8_t*)this - virt_base_addrs[process_id];
+            meta->offset = ret_offset;
+#endif
+            meta->size = chunk_size_;
+            meta->process_id = process_id;
+            meta->type = RegionType::kMempoolChunk;
+            meta->ref_cnt = 1;
+            return (char*)ret + kMetaHeadroomSize;
+        }
+        return nullptr;
+    }
+
+    void MemoryPool::DoRecycle() {
+        if (local_cache_[thread_id] == nullptr) [[unlikely]] {
+            pthread_mutex_lock(&recycle_mutex_);
+#if defined (OMNIMEM_BACKEND_DPDK)
+            if (full_block_ptr_ != nullptr) {
+                auto container_ptr = full_block_ptr_;
+                full_block_ptr_ = container_ptr->next;
+
                 /* prefetch all the memory region */
                 // for(uint32_t i = 0; i < container_ptr->cnt; i ++) {
                 //     rte_prefetch0(container_ptr->addrs[i]);
@@ -1345,7 +1424,10 @@ namespace omnistack::memory {
             else local_cache_[thread_id] = nullptr;
             pthread_mutex_unlock(&recycle_mutex_);
         }
-        if (local_cache_[thread_id] != nullptr) [[likely]] {
+    }
+
+    inline void MemoryPool::GetEnough(const int& size, void* ptrs[]) {
+        for (int i = 0; i < size; i ++) {
 #if defined (OMNIMEM_BACKEND_DPDK)
             auto ret = local_cache_[thread_id]->addrs[local_cache_[thread_id]->used++];
 #else
@@ -1364,9 +1446,32 @@ namespace omnistack::memory {
             meta->process_id = process_id;
             meta->type = RegionType::kMempoolChunk;
             meta->ref_cnt = 1;
-            return (char*)ret + kMetaHeadroomSize;
+
+            ptrs[i] = (char*)ret + kMetaHeadroomSize;
         }
-        return nullptr;
+    }
+
+    int MemoryPool::Get(const int& size, void* ptrs[]) {
+        if (size > kMemoryPoolLocalCache) [[unlikely]] {
+            for (int i = 0; i < size; i ++) {
+                auto ret = Get();
+                if (ret == nullptr) [[unlikely]] {
+                    return i;
+                }
+                ptrs[i] = ret;
+            }
+            return size;
+        }
+        if (local_cache_[thread_id]->cnt - local_cache_[thread_id]->used >= size) [[likely]] {
+            GetEnough(size, ptrs);
+            return size;
+        }
+        auto first = local_cache_[thread_id]->cnt - local_cache_[thread_id]->used;
+        auto second = size - first;
+        GetEnough(first, ptrs);
+        DoRecycle();
+        GetEnough(second, ptrs + first);
+        return size;
     }
 
     MemoryPool* AllocateMemoryPool(const std::string& name, size_t chunk_size, size_t chunk_count) {
