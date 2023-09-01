@@ -342,7 +342,7 @@ namespace omnistack::io_module::dpdk {
         for (int i = 0; i < sent; i++) {
             buffer_[i] = rte_pktmbuf_alloc(mempool_);
             if (buffer_[i] == nullptr) [[unlikely]] {
-                std::cerr << "Failedt to refill send queue" << std::endl;
+                OMNI_LOG_TAG(common::kFatal, "IO_DPDK") << "Failed to refill send queue" << std::endl;
                 exit(1);
             }
         }
