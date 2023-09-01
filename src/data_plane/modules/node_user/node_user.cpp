@@ -306,5 +306,6 @@ namespace omnistack::data_plane::node_user {
 
     inline Packet* NodeUser::OnClosed(Event* event) {
         auto evt = reinterpret_cast<tcp_common::TcpEventClosed*>(event);
+        return nullptr;
     }
 }
