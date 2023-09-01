@@ -310,6 +310,11 @@ namespace omnistack {
                 else offset_ = ((uint8_t*)ptr - virt_base_addrs[process_id]);
 #endif
             }
+
+            inline T operator[](const uint32_t& a) const {
+                return *(*this + a);
+            }
+
         private:
 #if defined (OMNIMEM_BACKEND_DPDK)
             T* ptr_;

@@ -15,6 +15,9 @@ namespace omnistack::config
             if (entry.is_regular_file() && entry.path().extension() == ".json") {
                 LoadFromFile(entry.path().string());
             }
+            if (entry.is_directory()) {
+                LoadFromDirectory(entry.path().string());
+            }
         }
     }
 
@@ -63,6 +66,13 @@ namespace omnistack::config
             }
             stack_configs_[name] = new StackConfig(root);
             OMNI_LOG(common::kInfo) << "Stack config " << name << " loaded\n";
+        } else if (type == "Module") {
+            if (module_configs_.count(name)) {
+                OMNI_LOG(common::kFatal) << "Module config " << name << " already exists\n";
+                exit(1);
+            }
+            module_configs_[name] = root;
+            OMNI_LOG(common::kInfo) << "Module config " << name << " loaded\n";
         } else {
             OMNI_LOG(common::kFatal) << "Config file " << path << " has an unknown type " << type << "\n";
             exit(1);
@@ -83,5 +93,13 @@ namespace omnistack::config
             exit(1);
         }
         return *stack_configs_[name];
+    }
+
+    const Json::Value& ConfigManager::GetModuleConfig(const std::string& name) {
+        if (module_configs_.find(name) == module_configs_.end()) {
+            OMNI_LOG(common::kFatal) << "Module config " << name << " not found\n";
+            exit(1);
+        }
+        return module_configs_[name];
     }
 } // namespace omnistack::config

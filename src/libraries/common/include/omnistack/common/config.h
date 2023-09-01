@@ -232,9 +232,11 @@ namespace omnistack {
 
             static const StackConfig& GetStackConfig(const std::string& name);
             static const GraphConfig& GetGraphConfig(const std::string& name);
+            static const Json::Value& GetModuleConfig(const std::string& name);
         private:
             inline static std::map<std::string, StackConfig*> stack_configs_;
             inline static std::map<std::string, GraphConfig*> graph_configs_;
+            inline static std::map<std::string, Json::Value> module_configs_;
 
             ConfigManager() {}
         };
