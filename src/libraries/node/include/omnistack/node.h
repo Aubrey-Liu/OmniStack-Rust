@@ -143,8 +143,8 @@ namespace omnistack {
             inline void SetNext(const memory::Pointer<BasicNode>& next) {
                 next_ = next;
             }
-
-            memory::Pointer<packet::PacketPool> packet_pool_;
+            
+            inline static thread_local packet::PacketPool* packet_pool_ = nullptr;
 
         private:
             memory::Pointer<EventNode> enode_;

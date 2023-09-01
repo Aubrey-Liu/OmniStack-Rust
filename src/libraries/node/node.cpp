@@ -112,7 +112,7 @@ namespace omnistack::node {
             this->channel_ = memory::Pointer(channel::GetChannel("omni_basic_node_channel_" + 
                 std::to_string(memory::process_id) + "_" + std::to_string(memory::thread_id) +
                 "_" + std::to_string(++local_create_channel_idx)));
-        if (this->packet_pool_.Get() == nullptr)
+        if (packet_pool_ == nullptr)
             this->packet_pool_ = packet::PacketPool::CreatePacketPool("omni_basic_node_packet_pool_" + 
                 std::to_string(memory::process_id) + "_" + std::to_string(memory::thread_id) +
                 "_" + std::to_string(local_create_channel_idx), 16384);

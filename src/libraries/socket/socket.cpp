@@ -58,7 +58,7 @@ namespace omnistack::socket {
                     break;
             }
             switch (info.type) {
-                case SOCK_SEQPACKET:
+                case SOCK_STREAM:
                     max_packet_size -= sizeof(common::TcpHeader) + 16;
                     break;
                 case SOCK_DGRAM:
@@ -141,7 +141,7 @@ namespace omnistack::socket {
             
             cur_fd->info.domain = domain;
             cur_fd->info.type = type;
-            if (domain == AF_INET && (type == SOCK_SEQPACKET || type == SOCK_DGRAM)) [[likely]] {
+            if (domain == AF_INET && (type == SOCK_STREAM || type == SOCK_DGRAM)) [[likely]] {
                 cur_fd->type = FileDescriptorType::kBasic;
                 cur_fd->basic_node = node::CreateBasicNode(rand_r(&local_seed) % node::GetNumNodeUser());
             } else {
@@ -161,7 +161,7 @@ namespace omnistack::socket {
                     auto new_node_info = node::NodeInfo();
                     new_node_info.network_layer_type = node::NetworkLayerType::kIPv4;
                     new_node_info.transport_layer_type = 
-                        cur_fd->info.type == SOCK_SEQPACKET ? node::TransportLayerType::kTCP : node::TransportLayerType::kUDP;
+                        cur_fd->info.type == SOCK_STREAM ? node::TransportLayerType::kTCP : node::TransportLayerType::kUDP;
                     new_node_info.network.Set(addr_->sin_addr.s_addr, 0);
                     new_node_info.transport.sport = addr_->sin_port;
                     new_node_info.transport.dport = 0;
@@ -254,11 +254,11 @@ namespace omnistack::socket {
                         memcpy(buf,
                             packet->data_ + packet->offset_, ret);
     #endif
-                        if (cur_length > ret && cur_fd->info.type == SOCK_SEQPACKET) [[unlikely]] {
+                        if (cur_length > ret && cur_fd->info.type == SOCK_STREAM) [[unlikely]] {
                             packet->offset_ += ret;
                             cur_fd->packet_cache = packet;
                         } else [[likely]] {
-                            cur_fd->basic_node->packet_pool_->Free(packet);
+                            packet->Release();
                         }
                         return ret;
                     } else if (!cur_fd->blocking) [[unlikely]] {
@@ -288,7 +288,7 @@ namespace omnistack::socket {
 
                     auto ret = static_cast<ssize_t>(0);
                     while (ret < count) {
-                        auto packet = cur_fd->basic_node->packet_pool_->Allocate();
+                        auto packet = node::BasicNode::packet_pool_->Allocate();
                         auto cur_size = std::min(count, cur_fd->max_packet_size);
     #if defined(OMNIMEM_BACKEND_DPDK)
                         rte_memcpy(packet->data_ + packet->offset_, 
@@ -399,7 +399,7 @@ namespace omnistack::socket {
         packet::Packet* write_begin(int fd) {
             auto cur_fd = global_fd_list[fd];
             if (cur_fd->type == FileDescriptorType::kBasic) [[likely]] {
-                return cur_fd->basic_node->packet_pool_->Allocate();
+                return node::BasicNode::packet_pool_->Allocate();
             }
             errno = EINVAL;
             return nullptr;
