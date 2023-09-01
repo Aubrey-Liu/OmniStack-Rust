@@ -109,7 +109,7 @@ int main(int argc, char **argv) {
                         auto new_packet = socket::fast::write_begin(socket);
                         memcpy(new_packet->data_.Get(), packet->data_ + packet->offset_, sizeof(uint64_t));
                         new_packet->length_ = args::size;
-                        socket::fast::read_over(socket, packet);
+                        packet->Release();
 
                         int send_len = socket::fast::sendto(socket, new_packet, 0, (struct sockaddr *)&client_addr, client_addr_len);
                         if (send_len < 0) {
@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
                         OMNI_LOG(common::kError) << "Failed to recvfrom." << std::endl;
                         return 1;
                     }
-                    socket::fast::read_over(socket, packet);
+                    packet->Release();
                     // Client Tell Address
 
                     uint64_t last_print_tick = GetCurrentTickUs();
@@ -152,7 +152,7 @@ int main(int argc, char **argv) {
                         uint64_t end_tick = *reinterpret_cast<uint64_t*>(packet->data_ + packet->offset_);
                         last_sum_tick = end_tick - cur_tick;
                         last_sum_tick_count ++;
-                        socket::fast::read_over(socket, packet);
+                        packet->Release();
 
                         if (end_tick - last_print_tick > 1000000) { // Print Per 1s
                             OMNI_LOG(common::kInfo) << "Average RTT in last 1 second is " << last_sum_tick / last_sum_tick_count << "us." << std::endl;
@@ -182,7 +182,7 @@ int main(int argc, char **argv) {
                             last_print_tick = current_tick;
                             last_sum_bytes = 0;
                         }
-                        socket::fast::read_over(socket, packet);
+                        packet->Release();
                     }
                 } else {
                     struct sockaddr_in client_addr;
@@ -193,7 +193,7 @@ int main(int argc, char **argv) {
                         OMNI_LOG(common::kError) << "Failed to recvfrom." << std::endl;
                         return 1;
                     }
-                    socket::fast::read_over(socket, packet);
+                    packet->Release();
 
                     while (true) {
                         auto new_packet = socket::fast::write_begin(socket);
@@ -225,7 +225,7 @@ int main(int argc, char **argv) {
                         auto new_packet = socket::fast::write_begin(client);
                         memcpy(new_packet->data_.Get(), packet->data_ + packet->offset_, sizeof(uint64_t));
                         new_packet->length_ = args::size;
-                        socket::fast::read_over(client, packet);
+                        packet->Release();
 
                         int send_len = socket::fast::write(client, new_packet);
                         if (send_len < 0) {
@@ -260,7 +260,7 @@ int main(int argc, char **argv) {
                         uint64_t end_tick = *reinterpret_cast<uint64_t*>(packet->data_ + packet->offset_);
                         last_sum_tick = end_tick - cur_tick;
                         last_sum_tick_count ++;
-                        socket::fast::read_over(client, packet);
+                        packet->Release();
 
                         if (end_tick - last_print_tick > 1000000) { // Print Per 1s
                             OMNI_LOG(common::kInfo) << "Average RTT in last 1 second is " << last_sum_tick / last_sum_tick_count << "us." << std::endl;
@@ -289,7 +289,7 @@ int main(int argc, char **argv) {
                             last_print_tick = current_tick;
                             last_sum_bytes = 0;
                         }
-                        socket::fast::read_over(client, packet);
+                        packet->Release();
                     }
                 } else {
                     while (true) {

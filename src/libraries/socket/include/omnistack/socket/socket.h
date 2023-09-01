@@ -42,7 +42,6 @@ namespace omnistack {
             ssize_t recv(int sockfd, packet::Packet** packet, int flags);
             ssize_t recvfrom(int sockfd, packet::Packet** packet, int flags,
                             struct sockaddr* src_addr, socklen_t* addrlen);
-            void read_over(int fd, packet::Packet* packet);
 
             packet::Packet* write_begin(int fd);
             ssize_t write(int fd, packet::Packet* buf);
