@@ -392,9 +392,6 @@ namespace omnistack::socket {
             }
             return flg;
         }
-        void read_over(int fd, packet::Packet* packet) {
-            packet->Release();
-        }
 
         packet::Packet* write_begin(int fd) {
             auto cur_fd = global_fd_list[fd];

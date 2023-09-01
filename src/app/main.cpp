@@ -96,6 +96,7 @@ int main(int argc, char **argv) {
     /* 1. load configurations */
     omnistack::config::ConfigManager::LoadFromDirectory("../../config");
     omnistack::config::ConfigManager::LoadFromDirectory("../../graph_config");
+    omnistack::config::ConfigManager::LoadFromDirectory("../../module_config");
     std::string config_name = argc > 1 ? argv[1] : "config";
     auto stack_config = omnistack::config::ConfigManager::GetStackConfig(config_name);
     omnistack::config::kStackConfig = &stack_config;

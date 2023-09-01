@@ -1167,7 +1167,11 @@ namespace omnistack::memory {
          * @brief Allocate Memory in Local Memory
          */
     void* AllocateLocal(size_t size) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+        return rte_malloc_socket(nullptr, size, 64, memory::GetCurrentSocket());
+#else
         return malloc(size);
+#endif
     }
 
     /**
@@ -1175,7 +1179,11 @@ namespace omnistack::memory {
      * @param ptr The pointer to the memory region
      */
     void FreeLocal(void* ptr) {
+#if defined(OMNIMEM_BACKEND_DPDK)
+        rte_free(ptr);
+#else
         free(ptr);
+#endif
     }
 
     /**
