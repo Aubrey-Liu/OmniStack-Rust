@@ -282,6 +282,7 @@ namespace omnistack::data_plane::node_user {
         }
         if (!passive_node) [[unlikely]] throw std::runtime_error("Failed to find passive node");
         passive_node->Write((Packet*)new_node);
+        passive_node->Flush();
         raise_event_(new(event_pool_->Get()) node_common::NodeEventTcpNewNode(new_node));
         return nullptr;
     }

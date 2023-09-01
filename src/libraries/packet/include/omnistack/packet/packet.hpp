@@ -59,7 +59,7 @@ namespace omnistack::packet {
 
         uint16_t reference_count_;
         uint16_t length_;           // total length of data in mbuf
-        uint16_t channel_;          // target channel
+        uint16_t header_tail_;      // index into packet_headers_
         uint16_t offset_;           // current decoded data offset
         uint16_t nic_;              // id of source or target NIC
         MbufType mbuf_type_;        // Origin, DPDK, Indirect
@@ -68,14 +68,12 @@ namespace omnistack::packet {
         uint64_t custom_value_;     // value, module can use for transferring data
         Pointer<char> data_;        // pointer to packet data
         uint32_t flow_hash_;
-        uint16_t header_tail_;      // index into packet_headers_
-        uint16_t padding;
+        uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         PacketHeader packet_headers_[kPacketMaxHeaderNum];
         Pointer<Packet> next_packet_;
         Pointer<node::BasicNode> node_;        // pointer to the node which the packet belongs to
         /* a cache line ends here */
 
-        uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         Pointer<void> root_packet_; // dpdk packet use this as pointer to rte_mbuf
         struct sockaddr_in peer_addr_; // Used for some specific cases
 
@@ -86,7 +84,7 @@ namespace omnistack::packet {
                 packet_headers_[i].offset_ += offset;
         }
 
-        inline char* GetHeaderPayload(const int& index) const {
+        inline char* GetHeaderPayload(int index) const {
             return data_ + static_cast<uint32_t>(packet_headers_[index].offset_);
         }
 
@@ -192,13 +190,10 @@ namespace omnistack::packet {
     inline Packet* PacketPool::Duplicate(Packet* packet) {
         if(packet->mbuf_type_ == Packet::MbufType::kIndirect) packet = reinterpret_cast<Packet*>(packet->root_packet_.Get());
         auto packet_copy = reinterpret_cast<Packet*>(memory_pool_->Get());
-        if(packet_copy == nullptr) [[unlikely]] {
-            OMNI_LOG_TAG(kWarning, "PacketDuplicate") << "failed to allocate from mempool\n";
-            return nullptr;
-        }
+        if(packet_copy == nullptr) [[unlikely]] return nullptr;
         packet_copy->reference_count_ = 1;
         packet_copy->length_ = packet->length_;
-        packet_copy->channel_ = packet->channel_;
+        packet_copy->header_tail_ = 0;
         packet_copy->offset_ = packet->offset_;
         packet_copy->nic_ = packet->nic_;
         packet_copy->mbuf_type_ = Packet::MbufType::kOrigin;
@@ -235,10 +230,9 @@ namespace omnistack::packet {
     inline Packet* PacketPool::Reference(Packet* packet) {
         if(packet->mbuf_type_ == Packet::MbufType::kIndirect) packet = reinterpret_cast<Packet*>(packet->root_packet_.Get());
         auto packet_copy = reinterpret_cast<Packet*>(memory_pool_->Get());
-        if(packet_copy == nullptr) return nullptr;
+        if(packet_copy == nullptr) [[unlikely]] return nullptr;
         packet_copy->reference_count_ = 1;
         packet_copy->length_ = packet->length_;
-        packet_copy->channel_ = packet->channel_;
         packet_copy->offset_ = packet->offset_;
         packet_copy->nic_ = packet->nic_;
         packet_copy->mbuf_type_ = Packet::MbufType::kIndirect;
@@ -248,8 +242,9 @@ namespace omnistack::packet {
         packet_copy->data_ = packet->data_;
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
-        packet->root_packet_ = reinterpret_cast<void*>(packet);
+        packet_copy->root_packet_ = reinterpret_cast<void*>(packet);
         packet_copy->peer_addr_ = packet->peer_addr_;
+        packet_copy->header_tail_ = 0;
         while(packet_copy->header_tail_ != packet->header_tail_) {
             auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
             header.length_ = packet->packet_headers_[packet_copy->header_tail_].length_;

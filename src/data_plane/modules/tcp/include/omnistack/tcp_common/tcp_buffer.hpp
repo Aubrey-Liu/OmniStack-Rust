@@ -7,6 +7,7 @@
 
 #include <omnistack/memory/memory.h>
 #include <omnistack/packet/packet.hpp>
+#include <omnistack/common/logger.h>
 #include <queue>
 
 namespace omnistack::data_plane::tcp_common {
@@ -15,6 +16,10 @@ namespace omnistack::data_plane::tcp_common {
 
     inline bool TcpGreaterUint32(uint32_t a, uint32_t b) {
         return (int32_t)(a - b) > 0;
+    }
+
+    inline bool TcpLessUint32(uint32_t a, uint32_t b) {
+        return (int32_t)(a - b) < 0;
     }
 
     class TcpReceiveBuffer {
@@ -30,14 +35,19 @@ namespace omnistack::data_plane::tcp_common {
 
         void Push(uint32_t seq, Packet* packet);
 
+        uint32_t size_() const { return buffer_.size(); }
+
     private:
         TcpReceiveBuffer() = default;
         ~TcpReceiveBuffer() = default;
 
-        typedef std::pair<uint32_t, Packet*> BufferEntry;
+        struct BufferEntry {
+            uint32_t seq;
+            Packet* packet;
+        };
 
         friend bool operator<(const BufferEntry& a, const BufferEntry& b) {
-            return TcpGreaterUint32(a.first, b.first);
+            return TcpGreaterUint32(a.seq, b.seq);
         }
 
         std::priority_queue<BufferEntry> buffer_;
@@ -90,10 +100,10 @@ namespace omnistack::data_plane::tcp_common {
         auto ret = trigger_packet;
         while(!buffer_.empty()) [[unlikely]] {
             auto entry = buffer_.top();
-            auto begin_seq = entry.first;
+            auto begin_seq = entry.seq;
             if(TcpGreaterUint32(begin_seq, seq)) break;
             buffer_.pop();
-            auto packet = entry.second;
+            auto packet = entry.packet;
             auto end_seq = begin_seq + packet->length_ - packet->offset_;
             if(TcpGreaterUint32(end_seq, seq)) [[likely]] {
                 packet->offset_ += seq - begin_seq;
@@ -107,7 +117,7 @@ namespace omnistack::data_plane::tcp_common {
     }
 
     inline void TcpReceiveBuffer::Push(uint32_t seq, Packet* packet) {
-        buffer_.push(std::make_pair(seq, packet));
+        buffer_.push({seq, packet});
     }
 
     inline TcpSendBuffer* TcpSendBuffer::Create(memory::MemoryPool* buffer_pool) {

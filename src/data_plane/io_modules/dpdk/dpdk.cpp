@@ -15,12 +15,12 @@ namespace omnistack::io_module::dpdk {
     constexpr int kMtu = 1500;
     constexpr int kMaxNumQueues = 32;
     
-    constexpr int kMbufCount = 16384;
-    constexpr int kLocalCahe = 512;
+    constexpr int kMbufCount = 4096;
+    constexpr int kLocalCahe = 256;
     constexpr int kMBufSize = 
         AlignTo(common::kMtu + sizeof(common::EthernetHeader) + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM, 64);
     constexpr int kSendQueueSize = 32;
-    constexpr int kRecvQueueSize = 64;
+    constexpr int kRecvQueueSize = 128;
     constexpr int kDefaultRxDescSize = 512;
     constexpr int kDefaultTxDescSize = 512;
 
@@ -371,7 +371,7 @@ namespace omnistack::io_module::dpdk {
         static packet::Packet* ret_packets[kRecvQueueSize];
 
         auto size = rte_eth_rx_burst(port_id_, queue_id_, buffer_, kRecvQueueSize);
-        if(size == 0) return nullptr;
+        if(size == 0) [[unlikely]] return nullptr;
         packet::Packet* ret = nullptr;
         auto packet_count = packet_pool_->Allocate(size, ret_packets);
         if(packet_count != size) [[unlikely]] throw std::runtime_error("dpdk failed to allocate enough packets from packet pool");

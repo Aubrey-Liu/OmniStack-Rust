@@ -61,6 +61,7 @@ namespace omnistack::data_plane::tcp_data_in {
     Packet* TcpDataIn::MainLogic(Packet* packet) {
         auto flow = reinterpret_cast<TcpFlow*>(packet->custom_value_);
         if(flow == nullptr) return TcpInvalid(packet);
+        tcp_shared_handle_->ReleaseFlow(flow);
         auto tcp_header = reinterpret_cast<TcpHeader*>(packet->data_ + packet->packet_headers_[packet->header_tail_ - 1].offset_);
 
         auto& recv_var = flow->receive_variables_;
@@ -90,6 +91,8 @@ namespace omnistack::data_plane::tcp_data_in {
                 recv_var.recv_nxt_ = seq_end;
             }
             else recv_var.receive_buffer_->Push(seq_num, packet);
+            if(recv_var.receive_buffer_->size_() > 10000)
+                OMNI_LOG_TAG(kWarning, "TCP_DATA_IN") << "receive buffer size: " << recv_var.receive_buffer_->size_() << "\n";
         }
         else packet->Release();
 

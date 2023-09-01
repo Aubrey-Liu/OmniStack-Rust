@@ -26,28 +26,7 @@ namespace omnistack::data_plane::ipv4_recver {
         constexpr bool allow_duplication_() override { return true; }
 
         constexpr ModuleType type_() override { return ModuleType::kReadWrite; }
-
-        void Initialize(std::string_view name_prefix, PacketPool* packet_pool) override;
-
-        void Destroy() override;
-
-    private:
-        FILE* ipv4_recver_log = NULL;
     };
-
-    void Ipv4Recver::Initialize(std::string_view name_prefix, PacketPool* packet_pool)
-    {
-        ipv4_recver_log = fopen("./ipv4_recver_log.txt", "w");
-        fprintf(ipv4_recver_log, "Initialize(): finished.\n");
-        return;
-    }
-
-    void Ipv4Recver::Destroy()
-    {
-        fprintf(ipv4_recver_log, "Destroy(): finished.\n");
-        if(ipv4_recver_log != NULL) fclose(ipv4_recver_log);
-        return;
-    }
 
     inline void LogIpv4Address(const char* message, uint32_t ip) {
         printf("%s%d.%d.%d.%d\n", message, ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff, (ip >> 24) & 0xff);
@@ -69,12 +48,8 @@ namespace omnistack::data_plane::ipv4_recver {
         packet->offset_ += ipv4.length_;
 
         // check if the packet is invalid
-        if (ipv4_header->ihl < 5 || ipv4_header->ttl == 0) [[unlikely]]
-        {
-            fprintf(ipv4_recver_log, "MainLogic: refused packet with ihl = %d, ttl = %d\n", ipv4_header->ihl, ipv4_header->ttl);
-            return nullptr; // drop packet
-        }
-        // fprintf(ipv4_recver_log, "MainLogic: packet with id %d has survived from ihl and ttl check.\n", ipv4_header->id);
+        if (ipv4_header->ihl < 5 || ipv4_header->ttl == 0) [[unlikely]] return nullptr; // drop packet
+
         // due to NIC offload and upper modules, we won't collect frags or check chksum here.
 
         return packet;

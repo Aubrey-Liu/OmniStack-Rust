@@ -9,12 +9,12 @@ namespace omnistack::packet {
     Packet::Packet() {
         reference_count_ = 1;
         length_ = 0;
+        header_tail_ = 0;
         offset_ = 0;
         mbuf_type_ = MbufType::kOrigin;
         custom_mask_ = 0;
         custom_value_ = 0;
         data_ = mbuf_ + kPacketMbufHeadroom;
-        header_tail_ = 0;
         next_packet_ = nullptr;
         node_ = nullptr;
         // next_hop_filter_ = 0;

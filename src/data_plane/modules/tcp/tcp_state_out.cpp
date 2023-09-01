@@ -217,6 +217,7 @@ namespace omnistack::data_plane::tcp_state_out {
         auto remote_port = node->info_.transport.tcp.dport;
         auto flow = tcp_shared_handle_->GetFlow(local_ip, remote_ip, local_port, remote_port);
         if(flow == nullptr) return nullptr;
+        OMNI_LOG_TAG(kInfo, "TCP_STATE_OUT") << "update node info, node = " << node << "\n";
         flow->node_ = node;
         return nullptr;
     }
