@@ -6,6 +6,8 @@
 
 #include <omnistack/module/module.hpp>
 #include <omnistack/common/protocol_headers.hpp>
+#include <omnistack/common/config.h>
+#include <omnistack/common/logger.h>
 #include <omnistack/node.h>
 #include <deque>
 #include <stdio.h>
@@ -22,16 +24,12 @@ namespace omnistack::data_plane::ipv4_sender {
     class Route {
     public:
         uint32_t ip_addr;
-        uint8_t cidr;
         uint32_t cidr_mask;
+        uint16_t cidr;
         uint16_t nic;
 
-        Route(uint32_t _ip_addr, uint8_t _cidr, uint16_t _nic)
-        {
-            ip_addr = _ip_addr;
-            cidr = _cidr;
-            cidr_mask = ~((1 << (32 - cidr)) - 1);
-            nic = _nic;
+        Route(uint32_t _ip_addr, uint16_t _cidr, uint16_t _nic) : ip_addr(_ip_addr), cidr(_cidr), nic(_nic) {
+            cidr_mask = (1 << _cidr) - 1;
         }
     };
 
@@ -68,7 +66,7 @@ namespace omnistack::data_plane::ipv4_sender {
         return (proto == TransportLayerType::kTCP) || (proto == TransportLayerType::kUDP);
     }
 
-    void Ipv4Sender::EditIpv4Header(Ipv4Header* header, uint8_t ihl, uint16_t len, uint8_t proto, uint32_t src, uint32_t dst)
+    inline void Ipv4Sender::EditIpv4Header(Ipv4Header* header, uint8_t ihl, uint16_t len, uint8_t proto, uint32_t src, uint32_t dst)
     {
         // assume all args are small-edian
         header->ihl = ihl;
@@ -79,27 +77,28 @@ namespace omnistack::data_plane::ipv4_sender {
         header->frag_off = 0;
         header->ttl = 255; // default max ttl
         header->proto = proto;
-        header->chksum = 0x149;
+        // header->chksum = 0x149;
         header->src = src; // src and dst are already big-edian
         header->dst = dst;
     }
 
     Packet* Ipv4Sender::MainLogic(Packet* packet) {
-
         // assume no huge pack need to be fragile
-        if(packet->length_ > 1480) return nullptr;
+        // if(packet->length_ > 1480) [[unlikely]] return nullptr;
+
         // read src/dst ip from node
         uint32_t src_ip_addr = (packet->node_)->info_.network.ipv4.sip;
-        uint32_t dst_ip_addr = (packet->node_)->info_.network.ipv4.dip;
+        uint32_t dst_ip_addr = packet->peer_addr_.sin_addr.s_addr;
         uint8_t max_cidr = 0;
         uint16_t dst_nic = 0;
-        // edit omnistack's header. notice that the offset should be - after used. 
+        // edit omnistack's header.
+        packet->AddHeaderOffset(sizeof(Ipv4Header));
         auto& ipv4 = packet->packet_headers_[packet->header_tail_ ++];
         ipv4.length_ = sizeof(Ipv4Header);
-        ipv4.offset_ = packet->offset_ - sizeof(Ipv4Header);
-        Ipv4Header* header = reinterpret_cast<Ipv4Header*>(packet->data_ + ipv4.offset_);
-        packet->offset_ -= ipv4.length_;
+        ipv4.offset_ = 0;
+        packet->data_ = packet->data_ - sizeof(Ipv4Header);
         packet->length_ += sizeof(Ipv4Header);
+        Ipv4Header* header = reinterpret_cast<Ipv4Header*>(packet->data_.Get());
 
         // find dst ip from route table
         for(int i = 0;i < route_table.size();i++)
@@ -123,11 +122,11 @@ namespace omnistack::data_plane::ipv4_sender {
 
         packet->nic_ = dst_nic;
         // give it correct proto type
-        fprintf(ipv4_sender_log, "MainLogic: found route path from %d to %d\n", src_ip_addr, dst_ip_addr);
+        // fprintf(ipv4_sender_log, "MainLogic: found route path from %d to %d\n", src_ip_addr, dst_ip_addr);
         EditIpv4Header(header, ipv4.length_ >> 2, packet->length_, 
             ((*packet->node_).info_.transport_layer_type == TransportLayerType::kTCP) ? IP_PROTO_TYPE_TCP : IP_PROTO_TYPE_UDP, 
             src_ip_addr, dst_ip_addr);
-        fprintf(ipv4_sender_log, "MainLogic: finished editing ipv4 header with check_sum 0x%x\n", header->chksum);
+        // fprintf(ipv4_sender_log, "MainLogic: finished editing ipv4 header with check_sum 0x%x\n", header->chksum);
 
         return packet;
     }
@@ -136,9 +135,9 @@ namespace omnistack::data_plane::ipv4_sender {
     {
         ipv4_sender_log = fopen("./ipv4_sender_log.txt", "w");
         // TODO: init a correct route table
-        for(int i = 0;i < route_table_max_size;i++)
-        {
-            route_table.push_back(Route(i, i, i));
+        auto& route_config = config::kStackConfig->GetRouteEntries();
+        for(auto route : route_config) {
+            route_table.emplace_back(Route(route.ipv4_raw_, route.cidr_, route.nic_));
         }
         fprintf(ipv4_sender_log, "Initialize: finished.\n");
         return;

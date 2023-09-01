@@ -3,6 +3,7 @@
 //
 
 #include <omnistack/tcp_common/tcp_shared.hpp>
+#include <omnistack/node/node_events.hpp>
 #include <omnistack/common/random.hpp>
 
 namespace omnistack::data_plane::tcp_state_out {
@@ -37,6 +38,8 @@ namespace omnistack::data_plane::tcp_state_out {
 
         Packet* OnActiveClose(Event* event);
 
+        Packet* OnTcpNewNode(Event* event);
+
         void EnterSynSent(TcpFlow* flow, const char* congestion_control_algorithm);
 
         void EnterFinWait1(TcpFlow* flow);
@@ -57,7 +60,8 @@ namespace omnistack::data_plane::tcp_state_out {
         return std::vector<Event::EventType>{
                 kTcpEventTypeListen,
                 kTcpEventTypeActiveConnect,
-                kTcpEventTypeActiveClose
+                kTcpEventTypeActiveClose,
+                node_common::kNodeEventTypeTcpNewNode
         };
     }
 
@@ -69,6 +73,8 @@ namespace omnistack::data_plane::tcp_state_out {
                 return OnActiveConnect(event);
             case kTcpEventTypeActiveClose:
                 return OnActiveClose(event);
+            case node_common::kNodeEventTypeTcpNewNode:
+                return OnTcpNewNode(event);
             default:
                 return nullptr;
         }
@@ -121,6 +127,7 @@ namespace omnistack::data_plane::tcp_state_out {
         uint32_t local_ip = tcp_event->local_ipv4_;
         uint16_t local_port = tcp_event->local_port_;
         auto options = tcp_event->options_;
+        auto node = tcp_event->node_;
 
         if(tcp_shared_handle_->GetListenFlow(local_ip, local_port) != nullptr) {
             /* TODO: report error */
@@ -132,6 +139,8 @@ namespace omnistack::data_plane::tcp_state_out {
             /* TODO: report error */
             return nullptr;
         }
+        flow->node_ = node;
+        OMNI_LOG_TAG(kInfo, "TCP_STATE") << "listen on (" << local_ip << ", " << local_port << ")\n";
 
         return nullptr;
     }
@@ -142,6 +151,7 @@ namespace omnistack::data_plane::tcp_state_out {
         uint32_t remote_ip = tcp_event->remote_ipv4_;
         uint16_t local_port = tcp_event->local_port_;
         uint16_t remote_port = tcp_event->remote_port_;
+        auto node = tcp_event->node_;
 
         if(tcp_shared_handle_->GetFlow(local_ip, remote_ip, local_port, remote_port) != nullptr) {
             /* TODO: report error */
@@ -152,6 +162,7 @@ namespace omnistack::data_plane::tcp_state_out {
             /* TODO: report error */
             return nullptr;
         }
+        flow->node_ = node;
         flow->state_ = TcpFlow::State::kClosed;
         EnterSynSent(flow, kTcpDefaultCongestionControlAlgorithm);
         
@@ -194,6 +205,20 @@ namespace omnistack::data_plane::tcp_state_out {
         tcp_shared_handle_->AcquireFlow(flow);
 
         return packet;
+    }
+
+    inline Packet* TcpStateOut::OnTcpNewNode(Event* event) {
+        OMNI_LOG_TAG(kInfo, "TCP_STATE_OUT") << "receive envent TcpNewNode\n";
+        auto tcp_event = static_cast<node_common::NodeEventTcpNewNode*>(event);
+        auto node = tcp_event->node_;
+        auto local_ip = node->info_.network.ipv4.sip;
+        auto remote_ip = node->info_.network.ipv4.dip;
+        auto local_port = node->info_.transport.tcp.sport;
+        auto remote_port = node->info_.transport.tcp.dport;
+        auto flow = tcp_shared_handle_->GetFlow(local_ip, remote_ip, local_port, remote_port);
+        if(flow == nullptr) return nullptr;
+        flow->node_ = node;
+        return nullptr;
     }
 
     void TcpStateOut::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {

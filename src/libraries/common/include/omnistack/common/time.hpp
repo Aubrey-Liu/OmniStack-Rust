@@ -9,29 +9,29 @@
 
 namespace omnistack::common {
 
-    static thread_local uint8_t cnt = 15;
-    static thread_local auto last_time = std::chrono::steady_clock::now();
+    inline thread_local uint8_t cnt = 0;
+    inline thread_local auto last_time = std::chrono::steady_clock::now();
     
     inline uint64_t NowNs() {
-        if(!(++cnt & 15)) last_time = std::chrono::steady_clock::now();
+        if(!((++cnt) &= 15)) last_time = std::chrono::steady_clock::now();
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
                 last_time.time_since_epoch()).count();
     }
 
     inline uint64_t NowUs() {
-        if(!(++cnt & 15)) last_time = std::chrono::steady_clock::now();
+        if(!((++cnt) &= 15)) last_time = std::chrono::steady_clock::now();
         return std::chrono::duration_cast<std::chrono::microseconds>(
                 last_time.time_since_epoch()).count();
     }
 
     inline uint64_t NowMs() {
-        if(!(++cnt & 15)) last_time = std::chrono::steady_clock::now();
+        if(!((++cnt) &= 15)) last_time = std::chrono::steady_clock::now();
         return std::chrono::duration_cast<std::chrono::milliseconds>(
                 last_time.time_since_epoch()).count();
     }
 
     inline uint64_t NowS() {
-        if(!(++cnt & 15)) last_time = std::chrono::steady_clock::now();
+        if(!((++cnt) &= 15)) last_time = std::chrono::steady_clock::now();
         return std::chrono::duration_cast<std::chrono::seconds>(
                 last_time.time_since_epoch()).count();
     }

@@ -134,8 +134,8 @@ namespace omnistack {
             struct RouteEntry {
                 std::string ipv4_;
                 uint32_t ipv4_raw_;
-                uint32_t cidr_;
-                int nic_;
+                uint16_t cidr_;
+                uint16_t nic_;
 
                 RouteEntry(Json::Value root) {
                     REQUIRED_STR(root, "ipv4", ipv4_);
@@ -233,11 +233,13 @@ namespace omnistack {
             static const StackConfig& GetStackConfig(const std::string& name);
             static const GraphConfig& GetGraphConfig(const std::string& name);
         private:
-            static std::map<std::string, StackConfig*> stack_configs_;
-            static std::map<std::string, GraphConfig*> graph_configs_;
+            inline static std::map<std::string, StackConfig*> stack_configs_;
+            inline static std::map<std::string, GraphConfig*> graph_configs_;
 
             ConfigManager() {}
         };
+
+        inline StackConfig* kStackConfig;
     }
 }
 
