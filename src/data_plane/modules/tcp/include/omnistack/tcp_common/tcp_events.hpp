@@ -6,6 +6,7 @@
 #define OMNISTACK_TCP_COMMON_TCP_EVENTS_HPP
 
 #include <omnistack/module/event.hpp>
+#include <omnistack/node.h>
 
 namespace omnistack::data_plane::tcp_common {
 
@@ -27,24 +28,26 @@ namespace omnistack::data_plane::tcp_common {
     class TcpEventListen : public Event {
     public:
         TcpEventListen() : Event(kTcpEventTypeListen) {}
-        TcpEventListen(uint32_t local_ipv4, uint16_t local_port, TcpListenOptions options) : Event(kTcpEventTypeListen), local_ipv4_(local_ipv4), local_port_(local_port), options_(options) {}
+        TcpEventListen(uint32_t local_ipv4, uint16_t local_port, TcpListenOptions options, node::BasicNode* node) : Event(kTcpEventTypeListen), local_ipv4_(local_ipv4), local_port_(local_port), options_(options), node_(node) {}
 
         uint32_t local_ipv4_;
         uint16_t local_port_;
         TcpListenOptions options_;
+        node::BasicNode* node_;                // node that this flow belongs to
     };
     static_assert(sizeof(TcpEventListen) <= kEventMaxLength, "TcpEventListen too large");
 
     class TcpEventActiveConnect : public Event {
     public:
         TcpEventActiveConnect() : Event(kTcpEventTypeActiveConnect) {}
-        TcpEventActiveConnect(uint32_t local_ipv4, uint32_t remote_ipv4, uint16_t local_port, uint16_t remote_port) :
-            Event(kTcpEventTypeActiveConnect), local_ipv4_(local_ipv4), remote_ipv4_(remote_ipv4), local_port_(local_port), remote_port_(remote_port) {}
+        TcpEventActiveConnect(uint32_t local_ipv4, uint32_t remote_ipv4, uint16_t local_port, uint16_t remote_port, node::BasicNode* node) :
+            Event(kTcpEventTypeActiveConnect), local_ipv4_(local_ipv4), remote_ipv4_(remote_ipv4), local_port_(local_port), remote_port_(remote_port), node_(node) {}
     
         uint32_t local_ipv4_;
         uint32_t remote_ipv4_;
         uint16_t local_port_;
         uint16_t remote_port_;
+        node::BasicNode* node_;                // node that this flow belongs to
     };
     static_assert(sizeof(TcpEventActiveConnect) <= kEventMaxLength, "TcpEventActiveConnect too large");
 

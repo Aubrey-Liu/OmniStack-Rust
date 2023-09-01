@@ -8,6 +8,7 @@
 #include <string>
 
 #include <omnistack/common/constant.hpp>
+#include <omnistack/common/logger.h>
 #include <omnistack/memory/memory.h>
 #include <stdexcept>
 #include <sys/socket.h>
@@ -80,6 +81,11 @@ namespace omnistack::packet {
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
 
         char mbuf_[kPacketMbufSize];
+
+        void AddHeaderOffset(uint16_t offset) {
+            for(uint32_t i = 0; i < header_tail_; i ++)
+                packet_headers_[i].offset_ += offset;
+        }
 
         inline char* GetHeaderPayload(const int& index) const {
             return data_ + static_cast<uint32_t>(packet_headers_[index].offset_);
@@ -187,7 +193,10 @@ namespace omnistack::packet {
     inline Packet* PacketPool::Duplicate(Packet* packet) {
         if(packet->mbuf_type_ == Packet::MbufType::kIndirect) packet = reinterpret_cast<Packet*>(packet->root_packet_.Get());
         auto packet_copy = reinterpret_cast<Packet*>(memory_pool_->Get());
-        if(packet_copy == nullptr) return nullptr;
+        if(packet_copy == nullptr) [[unlikely]] {
+            OMNI_LOG_TAG(kWarning, "PacketDuplicate") << "failed to allocate from mempool\n";
+            return nullptr;
+        }
         packet_copy->reference_count_ = 1;
         packet_copy->length_ = packet->length_;
         packet_copy->channel_ = packet->channel_;

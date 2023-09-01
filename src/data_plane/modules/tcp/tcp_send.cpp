@@ -97,12 +97,16 @@ namespace omnistack::data_plane::tcp_send {
         // ipv4->src = flow->local_ip_;
         // ipv4->dst = flow->remote_ip_;
 
+        packet->node_ = flow->node_;
+
         return packet;
     } 
 
     Packet* TcpSend::MainLogic(Packet* packet) {
+        OMNI_LOG_TAG(kDebug, "TCP_SEND") << "enter main logic\n";
         auto flow = reinterpret_cast<TcpFlow*>(packet->custom_value_);
         if(flow == nullptr) return TcpInvalid(packet);
+        tcp_shared_handle_->ReleaseFlow(flow);
         auto& send_var = flow->send_variables_;
 
         Packet* ret = nullptr;
@@ -148,6 +152,7 @@ namespace omnistack::data_plane::tcp_send {
                flow->state_ == TcpFlow::State::kLastAck ||
                flow->state_ == TcpFlow::State::kClosing) {
                 /* set retransmission timer */
+                OMNI_LOG_TAG(kDebug, "TCP_SEND") << "rxtcur_ = " << send_var.rxtcur_ << "\n";
                 send_var.rto_begin_ = NowUs();
                 send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
                 flow_timers_.push(FlowTimer(flow, packet));
@@ -155,6 +160,7 @@ namespace omnistack::data_plane::tcp_send {
                 flow->send_variables_.in_retransmission_queue_ ++;
             
                 /* send packet */
+                OMNI_LOG_TAG(kDebug, "TCP_SEND") << "send control packet\n";
                 ret = packet_pool_->Duplicate(packet);
             }
         }
@@ -164,7 +170,7 @@ namespace omnistack::data_plane::tcp_send {
 
     Packet* TcpSend::TimerLogic(uint64_t tick) {
         Packet* ret = nullptr;
-        while(!flow_timers_.empty()) {
+        if(!flow_timers_.empty()) {
             auto flow_timer = flow_timers_.front();
             flow_timers_.pop();
             auto flow = flow_timer.flow;
@@ -173,37 +179,44 @@ namespace omnistack::data_plane::tcp_send {
             if(control_packet != nullptr) [[unlikely]] {
                 if(flow->state_ == TcpFlow::State::kSynSent ||
                    flow->state_ == TcpFlow::State::kSynReceived) {
-                    /* set retransmission timer */
-                    send_var.rxtcur_ <<= 1;
-                    send_var.rto_begin_ = NowUs();
-                    send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
                     flow_timers_.push(FlowTimer(flow, control_packet));
+                    if(tick >= send_var.rto_timeout_) [[unlikely]] {
+                        /* set retransmission timer */
+                        send_var.rxtcur_ <<= 1;
+                        if(send_var.rxtcur_ > kTcpMaximumRetransmissionTimeout) [[unlikely]] send_var.rxtcur_ = kTcpMaximumRetransmissionTimeout;
+                        send_var.rto_begin_ = NowUs();
+                        send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
 
-                    /* retransmit SYN packet */
-                    auto packet = packet_pool_->Duplicate(control_packet);
-                    packet->next_packet_ = ret;
-                    ret = packet;
+                        /* retransmit SYN packet */
+                        auto packet = packet_pool_->Duplicate(control_packet);
+                        packet->next_packet_ = ret;
+                        ret = packet;
+
+                        OMNI_LOG_TAG(kDebug, "TCP_SEND") << "retransmit SYN packet, rxtcur_ = " << send_var.rxtcur_ << "\n";
+                    }
                 }
                 else if(flow->state_ == TcpFlow::State::kFinWait1 ||
                         flow->state_ == TcpFlow::State::kLastAck ||
                         flow->state_ == TcpFlow::State::kClosing) {
-                    if(send_var.in_retransmission_queue_ > 1) {
-                        /* set retransmission timer */
-                        send_var.rto_begin_ = NowUs();
-                        send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
-                        flow_timers_.push(FlowTimer(flow, control_packet));
-                    }
-                    else {
-                        /* set retransmission timer */
-                        send_var.rxtcur_ <<= 1;
-                        send_var.rto_begin_ = NowUs();
-                        send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
-                        flow_timers_.push(FlowTimer(flow, control_packet));
+                    flow_timers_.push(FlowTimer(flow, control_packet));
+                    if(tick >= send_var.rto_timeout_) [[unlikely]] {
+                        if(send_var.in_retransmission_queue_ > 1) {
+                            /* set retransmission timer */
+                            send_var.rto_begin_ = NowUs();
+                            send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
+                        }
+                        else {
+                            /* set retransmission timer */
+                            send_var.rxtcur_ <<= 1;
+                            if(send_var.rxtcur_ > kTcpMaximumRetransmissionTimeout) [[unlikely]] send_var.rxtcur_ = kTcpMaximumRetransmissionTimeout;
+                            send_var.rto_begin_ = NowUs();
+                            send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
 
-                        /* retransmit FIN packet */
-                        auto packet = packet_pool_->Duplicate(control_packet);
-                        packet->next_packet_ = ret;
-                        ret = packet;
+                            /* retransmit FIN packet */
+                            auto packet = packet_pool_->Duplicate(control_packet);
+                            packet->next_packet_ = ret;
+                            ret = packet;
+                        }
                     }
                 }
                 else {
@@ -230,13 +243,13 @@ namespace omnistack::data_plane::tcp_send {
                     }
                 }
                 else {
+                    flow_timers_.push(FlowTimer(flow, nullptr));
                     /* check fast retransmission */
                     if(send_var.fast_retransmission_) [[unlikely]] {
                         /* set retransmission timer */
                         send_var.fast_retransmission_ = 0;
                         send_var.rto_begin_ = NowUs();
                         send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
-                        flow_timers_.push(FlowTimer(flow, nullptr));
 
                         /* retransmit packet */
                         auto packet = BuildDataPacket(flow, send_var.send_una_, send_var.send_buffer_->FrontSent(), packet_pool_);
@@ -253,9 +266,9 @@ namespace omnistack::data_plane::tcp_send {
                         /* set retransmission timer */
                         send_var.is_retransmission_ ++;
                         send_var.rxtcur_ <<= 1;
+                        if(send_var.rxtcur_ > kTcpMaximumRetransmissionTimeout) [[unlikely]] send_var.rxtcur_ = kTcpMaximumRetransmissionTimeout;
                         send_var.rto_begin_ = NowUs();
                         send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
-                        flow_timers_.push(FlowTimer(flow, nullptr));
 
                         /* retransmit packet */
                         auto packet = BuildDataPacket(flow, send_var.send_una_, send_var.send_buffer_->FrontSent(), packet_pool_);

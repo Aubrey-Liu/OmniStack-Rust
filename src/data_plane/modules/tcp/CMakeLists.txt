@@ -36,7 +36,7 @@ add_library(omni_data_plane_tcp_state_in SHARED tcp_state_in.cpp ${tcp_common_co
 target_link_libraries(omni_data_plane_tcp_state_in PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common)
 
 add_library(omni_data_plane_tcp_state_out SHARED tcp_state_out.cpp ${tcp_common_congestion_control_algorithms})
-target_link_libraries(omni_data_plane_tcp_state_out PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common)
+target_link_libraries(omni_data_plane_tcp_state_out PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common omni_data_plane_node_common)
 
 add_library(omni_data_plane_tcp_data_in SHARED tcp_data_in.cpp ${tcp_common_congestion_control_algorithms})
 target_link_libraries(omni_data_plane_tcp_data_in PUBLIC ${OMNI_DATA_PLANE_LIB} omni_data_plane_tcp_common)

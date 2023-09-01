@@ -135,16 +135,16 @@ namespace omnistack::data_plane {
                 filters.reserve(downstream_links_[u].size());
                 filter_masks.reserve(downstream_links_[u].size());
 
+                auto global_idu = local_to_global[u];
+
                 std::map<uint32_t, uint32_t> local_to_idx;
                 for(uint32_t j = 0; j < downstream_links_[u].size(); j ++) {
                     auto downstream_node = downstream_links_[u][j];
-                    modules.push_back(std::make_pair(modules_[u]->name_(), local_to_global[downstream_node]));
-                    filters.push_back(modules_[downstream_node]->GetFilter(modules_[u]->name_(), local_to_global[downstream_node]));
+                    modules.push_back(std::make_pair(modules_[downstream_node]->name_(), local_to_global[downstream_node]));
+                    filters.push_back(modules_[downstream_node]->GetFilter(modules_[u]->name_(), global_idu));
                     filter_masks.push_back(1 << j);
                     local_to_idx.emplace(downstream_node, j);
                 }
-
-                auto global_idu = local_to_global[u];
 
                 auto& mutex_links = sub_graph.mutex_links_;
                 if(mutex_links.find(global_idu) != mutex_links.end())
@@ -232,6 +232,7 @@ namespace omnistack::data_plane {
             forward_mask ^= (1 << idx);
             auto downstream_node = downstream_links_[node_idx][idx];
 
+            OMNI_LOG_TAG(common::kDebug, "engine") << "Forward packet from " << node_idx << " to " << downstream_node << "\n";
             if(module_read_only_[downstream_node]) {
                 packet_queue_[packet_queue_count_ ++] = {downstream_node, packet};
                 reference_count ++;

@@ -14,7 +14,7 @@ namespace omnistack::data_plane {
         downstream_nodes_.resize(modules.size());
         downstream_filters_.resize(modules.size());
         for(int i = 0; i < modules.size(); i ++) {
-            auto& [type, id] = modules[i];
+            auto [type, id] = modules[i];
             downstream_nodes_[i].module_type = type;
             downstream_nodes_[i].module_id = id;
             downstream_nodes_[i].filter_mask = filter_masks[i];

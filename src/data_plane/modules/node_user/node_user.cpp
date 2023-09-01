@@ -189,9 +189,9 @@ namespace omnistack::data_plane::node_user {
                 if (info.network_layer_type == node::NetworkLayerType::kIPv4) [[likely]] {
                     if (info.transport_layer_type == node::TransportLayerType::kTCP) [[likely]] {
                         if (info.transport.tcp.dport != 0)
-                            raise_event_(new(event_pool_->Get()) tcp_common::TcpEventActiveConnect(info.network.ipv4.sip, info.network.ipv4.dip, info.transport.tcp.sport, info.transport.tcp.dport));
+                            raise_event_(new(event_pool_->Get()) tcp_common::TcpEventActiveConnect(info.network.ipv4.sip, info.network.ipv4.dip, info.transport.tcp.sport, info.transport.tcp.dport, packet->node_.Get()));
                         else
-                            raise_event_(new(event_pool_->Get()) tcp_common::TcpEventListen(info.network.ipv4.sip, info.transport.tcp.sport, tcp_common::TcpListenOptions()));
+                            raise_event_(new(event_pool_->Get()) tcp_common::TcpEventListen(info.network.ipv4.sip, info.transport.tcp.sport, tcp_common::TcpListenOptions(), packet->node_.Get()));
                     }
                 }
                 packet->Release();

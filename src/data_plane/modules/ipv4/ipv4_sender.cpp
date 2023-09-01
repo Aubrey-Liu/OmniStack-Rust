@@ -87,18 +87,19 @@ namespace omnistack::data_plane::ipv4_sender {
     Packet* Ipv4Sender::MainLogic(Packet* packet) {
 
         // assume no huge pack need to be fragile
-        if(packet->length_ > 1480) return nullptr;
+        if(packet->length_ > 1480) [[unlikely]] return nullptr;
         // read src/dst ip from node
         uint32_t src_ip_addr = (packet->node_)->info_.network.ipv4.sip;
         uint32_t dst_ip_addr = (packet->node_)->info_.network.ipv4.dip;
         uint8_t max_cidr = 0;
         uint16_t dst_nic = 0;
-        // edit omnistack's header. notice that the offset should be - after used. 
+        // edit omnistack's header.
+        packet->AddHeaderOffset(sizeof(Ipv4Header));
         auto& ipv4 = packet->packet_headers_[packet->header_tail_ ++];
         ipv4.length_ = sizeof(Ipv4Header);
-        ipv4.offset_ = packet->offset_ - sizeof(Ipv4Header);
+        ipv4.offset_ = 0;
         Ipv4Header* header = reinterpret_cast<Ipv4Header*>(packet->data_ + ipv4.offset_);
-        packet->offset_ -= ipv4.length_;
+        packet->data_ = packet->data_ - header_ipv4.length_;
         packet->length_ += sizeof(Ipv4Header);
 
         // find dst ip from route table

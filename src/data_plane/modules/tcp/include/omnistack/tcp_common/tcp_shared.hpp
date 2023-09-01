@@ -52,6 +52,8 @@ namespace omnistack::data_plane::tcp_common {
         if(handle->initialized_ == 0) {
             name = std::string(name_prefix) + "_FlowPool";
             handle->flow_pool_ = memory::AllocateMemoryPool(name, sizeof(TcpFlow), kTcpMaxFlowCount);
+            name = std::string(name_prefix) + "_ListenPool";
+            handle->listen_pool_ = memory::AllocateMemoryPool(name, sizeof(TcpListenFlow), kTcpMaxFlowCount);
             name = std::string(name_prefix) + "_ReceiveBufferPool";
             handle->receive_buffer_pool_ = memory::AllocateMemoryPool(name, sizeof(TcpReceiveBuffer), kTcpMaxFlowCount);
             name = std::string(name_prefix) + "_SendBufferPool";

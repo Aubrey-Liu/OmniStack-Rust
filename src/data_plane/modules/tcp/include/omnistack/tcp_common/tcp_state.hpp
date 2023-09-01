@@ -51,6 +51,8 @@ namespace omnistack::data_plane::tcp_common {
         uint16_t local_port_;
     
         char* congestion_control_algorithm_;
+
+        node::BasicNode* node_;                // node that this flow belongs to
     private:
         TcpListenFlow() = default;
         TcpListenFlow(const TcpListenFlow&) = default;
@@ -131,7 +133,7 @@ namespace omnistack::data_plane::tcp_common {
 
     inline TcpFlow* TcpFlow::Create(memory::MemoryPool* flow_pool, memory::MemoryPool* receive_buffer_pool_, memory::MemoryPool* send_buffer_pool_, uint32_t local_ip, uint32_t remote_ip, uint16_t local_port, uint16_t remote_port) {
         auto addr = flow_pool->Get();
-        if(addr = nullptr) return nullptr;
+        if(addr == nullptr) return nullptr;
         auto flow = new(addr) TcpFlow();
         flow->local_ip_ = local_ip;
         flow->remote_ip_ = remote_ip;
