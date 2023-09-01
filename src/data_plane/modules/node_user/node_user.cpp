@@ -273,7 +273,7 @@ namespace omnistack::data_plane::node_user {
         if (node_table_->Insert(&tmp_node_info, new_node, tmp_node_info.GetHash()))
             throw std::runtime_error("Failed to insert node info into hashtable");
         raise_event_(new(event_pool_->Get()) node_common::NodeEventAnyInsert(new_node));
-        tmp_node_info.network.Set(static_cast<uint32_t>(0), evt->local_ipv4_);
+        tmp_node_info.network.Set(evt->local_ipv4_, static_cast<uint32_t>(0));
         tmp_node_info.transport.tcp.dport = 0;
         auto passive_node = reinterpret_cast<node::BasicNode*>(node_table_->Lookup(&tmp_node_info, tmp_node_info.GetHash()));
         if (!passive_node) {
