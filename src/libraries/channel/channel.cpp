@@ -342,7 +342,7 @@ namespace omnistack::channel {
         if (control_plane_sock_name.length() >= sizeof(addr.sun_path))
             throw std::runtime_error("Failed to assign sock path to unix domain addr");
         strcpy(addr.sun_path, control_plane_sock_name.c_str());
-        control_plane_sock = socket(AF_UNIX, SOCK_STREAM, 0);
+        control_plane_sock = socket(AF_UNIX, SOCK_SEQPACKET, 0);
         if (control_plane_sock < 0)
             throw std::runtime_error("Failed to create unix socket");
         std::filesystem::remove(control_plane_sock_name);
@@ -593,7 +593,7 @@ namespace omnistack::channel {
         if (control_plane_sock_name.length() >= sizeof(addr.sun_path))
             throw std::runtime_error("Failed to assign sock path to unix domain addr");
         strcpy(addr.sun_path, control_plane_sock_name.c_str());
-        sock_to_control_plane = socket(AF_UNIX, SOCK_STREAM, 0);
+        sock_to_control_plane = socket(AF_UNIX, SOCK_SEQPACKET, 0);
 
         if (connect(sock_to_control_plane, (struct sockaddr*)&addr, sizeof(addr.sun_family) + control_plane_sock_name.length()))
             throw std::runtime_error("Failed to connect to control plane " + std::to_string(errno));

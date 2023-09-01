@@ -215,26 +215,7 @@ namespace omnistack::data_plane::classifier {
             }
         } else can_cache = false;
         bool is_determined = true;
-        // OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Looking up Entry" << std::endl;
         entry = reinterpret_cast<PacketEntry*>(node_table_->Lookup(&tmp_info, tmp_info.GetHash()));
-        // OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Looking up node " << common::GetIpv4Str(tmp_info.network.ipv4.sip) 
-        //     << " " << common::GetIpv4Str(tmp_info.network.ipv4.dip)
-        //     << " " << ntohs(tmp_info.transport.sport)
-        //     << " " << ntohs(tmp_info.transport.dport)
-        //     << " " << tmp_info.GetHash() << " from classifier" << std::endl;
-        // OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Hash same ? " << (tmp_info.GetHash() == last_insert_info.GetHash()) << std::endl;
-        // OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Memory same ? " << (memcmp(&tmp_info, &last_insert_info, sizeof(node::NodeInfo)) == 0) << std::endl;
-        // if (memcmp(&tmp_info, &last_insert_info, sizeof(node::NodeInfo)) != 0) {
-        //     uint8_t* bt_a = (uint8_t*)&tmp_info;
-        //     uint8_t* bt_b = (uint8_t*)&last_insert_info;
-        //     for (int i = 0; i < sizeof(node::NodeInfo); i ++) {
-        //         if (bt_a[i] != bt_b[i]) {
-        //             OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Diff at " << i << std::endl;
-        //             OMNI_LOG_TAG(common::kDebug, "NodeClassifier") << "Diff value: " << (int)bt_a[i] << " " << (int)bt_b[i] << std::endl;
-        //             break;
-        //         }
-        //     }
-        // }
         if (!entry) [[unlikely]] {
             tmp_info.transport.dport = 0;
             if (l2_hdr->type == ETH_PROTO_TYPE_IPV4) [[likely]] {
