@@ -5,10 +5,6 @@
 #include <omnistack/common/config.h>
 #include <omnistack/common/logger.h>
 
-namespace omnistack {
-    extern config::StackConfig* kStackConfig;
-}
-
 namespace omnistack::data_plane::io_node {
     using namespace omnistack::common;
     using namespace omnistack::packet;
@@ -52,7 +48,7 @@ namespace omnistack::data_plane::io_node {
                 func->InitializeDriver();
             };
             io::ModuleFactory::instance_().Iterate(init_func);
-            auto adapter_configs = kStackConfig->GetNicConfigs();
+            auto adapter_configs = config::kStackConfig->GetNicConfigs();
             for (int i = 0; i < adapter_configs.size(); i ++) { /// TODO: iterate all needed nic
                 auto adapter_config = adapter_configs[i];
                 auto adapter = io::ModuleFactory::instance_().Create(common::Crc32(adapter_config.driver_name_));
@@ -60,7 +56,7 @@ namespace omnistack::data_plane::io_node {
                     OMNI_LOG(common::kFatal) << "Cannot find driver " << adapter_config.driver_name_ << "\n";
                     exit(1);
                 }
-                adapter->InitializeAdapter(adapter_config.port_, kStackConfig->GetGraphEntries().size());
+                adapter->InitializeAdapter(adapter_config.port_, config::kStackConfig->GetGraphEntries().size());
                 adapters_[i] = adapter;
             }
             num_adapters_ = adapter_configs.size();
@@ -84,7 +80,7 @@ namespace omnistack::data_plane::io_node {
             std::lock_guard<std::mutex> lock(initialized_port_mutex_);
             num_initialized_port_ ++;
 
-            if (num_initialized_port_ == kStackConfig->GetGraphEntries().size()) { /// TODO: set number of queues
+            if (num_initialized_port_ == config::kStackConfig->GetGraphEntries().size()) { /// TODO: set number of queues
                 for (int i = 0; i < num_adapters_; i ++) {
                     adapters_[i]->Start();
                 }

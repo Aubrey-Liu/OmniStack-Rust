@@ -208,6 +208,7 @@ namespace omnistack::data_plane::tcp_state_out {
     }
 
     inline Packet* TcpStateOut::OnTcpNewNode(Event* event) {
+        OMNI_LOG_TAG(kInfo, "TCP_STATE_OUT") << "receive envent TcpNewNode\n";
         auto tcp_event = static_cast<node_common::NodeEventTcpNewNode*>(event);
         auto node = tcp_event->node_;
         auto local_ip = node->info_.network.ipv4.sip;

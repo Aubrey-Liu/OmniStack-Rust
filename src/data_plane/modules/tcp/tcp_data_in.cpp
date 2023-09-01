@@ -91,6 +91,7 @@ namespace omnistack::data_plane::tcp_data_in {
             }
             else recv_var.receive_buffer_->Push(seq_num, packet);
         }
+        else packet->Release();
 
         /* set node info and forward info */
         auto iter = ret;
@@ -126,7 +127,7 @@ namespace omnistack::data_plane::tcp_data_in {
             flow->receive_variables_.received_ = false;
             auto ack_packet = BuildReplyPacket(flow, TCP_FLAGS_ACK, packet_pool_);
             /* set forward info */
-            ack_packet->next_hop_filter_ &= next_hop_filter_mask_ack_;
+            ack_packet->next_hop_filter_ = next_hop_filter_mask_ack_;
 
             ack_packet->next_packet_ = ret;
             ret = ack_packet;
@@ -142,14 +143,14 @@ namespace omnistack::data_plane::tcp_data_in {
         /* set next hop filter mask */
         uint32_t node_user_mask = 0;
         uint32_t ipv4_sender_mask = 0;
-        for(auto& son : downstream_nodes_) {
-            if(son.module_type == ConstCrc32("NodeUser"))
-                node_user_mask |= son.filter_mask;
-            else if(son.module_type == ConstCrc32("Ipv4Sender"))
-                ipv4_sender_mask |= son.filter_mask;
+        uint32_t universe_mask = 0;
+        for(auto son : downstream_nodes_) {
+            universe_mask |= son.filter_mask;
+            if(son.module_type == ConstCrc32("NodeUser")) node_user_mask |= son.filter_mask;
+            else if(son.module_type == ConstCrc32("Ipv4Sender")) ipv4_sender_mask |= son.filter_mask;
         }
-        next_hop_filter_mask_ack_ = ~node_user_mask;
-        next_hop_filter_mask_data_ = ~ipv4_sender_mask;
+        next_hop_filter_mask_ack_ = ~node_user_mask & universe_mask;
+        next_hop_filter_mask_data_ = ~ipv4_sender_mask & universe_mask;
     }
 
     void TcpDataIn::Destroy() {

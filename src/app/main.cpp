@@ -13,8 +13,7 @@
 using namespace omnistack::common;
 
 namespace omnistack {
-    config::StackConfig* kStackConfig;
-
+    
     static inline void InitializeMemory() {
 #if defined (OMNIMEM_BACKEND_DPDK)
         memory::StartControlPlane(true);
@@ -99,7 +98,7 @@ int main(int argc, char **argv) {
     omnistack::config::ConfigManager::LoadFromDirectory("../../graph_config");
     std::string config_name = argc > 1 ? argv[1] : "config";
     auto stack_config = omnistack::config::ConfigManager::GetStackConfig(config_name);
-    omnistack::kStackConfig = &stack_config;
+    omnistack::config::kStackConfig = &stack_config;
 
     OMNI_LOG(kInfo) << "Stack config loaded" << std::endl;
 

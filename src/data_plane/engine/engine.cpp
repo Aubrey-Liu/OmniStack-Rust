@@ -232,7 +232,6 @@ namespace omnistack::data_plane {
             forward_mask ^= (1 << idx);
             auto downstream_node = downstream_links_[node_idx][idx];
 
-            OMNI_LOG_TAG(common::kDebug, "engine") << "Forward packet from " << node_idx << " to " << downstream_node << "\n";
             if(module_read_only_[downstream_node]) {
                 packet_queue_[packet_queue_count_ ++] = {downstream_node, packet};
                 reference_count ++;
@@ -278,8 +277,6 @@ namespace omnistack::data_plane {
             next_hop_filter_default_[i] = (1 << downstream_links_[i].size()) - 1;
             module_read_only_[i] = modules_[i]->type_() == BaseModule::ModuleType::kReadOnly;
         }
-
-        uint32_t alive = 0;
 
         while(!stop_) {
             /* TODO: receive from remote channels */

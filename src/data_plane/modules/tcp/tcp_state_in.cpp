@@ -437,8 +437,9 @@ namespace omnistack::data_plane::tcp_state_in {
                         EnterEstablished(flow, tcp_header, remote_mss, remote_wscale, remote_timestamp, echo_timestamp);
                         /* no reply */
                         /* raise event: connection established */
-                        raise_event_(new(event_pool_->Get()) TcpEventConnected(local_ip, remote_ip, local_port, remote_port));
                         OMNI_LOG_TAG(kDebug, "TcpStateIn") << "connection established to (" << remote_ip << "," << remote_port << ")\n";
+                        raise_event_(new(event_pool_->Get()) TcpEventConnected(local_ip, remote_ip, local_port, remote_port));
+                        OMNI_LOG_TAG(kDebug, "TcpStateIn") << "event raised\n";
                         break;
                     }
                     case TcpFlow::State::kFinWait1:
@@ -465,11 +466,11 @@ namespace omnistack::data_plane::tcp_state_in {
 
         if(ret != nullptr) [[unlikely]] {
             if(to_tcp_send) {
-                ret->next_hop_filter_ = packet->next_hop_filter_ & next_hop_filter_mask_send_;
+                ret->next_hop_filter_ = next_hop_filter_mask_send_;
                 ret->custom_value_ = reinterpret_cast<uint64_t>(flow);
                 tcp_shared_handle_->AcquireFlow(flow);
             }
-            else ret->next_hop_filter_ = packet->next_hop_filter_ & next_hop_filter_mask_ack_;
+            else ret->next_hop_filter_ = next_hop_filter_mask_ack_;
         }
 
         /* forward packet if having data */
@@ -518,16 +519,16 @@ namespace omnistack::data_plane::tcp_state_in {
         uint32_t tcp_send_mask = 0;
         uint32_t tcp_data_in_mask = 0;
         uint32_t ipv4_send_mask = 0;
-
+        uint32_t universe_mask = 0;
         for(auto son : downstream_nodes_) {
+            universe_mask |= son.filter_mask;
             if(son.module_type == ConstCrc32("TcpSend")) tcp_send_mask |= son.filter_mask;
             else if(son.module_type == ConstCrc32("TcpDataIn")) tcp_data_in_mask |= son.filter_mask;
             else if(son.module_type == ConstCrc32("Ipv4Sender")) ipv4_send_mask |= son.filter_mask;
         }
-
-        next_hop_filter_mask_send_ = ~(tcp_data_in_mask | ipv4_send_mask);
-        next_hop_filter_mask_data_ = ~(tcp_send_mask | ipv4_send_mask);
-        next_hop_filter_mask_ack_ = ~(tcp_send_mask | tcp_data_in_mask);
+        next_hop_filter_mask_send_ = ~(tcp_data_in_mask | ipv4_send_mask) & universe_mask;
+        next_hop_filter_mask_data_ = ~(tcp_send_mask | ipv4_send_mask) & universe_mask;
+        next_hop_filter_mask_ack_ = ~(tcp_send_mask | tcp_data_in_mask) & universe_mask;
     }
 
     void TcpStateIn::Destroy() {

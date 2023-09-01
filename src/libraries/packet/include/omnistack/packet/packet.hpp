@@ -75,10 +75,9 @@ namespace omnistack::packet {
         Pointer<node::BasicNode> node_;        // pointer to the node which the packet belongs to
         /* a cache line ends here */
 
+        uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
         Pointer<void> root_packet_; // dpdk packet use this as pointer to rte_mbuf
         struct sockaddr_in peer_addr_; // Used for some specific cases
-
-        uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
 
         char mbuf_[kPacketMbufSize];
 
@@ -205,6 +204,7 @@ namespace omnistack::packet {
         packet_copy->mbuf_type_ = Packet::MbufType::kOrigin;
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
+        packet_copy->next_hop_filter_ = packet->next_hop_filter_;
         switch (packet->mbuf_type_) {
             case Packet::MbufType::kDpdk:
                 packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom;
@@ -217,6 +217,7 @@ namespace omnistack::packet {
         }
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
+        packet_copy->peer_addr_ = packet->peer_addr_;
 #if defined (OMNIMEM_BACKEND_DPDK)
         rte_memcpy(packet_copy->data_.Get(), packet->data_.Get(), packet->length_);
 #else 
@@ -243,10 +244,12 @@ namespace omnistack::packet {
         packet_copy->mbuf_type_ = Packet::MbufType::kIndirect;
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
+        packet_copy->next_hop_filter_ = packet->next_hop_filter_;
         packet_copy->data_ = packet->data_;
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
         packet->root_packet_ = reinterpret_cast<void*>(packet);
+        packet_copy->peer_addr_ = packet->peer_addr_;
         while(packet_copy->header_tail_ != packet->header_tail_) {
             auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
             header.length_ = packet->packet_headers_[packet_copy->header_tail_].length_;

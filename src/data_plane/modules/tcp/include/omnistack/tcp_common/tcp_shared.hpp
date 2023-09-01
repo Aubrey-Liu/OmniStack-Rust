@@ -207,7 +207,8 @@ namespace omnistack::data_plane::tcp_common {
         header_tcp.length_ = TcpHeaderLength(false, false, false, false, true);
         header_tcp.offset_ = 0;
         packet->data_ = packet->data_ - header_tcp.length_;
-        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_ + header_tcp.offset_);
+        packet->length_ = header_tcp.length_;
+        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_.Get());
         tcp->sport = flow->local_port_;
         tcp->dport = flow->remote_port_;
         tcp->seq = htonl(flow->send_variables_.send_nxt_);
@@ -244,6 +245,7 @@ namespace omnistack::data_plane::tcp_common {
         // ipv4->dst = flow->remote_ip_;
 
         packet->node_ = flow->node_;
+        packet->peer_addr_.sin_addr.s_addr = flow->remote_ip_;
 
         return packet;
     }
@@ -260,7 +262,8 @@ namespace omnistack::data_plane::tcp_common {
         header_tcp.length_ = TcpHeaderLength(true, true, true, true, true);
         header_tcp.offset_ = 0;
         packet->data_ = packet->data_ - header_tcp.length_;
-        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_ + header_tcp.offset_);
+        packet->length_ = header_tcp.length_;
+        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_.Get());
         tcp->sport = flow->local_port_;
         tcp->dport = flow->remote_port_;
         tcp->seq = htonl(flow->send_variables_.send_nxt_);
@@ -314,6 +317,7 @@ namespace omnistack::data_plane::tcp_common {
         // ipv4->dst = flow->remote_ip_;
 
         packet->node_ = flow->node_;
+        packet->peer_addr_.sin_addr.s_addr = flow->remote_ip_;
 
         return packet;
     }
