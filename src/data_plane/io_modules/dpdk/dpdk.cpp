@@ -287,9 +287,8 @@ namespace omnistack::io_module::dpdk {
             rte_mbuf_ext_refcnt_set(shared_info, 1);
             rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
                 iova_addr, packet->length_ - packet->offset_, shared_info);
-        } else {
-            cur_mbuf->pkt_len = cur_mbuf->data_len = packet->length_ - packet->offset_;
         }
+        cur_mbuf->pkt_len = cur_mbuf->data_len = packet->length_ - packet->offset_;
         cur_mbuf->nb_segs = 1;
         cur_mbuf->next = NULL;
 
