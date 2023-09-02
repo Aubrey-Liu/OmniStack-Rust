@@ -2,11 +2,14 @@
 #include <omnistack/node.h>
 #include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/common/logger.h>
+#include <omnistack/common/time.hpp>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <cstdlib>
+#include <sys/epoll.h>
+#include <poll.h>
 
 #include <mutex>
 
@@ -20,7 +23,8 @@ namespace omnistack::socket {
         kUnknown,
         kLinux,
         kBasic,
-        kEvent
+        kEvent,
+        kEpoll
     };
 
     struct FileDescriptor {
@@ -40,11 +44,27 @@ namespace omnistack::socket {
         size_t max_packet_size;
         packet::Packet* packet_cache;
 
+        struct {
+            int* polled_fds;
+            int num_polled_fds;
+            int num_max_polled_fds;
+            struct epoll_event* polled_events;
+        } epfd;
+
+        int reversed_epfd;
+
         void Init() {
             blocking = true;
             next = nullptr;
             type = FileDescriptorType::kUnknown;
             packet_cache = nullptr;
+
+            epfd.polled_fds = nullptr;
+            epfd.num_polled_fds = 0;
+            epfd.polled_events = nullptr;
+            epfd.num_max_polled_fds = 0;
+
+            reversed_epfd = 0;
         }
 
         void InitPost() {
@@ -317,6 +337,9 @@ namespace omnistack::socket {
     
         void close(int fd) {
             auto cur_fd = global_fd_list[fd];
+            if (cur_fd->reversed_epfd) {
+                epoll_ctl(cur_fd->reversed_epfd, EPOLL_CTL_DEL, fd, nullptr);
+            }
             switch (cur_fd->type) {
                 [[likely]] case FileDescriptorType::kBasic: {
                     cur_fd->basic_node->CloseRef();
@@ -327,7 +350,148 @@ namespace omnistack::socket {
                     ::close(cur_fd->system_fd);
                     ReleaseFd(fd);
                     break;
+                case FileDescriptorType::kEpoll:
+                    for (int i = 0; i < cur_fd->epfd.num_polled_fds; ++i) {
+                        epoll_ctl(fd, EPOLL_CTL_DEL, cur_fd->epfd.polled_fds[i], nullptr);
+                    }
+                    if (cur_fd->epfd.polled_fds != nullptr) {
+                        memory::FreeLocal(cur_fd->epfd.polled_fds);
+                        cur_fd->epfd.polled_fds = nullptr;
+                    }
+                    if (cur_fd->epfd.polled_events != nullptr) {
+                        memory::FreeLocal(cur_fd->epfd.polled_events);
+                        cur_fd->epfd.polled_events = nullptr;
+                    }
+                    cur_fd->epfd.num_polled_fds = 0;
+                    cur_fd->epfd.num_max_polled_fds = 0;
+                    ReleaseFd(fd);
+                    break;
             }
+        }
+
+        int epoll_create(int size) {
+            int ret = GenerateFd();
+            auto cur_fd = global_fd_list[ret];
+            cur_fd->type = FileDescriptorType::kEpoll;
+            return ret;
+        }
+
+        int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
+            auto cur_fd = global_fd_list[epfd];
+            if (cur_fd->type != FileDescriptorType::kEpoll) [[unlikely]] {
+                errno = EINVAL;
+                return -1;
+            }
+            switch (op) {
+                case EPOLL_CTL_ADD: {
+                    if (cur_fd->epfd.polled_fds == nullptr) [[unlikely]] {
+                        cur_fd->epfd.polled_fds = 
+                            (int*)memory::AllocateLocal(sizeof(int));
+                        cur_fd->epfd.polled_events = 
+                            (struct epoll_event*)memory::AllocateLocal(sizeof(struct epoll_event));
+                        cur_fd->epfd.num_max_polled_fds = 1;
+                    }
+                    if (cur_fd->epfd.num_polled_fds == cur_fd->epfd.num_max_polled_fds) {
+                        int new_events = cur_fd->epfd.num_max_polled_fds * 2;
+                        auto new_polled_fds = (int*)memory::AllocateLocal(sizeof(int) * new_events);
+                        auto new_polled_events = (struct epoll_event*)memory::AllocateLocal(sizeof(struct epoll_event) * new_events);
+                        memcpy(new_polled_fds, cur_fd->epfd.polled_fds, sizeof(int) * cur_fd->epfd.num_polled_fds);
+                        memcpy(new_polled_events, cur_fd->epfd.polled_events, sizeof(struct epoll_event) * cur_fd->epfd.num_polled_fds);
+                        memory::FreeLocal(cur_fd->epfd.polled_fds);
+                        memory::FreeLocal(cur_fd->epfd.polled_events);
+                        cur_fd->epfd.polled_fds = new_polled_fds;
+                        cur_fd->epfd.polled_events = new_polled_events;
+                        cur_fd->epfd.num_max_polled_fds = new_events;
+                    }
+                    cur_fd->epfd.polled_fds[cur_fd->epfd.num_polled_fds] = fd;
+                    cur_fd->epfd.polled_events[cur_fd->epfd.num_polled_fds] = *event;
+                    cur_fd->epfd.num_polled_fds ++;
+                    auto cur_fd_ = global_fd_list[fd];
+                    cur_fd_->reversed_epfd = epfd;
+                    return 0;
+                }
+                case EPOLL_CTL_MOD: {
+                    for (int i = 0; i < cur_fd->epfd.num_polled_fds; ++i) {
+                        if (cur_fd->epfd.polled_fds[i] == fd) [[likely]] {
+                            cur_fd->epfd.polled_events[i] = *event;
+                            return 0;
+                        }
+                    }
+                    errno = EINVAL;
+                    return -1;
+                }
+                case EPOLL_CTL_DEL: {
+                    for (int i = 0; i < cur_fd->epfd.num_polled_fds; ++i) {
+                        if (cur_fd->epfd.polled_fds[i] == fd) [[likely]] {
+                            cur_fd->epfd.polled_fds[i] = cur_fd->epfd.polled_fds[cur_fd->epfd.num_polled_fds - 1];
+                            cur_fd->epfd.polled_events[i] = cur_fd->epfd.polled_events[cur_fd->epfd.num_polled_fds - 1];
+                            cur_fd->epfd.num_polled_fds --;
+
+                            auto cur_fd_ = global_fd_list[fd];
+                            cur_fd_->reversed_epfd = 0;
+
+                            return 0;
+                        }
+                    }
+                    errno = EINVAL;
+                    return -1;
+                }
+            }
+
+            errno = EINVAL;
+            return -1;
+        }
+
+        int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout) {
+            auto cur_fd = global_fd_list[epfd];
+            if (cur_fd->type != FileDescriptorType::kEpoll) [[unlikely]] {
+                errno = EINVAL;
+                return -1;
+            }
+            int ret = 0;
+            int begin_ms = common::NowMsImm();
+            do {
+                for (int i = 0; i < cur_fd->epfd.num_polled_fds &&
+                                                    ret < maxevents; ++i) {
+                    auto cur_fd_ = global_fd_list[cur_fd->epfd.polled_fds[i]];
+                    switch (cur_fd_->type) {
+                        case FileDescriptorType::kBasic:
+                            if (cur_fd_->packet_cache == nullptr)
+                                cur_fd_->packet_cache = cur_fd_->basic_node->Read();
+                            if (cur_fd_->packet_cache != nullptr) [[likely]] {
+                                events[ret] = cur_fd_->epfd.polled_events[i];
+                                events[ret].events = EPOLLIN;
+                                ret ++;
+                            }
+                            break;
+                        case FileDescriptorType::kLinux: {
+                            struct pollfd cur_pfd = {
+                                .fd = cur_fd_->system_fd,
+                                .events = 0,
+                                .revents = 0
+                            };
+                            if (cur_fd_->epfd.polled_events[i].events & EPOLLIN)
+                                cur_pfd.events |= POLLIN;
+                            if (cur_fd_->epfd.polled_events[i].events & EPOLLOUT)
+                                cur_pfd.events |= POLLOUT;
+                            if (poll(&cur_pfd, 1, 0)) {
+                                events[ret] = cur_fd_->epfd.polled_events[i];
+                                events[ret].events = 0;
+                                if (cur_pfd.revents & POLLIN)
+                                    events[ret].events |= EPOLLIN;
+                                if (cur_pfd.revents & POLLOUT)
+                                    events[ret].events |= EPOLLOUT;
+                                ret ++;
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (timeout == 0 || ret > 0) break;
+                if (common::NowMsImm() - begin_ms >= timeout) break;
+                usleep(1);
+            } while (true);
+            return ret;
         }
     }
 

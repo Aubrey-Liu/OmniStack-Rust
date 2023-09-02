@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <vector>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 
 #include <omnistack/packet/packet.hpp>
 
