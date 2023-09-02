@@ -426,6 +426,7 @@ namespace omnistack::data_plane::tcp_state_in {
             if(flow == nullptr) [[unlikely]] return TcpInvalid(packet);
             if(flow->state_ == TcpFlow::State::kEstablished) [[likely]] {
                 if(TcpGreaterUint32(ack_num, flow->send_variables_.send_nxt_)) [[unlikely]] return TcpInvalid(packet);
+                // OMNI_LOG_TAG(kDebug, "TcpStateIn") << "receive ack, ack_num = " << ack_num << ", send_nxt = " << flow->send_variables_.send_nxt_ << "\n";
                 OnAck(flow, tcp_header, remote_timestamp, echo_timestamp);
             }
             else {
