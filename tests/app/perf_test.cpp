@@ -96,6 +96,7 @@ int main(int argc, char **argv) {
         if (args::is_udp) {
             if (args::is_pingpong) {
                 if (!args::is_reversed) {
+                    OMNI_LOG(common::kInfo) << "running in udp pingpong normal\n";
                     while (true) {
                         struct sockaddr_in client_addr;
                         socklen_t client_addr_len = sizeof(client_addr);
@@ -105,10 +106,11 @@ int main(int argc, char **argv) {
                             OMNI_LOG(common::kError) << "Failed to recvfrom.\n";
                             return 1;
                         }
+                        // OMNI_LOG(common::kDebug) << "Received packet normally length = " << recv_len << "\n";
 
                         auto new_packet = socket::fast::write_begin(socket);
-                        memcpy(new_packet->data_.Get(), packet->data_ + packet->offset_, sizeof(uint64_t));
-                        new_packet->length_ = args::size;
+                        memcpy(new_packet->data_.Get(), packet->data_ + packet->offset_, recv_len);
+                        new_packet->length_ = recv_len;
                         packet->Release();
 
                         int send_len = socket::fast::sendto(socket, new_packet, 0, (struct sockaddr *)&client_addr, client_addr_len);
@@ -116,6 +118,7 @@ int main(int argc, char **argv) {
                             OMNI_LOG(common::kError) << "Failed to sendto.\n";
                             return 1;
                         }
+                        // OMNI_LOG(common::kDebug) << "Sent packet\n";
                     }
                 } else {
                     struct sockaddr_in client_addr;
@@ -136,7 +139,7 @@ int main(int argc, char **argv) {
                     while (true) {
                         auto new_packet = socket::fast::write_begin(socket);
                         auto cur_tick = GetCurrentTickUs();
-                        memcpy(new_packet->data_.Get(), &cur_tick, sizeof(cur_tick));
+                        // memcpy(new_packet->data_.Get(), &cur_tick, sizeof(cur_tick));
                         new_packet->length_ = args::size;
                         int send_len = socket::fast::sendto(socket, new_packet, 0, (struct sockaddr *)&client_addr, client_addr_len);
                         if (send_len < 0) {
@@ -149,8 +152,9 @@ int main(int argc, char **argv) {
                             OMNI_LOG(common::kError) << "Failed to recvfrom.\n";
                             return 1;
                         }
-                        uint64_t end_tick = *reinterpret_cast<uint64_t*>(packet->data_ + packet->offset_);
-                        last_sum_tick = end_tick - cur_tick;
+                        // uint64_t end_tick = *reinterpret_cast<uint64_t*>(packet->data_ + packet->offset_);
+                        auto end_tick = GetCurrentTickUs();
+                        last_sum_tick += end_tick - cur_tick;
                         last_sum_tick_count ++;
                         packet->Release();
 
@@ -257,8 +261,8 @@ int main(int argc, char **argv) {
                             OMNI_LOG(common::kError) << "Failed to recv.\n";
                             return 1;
                         }
-                        uint64_t end_tick = *reinterpret_cast<uint64_t*>(packet->data_ + packet->offset_);
-                        last_sum_tick = end_tick - cur_tick;
+                        uint64_t end_tick = GetCurrentTickUs();
+                        last_sum_tick += end_tick - cur_tick;
                         last_sum_tick_count ++;
                         packet->Release();
 

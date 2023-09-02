@@ -230,8 +230,8 @@ namespace omnistack::node {
 
     void FlushBottom() {
         /// TODO: optimize this
-        for (int i = 0; i < kMaxComUser; i ++)
-            protocol_stack_nodes[i]->Flush();
+        for (int i = 0; i < num_node_user; i ++)
+            if(protocol_stack_nodes[i] != nullptr) protocol_stack_nodes[i]->Flush();
     }
 
     EventNode* CreateEventNode() {

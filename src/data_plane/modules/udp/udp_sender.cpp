@@ -5,6 +5,7 @@
 #include <omnistack/module/module.hpp>
 #include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/node.h>
+#include <omnistack/common/logger.h>
 
 
 namespace omnistack::data_plane::udp_senders {
@@ -35,13 +36,14 @@ namespace omnistack::data_plane::udp_senders {
     }
 
     Packet* UdpSender::MainLogic(Packet* packet) {
+        // OMNI_LOG_TAG(kDebug, "UdpSender") << "send udp packet, length = " << packet->length_ << "\n";
         // edit omnistack header
         PacketHeader &udp = packet->packet_headers_[packet->header_tail_ ++];
         udp.length_ = sizeof(UdpHeader);
-        udp.offset_ = packet->offset_ - sizeof(UdpHeader);
-        UdpHeader* udp_header = reinterpret_cast<UdpHeader*>(packet->data_ + udp.offset_);
-        packet->offset_ -= udp.length_;
+        udp.offset_ = 0;
+        packet->data_ = packet->data_ - sizeof(UdpHeader);
         packet->length_ += sizeof(UdpHeader);
+        UdpHeader* udp_header = reinterpret_cast<UdpHeader*>(packet->data_ + udp.offset_);
 
         const auto daddr = packet->peer_addr_;
 
@@ -50,7 +52,7 @@ namespace omnistack::data_plane::udp_senders {
         uint16_t dst_port = daddr.sin_addr.s_addr;
         udp_header->sport = src_port;
         udp_header->dport = daddr.sin_port;
-        udp_header->chksum = 0;
+        // udp_header->chksum = 0;
         udp_header->len = htons(packet->length_);
         return packet;
     }

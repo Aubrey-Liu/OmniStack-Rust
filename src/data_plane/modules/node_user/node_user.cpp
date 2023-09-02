@@ -86,6 +86,7 @@ namespace omnistack::data_plane::node_user {
 
         if (packet->node_.Get() != nullptr) [[likely]] {
             packet->node_->Write(packet);
+            packet->node_->Flush();
         } else {
             // Search Hashtable
             // OMNI_LOG_TAG(kDebug, "NodeUser") << "NodeUser " << id_ << " received packet " << (void*)packet << "\n";
@@ -154,13 +155,14 @@ namespace omnistack::data_plane::node_user {
             if (packet == nullptr) {
                 break;
             }
-            OMNI_LOG(kDebug) << "NodeUser " << id_ << " received packet " << (void*)packet << "\n";
+            // OMNI_LOG(kDebug) << "NodeUser " << id_ << " received packet " << (void*)packet << "\n";
 
             auto header = reinterpret_cast<node::NodeCommandHeader*>(packet->data_ + packet->offset_);
             switch (header->type)
             {
             [[likely]] case node::NodeCommandType::kPacket:
-                packet->offset_ += sizeof(node::NodeCommandHeader);
+                packet->data_ = packet->data_ + sizeof(node::NodeCommandHeader);
+                packet->length_ -= sizeof(node::NodeCommandHeader);
                 if (!ret) [[unlikely]] {
                     ret = packet;
                     tail = packet;

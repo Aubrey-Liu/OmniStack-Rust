@@ -14,7 +14,7 @@ namespace omnistack::common {
     
     constexpr uint32_t kMaxThread = 1024;
 
-    constexpr uint32_t kDefaultPacketPoolSize = 8192;
+    constexpr uint32_t kDefaultPacketPoolSize = 65536;
 }
 
 #endif //OMNISTACK_COMMON_CONSTANT_HPP

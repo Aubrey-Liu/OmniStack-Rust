@@ -47,6 +47,7 @@ namespace omnistack::data_plane::tcp_flow_cache_in {
     }
 
     Packet* TcpFlowCacheIn::MainLogic(Packet* packet) {
+        /* TODO: store flow hash or flow* in packet->node_ */
         auto flow = flow_cache_[packet->flow_hash_ & kTcpFlowCacheMask];
 
         auto& tcp = packet->packet_headers_[packet->header_tail_ - 1];

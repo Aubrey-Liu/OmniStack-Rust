@@ -4,6 +4,7 @@
 
 #include <omnistack/module/module.hpp>
 #include <omnistack/common/protocol_headers.hpp>
+#include <omnistack/common/logger.h>
 
 namespace omnistack::data_plane::udp_recvers {
     
@@ -37,6 +38,7 @@ namespace omnistack::data_plane::udp_recvers {
     }
 
     Packet* UdpRecver::MainLogic(Packet* packet) {
+        // OMNI_LOG_TAG(kDebug, "UdpRecver") << "receive udp packet, length = " << packet->length_ << "\n";
         UdpHeader* udp_header = reinterpret_cast<UdpHeader*>(packet->data_ + packet->offset_);
         PacketHeader &udp = packet->packet_headers_[packet->header_tail_ ++];
         udp.length_ = sizeof(UdpHeader);
