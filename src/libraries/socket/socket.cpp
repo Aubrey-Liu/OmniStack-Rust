@@ -182,6 +182,7 @@ namespace omnistack::socket {
             switch (cur_fd->type) {
                 [[likely]] case FileDescriptorType::kBasic: {
                     auto basic_node = cur_fd->basic_node;
+                    basic_node->ReadMulti(); // Manually Create MultiWriter Channel
                     basic_node->PutIntoHashtable();
                     return 0;
                 }
@@ -197,9 +198,9 @@ namespace omnistack::socket {
             switch (cur_fd->type) {
                 [[likely]] case FileDescriptorType::kBasic: {
                     auto basic_node = cur_fd->basic_node;
-                    auto new_node = (node::BasicNode*)basic_node->Read();
+                    auto new_node = (node::BasicNode*)basic_node->ReadMulti();
                     while (!new_node && cur_fd->blocking) [[unlikely]]
-                        new_node = (node::BasicNode*)basic_node->Read();
+                        new_node = (node::BasicNode*)basic_node->ReadMulti();
                     if (new_node) [[likely]] {
                         int new_fd = GenerateFd();
                         auto new_fd_ptr = global_fd_list[new_fd];
@@ -341,6 +342,7 @@ namespace omnistack::socket {
                     for (int i = 0; i < graph_ids.size(); ++i)
                         basic_node->graph_usable_[i] = graph_ids[i];
 
+                    basic_node->ReadMulti(); // Manually Create MultiWriter Channel
                     basic_node->PutIntoHashtable();
                     return 0;
                 }

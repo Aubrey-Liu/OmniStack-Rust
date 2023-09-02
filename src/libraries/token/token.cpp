@@ -330,6 +330,14 @@ namespace omnistack::token
                                     resp.new_token.token = memory::Pointer(token);
                                     break;
                                 }
+                                case RpcRequestType::kDestroyToken: {
+                                    auto token = id_to_token[request.token_id];
+                                    used_token_id.erase(token->token_id);
+                                    id_to_token.erase(token->token_id);
+                                    memory::FreeNamedShared(token);
+                                    resp.status = RpcResponseStatus::kSuccess;
+                                    break;
+                                }
                                 case RpcRequestType::kAcquire: {
                                     auto token = id_to_token[request.token_id];
                                     if (token->token == 0) {
@@ -551,6 +559,13 @@ namespace omnistack::token
         if (resp.status != RpcResponseStatus::kSuccess)
             throw std::runtime_error("Failed to create token");
         return resp.new_token.token.Get();
+    }
+
+    void DestroyToken(Token* token) {
+        SendTokenMessage(RpcRequestType::kDestroyToken, token, memory::thread_id);
+        auto& resp = local_rpc_meta.resp;
+        if (resp.status != RpcResponseStatus::kSuccess)
+            throw std::runtime_error("Failed to destroy token");
     }
 
     void ForkSubsystem() {

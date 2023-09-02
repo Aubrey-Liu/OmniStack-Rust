@@ -240,7 +240,7 @@ namespace omnistack {
 #if defined (OMNIMEM_BACKEND_DPDK)
                 ptr_ = nullptr;
 #else
-                offset_ = ~0;
+                offset_ = 0;
 #endif
             }
 
@@ -248,7 +248,7 @@ namespace omnistack {
 #if defined (OMNIMEM_BACKEND_DPDK)
                 ptr_(ptr)
 #else
-                offset_(ptr ? ((uint8_t*)ptr - virt_base_addrs[process_id]) : ~0)
+                offset_(ptr ? ((uint8_t*)ptr - virt_base_addrs[process_id]) : 0)
 #endif
             {}
 
@@ -256,7 +256,19 @@ namespace omnistack {
 #if defined (OMNIMEM_BACKEND_DPDK)
                 return ptr_;
 #else
-                return (T*)(virt_base_addrs[process_id] + offset_);
+                if (offset_)
+                    return (T*)(virt_base_addrs[process_id] + offset_);
+                return nullptr;
+#endif
+            }
+
+            inline const T* operator->() const {
+#if defined (OMNIMEM_BACKEND_DPDK)
+                return ptr_;
+#else
+                if (offset_)
+                    return (const T*)(virt_base_addrs[process_id] + offset_);
+                return nullptr;
 #endif
             }
 
@@ -264,7 +276,7 @@ namespace omnistack {
 #if defined (OMNIMEM_BACKEND_DPDK)
                 return ptr_ + a;
 #else
-                if (offset_ == ~0) [[unlikely]] return (T*)(a * sizeof(T));
+                if (offset_ == 0) [[unlikely]] return (T*)(a * sizeof(T));
                 return (T*)(virt_base_addrs[process_id] + offset_ + a * sizeof(T));
 #endif
             }
@@ -273,7 +285,7 @@ namespace omnistack {
 #if defined (OMNIMEM_BACKEND_DPDK)
                 return ptr_ - a;
 #else
-                if (offset_ == ~0) [[unlikely]] return (T*)(-a * sizeof(T));
+                if (offset_ == 0) [[unlikely]] return (T*)(-a * sizeof(T));
                 return (T*)(virt_base_addrs[process_id] + offset_ - a * sizeof(T));
 #endif
             }

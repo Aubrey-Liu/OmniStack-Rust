@@ -93,6 +93,10 @@ public:
             */
             int Flush();
 
+            bool IsReadable();
+
+            void Cleanup();
+
             memory::Pointer<token::Token> reader_token_;
             memory::Pointer<token::Token> writer_token_;
         
@@ -125,6 +129,8 @@ public:
             */
             void Flush();
 
+            void Cleanup();
+
             memory::Pointer<token::Token> reader_token_;
 
             memory::Pointer<RawChannel> channel_ptrs_[memory::kMaxThread + 1];
@@ -151,6 +157,8 @@ public:
         MultiWriterChannel* GetMultiWriterChannel(const std::string& name);
 
         void DestroyChannel(Channel* channel);
+
+        void DestroyMultiWriterChannel(MultiWriterChannel* channel);
 
         ControlPlaneStatus GetControlPlaneStatus();
     } // namespace channel

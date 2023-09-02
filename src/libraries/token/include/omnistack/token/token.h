@@ -68,6 +68,8 @@ namespace omnistack {
 
         Token* CreateToken();
 
+        void DestroyToken(Token* token);
+
         Token* CreateTokenForThread(uint64_t thread_id);
 
         ControlPlaneStatus GetControlPlaneStatus();

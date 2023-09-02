@@ -18,6 +18,7 @@ namespace omnistack::data_plane::node_user {
     using namespace omnistack::packet;
 
     inline constexpr char kName[] = "NodeUser";
+    inline constexpr int kNodeFlushQueueSize = 128;
 
     static std::mutex init_lock;
     static int node_id = 0;
@@ -48,12 +49,40 @@ namespace omnistack::data_plane::node_user {
 
         inline Packet* OnClosed(Event* event);
 
+        inline void RemoveNodeFromFlushQueue(const memory::Pointer<node::BasicNode>& node) {
+            for (int i = 0; i < flush_queue_size_; i ++) {
+                if (flush_queue_[i] == node.Get()) {
+                    flush_queue_[i] = flush_queue_[flush_queue_size_ - 1];
+                    flush_queue_size_ --;
+                    return;
+                }
+            }
+        }
+
+        inline void AddNodeToFlushQueue(memory::Pointer<node::BasicNode>& node) {
+            if (node->node_user_info_.in_flush_queue_) return;
+            if (flush_queue_size_ == kNodeFlushQueueSize) {
+                FlushAllQueueImm();
+            }
+            flush_queue_[flush_queue_size_ ++] = node.Get();
+            node->node_user_info_.in_flush_queue_ = true;
+        }
+
+        inline void FlushAllQueueImm() {
+            for (int i = 0; i < flush_queue_size_; i ++)
+                flush_queue_[i]->Flush();
+            flush_queue_size_ = 0;
+        }
+
         int id_;
 
         channel::MultiWriterChannel* node_channel_;
         hashtable::Hashtable* node_table_;
         memory::MemoryPool* event_pool_;
         packet::PacketPool* packet_pool_;
+
+        node::BasicNode* flush_queue_[kNodeFlushQueueSize];
+        int flush_queue_size_;
     };
 
     void NodeUser::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
@@ -64,6 +93,8 @@ namespace omnistack::data_plane::node_user {
         OMNI_LOG_TAG(kInfo, "NodeUser") << "NodeUser channel " << node_channel_name << " initialized\n";
         event_pool_ = memory::AllocateMemoryPool("omni_data_plane_node_user_event_pool_" + std::to_string(id_), kEventMaxLength, 512);
         packet_pool_ = packet_pool;
+
+        flush_queue_size_ = 0;
     }
 
     Packet* NodeUser::MainLogic(Packet* packet) {
@@ -86,7 +117,8 @@ namespace omnistack::data_plane::node_user {
 
         if (packet->node_.Get() != nullptr) [[likely]] {
             packet->node_->Write(packet);
-            packet->node_->Flush();
+            // packet->node_->Flush();
+            AddNodeToFlushQueue(packet->node_);
         } else {
             // Search Hashtable
             // OMNI_LOG_TAG(kDebug, "NodeUser") << "NodeUser " << id_ << " received packet " << (void*)packet << "\n";
@@ -150,6 +182,7 @@ namespace omnistack::data_plane::node_user {
     Packet* NodeUser::TimerLogic(uint64_t tick) {
         Packet* ret = nullptr;
         Packet* tail = nullptr;
+        FlushAllQueueImm();
         for (int i = 0; i < 32; i ++) {
             auto packet = reinterpret_cast<Packet*>(node_channel_->Read());
             if (packet == nullptr) {
@@ -219,6 +252,7 @@ namespace omnistack::data_plane::node_user {
                     default:
                         throw std::runtime_error("Unknown network layer type");
                 }
+                RemoveNodeFromFlushQueue(packet->node_);
                 node::ReleaseBasicNode(packet->node_.Get());
                 packet->Release();
                 break;
@@ -283,8 +317,8 @@ namespace omnistack::data_plane::node_user {
             passive_node = reinterpret_cast<node::BasicNode*>(node_table_->Lookup(&tmp_node_info, tmp_node_info.GetHash()));
         }
         if (!passive_node) [[unlikely]] throw std::runtime_error("Failed to find passive node");
-        passive_node->Write((Packet*)new_node);
-        passive_node->Flush();
+        passive_node->WriteMulti((Packet*)new_node);
+        passive_node->FlushMulti();
         raise_event_(new(event_pool_->Get()) node_common::NodeEventTcpNewNode(new_node));
         return nullptr;
     }

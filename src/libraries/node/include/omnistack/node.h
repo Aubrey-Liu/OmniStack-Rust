@@ -107,11 +107,8 @@ namespace omnistack {
         class BasicNode {
         public:
             uint32_t com_user_id_;
-
             NodeInfo info_;
-
             bool in_hashtable_;
-            
             bool peer_closed_;
 
             uint32_t user_proc_ref_;
@@ -123,6 +120,10 @@ namespace omnistack {
             void Write(packet::Packet* packet);
             packet::Packet* Read();
             void Flush();
+
+            void WriteMulti(packet::Packet* packet);
+            packet::Packet* ReadMulti();
+            void FlushMulti();
 
             void WriteBottom(packet::Packet* packet);
 
@@ -150,6 +151,13 @@ namespace omnistack {
             memory::Pointer<EventNode> enode_;
             memory::Pointer<BasicNode> next_;
             memory::Pointer<channel::Channel> channel_;
+            memory::Pointer<channel::MultiWriterChannel> mw_channel_;
+
+        public:
+            struct {
+                char padding[common::kCacheLineSize];
+                bool in_flush_queue_;
+            } node_user_info_;
         };
 
         /**

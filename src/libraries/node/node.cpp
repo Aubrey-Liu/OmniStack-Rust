@@ -108,10 +108,19 @@ namespace omnistack::node {
         this->in_hashtable_ = false;
         this->num_graph_usable_ = 0;
         pthread_spin_init(&this->user_proc_ref_lock_, 1);
+
+        if (this->channel_.Get() != nullptr) {
+            channel::DestroyChannel(this->channel_.Get());
+            this->channel_.Set(nullptr);
+        }
         if (this->channel_.Get() == nullptr)
             this->channel_ = memory::Pointer(channel::GetChannel("omni_basic_node_channel_" + 
                 std::to_string(memory::process_id) + "_" + std::to_string(memory::thread_id) +
                 "_" + std::to_string(++local_create_channel_idx)));
+        if (this->mw_channel_.Get() != nullptr) {
+            channel::DestroyMultiWriterChannel(this->mw_channel_.Get());
+            this->mw_channel_.Set(nullptr);
+        }
         if (packet_pool_ == nullptr)
             this->packet_pool_ = packet::PacketPool::CreatePacketPool("omni_basic_node_packet_pool_" + 
                 std::to_string(memory::process_id) + "_" + std::to_string(memory::thread_id) +
@@ -273,5 +282,27 @@ namespace omnistack::node {
 
     int GetNumNodeUser() {
         return num_node_user;
+    }
+
+    void BasicNode::WriteMulti(packet::Packet* packet) {
+        if (mw_channel_.Get() == nullptr)
+            mw_channel_ = memory::Pointer(channel::GetMultiWriterChannel("omni_basic_node_multi_channel_" + 
+                std::to_string(memory::process_id) + "_" + std::to_string(memory::thread_id) +
+                "_" + std::to_string(++local_create_channel_idx)));
+        mw_channel_->Write(packet);
+    }
+
+    packet::Packet* BasicNode::ReadMulti() {
+        if (mw_channel_.Get() == nullptr)
+            mw_channel_ = memory::Pointer(channel::GetMultiWriterChannel("omni_basic_node_multi_channel_" + 
+                std::to_string(memory::process_id) + "_" + std::to_string(memory::thread_id) +
+                "_" + std::to_string(++local_create_channel_idx)));
+        return (packet::Packet*)mw_channel_->Read();
+    }
+
+    void BasicNode::FlushMulti() {
+        if (mw_channel_.Get() != nullptr) {
+            mw_channel_->Flush();
+        }
     }
 }

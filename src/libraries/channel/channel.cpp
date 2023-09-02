@@ -89,11 +89,18 @@ namespace omnistack::channel {
                 uint64_t thread_id;
             } get_raw_channel;
         };
+        struct {
+            memory::Pointer<Channel> channel;
+        } destroy_channel;
+        struct {
+            memory::Pointer<MultiWriterChannel> channel;
+        } destroy_mw_channel;
     };
 
     enum class RpcResponseStatus {
         kSuccess = 0,
-        kFail
+        kFail,
+        kUnknownCommand
     };
 
     struct RpcResponse {
@@ -308,6 +315,31 @@ namespace omnistack::channel {
                                 }
                                 break;
                             }
+                            case RpcRequestType::kDestroyChannel: {
+                                auto channel = request.destroy_channel.channel.Get();
+                                if (channel) {
+                                    channel->Cleanup();
+                                    memory::FreeNamedShared(channel);
+                                    resp.status = RpcResponseStatus::kSuccess;
+                                } else {
+                                    resp.status = RpcResponseStatus::kFail;
+                                }
+                                break;
+                            }
+                            case RpcRequestType::kDestroyMultiWriterChannel: {
+                                auto channel = request.destroy_mw_channel.channel.Get();
+                                if (channel) {
+                                    channel->Cleanup();
+                                    memory::FreeNamedShared(channel);
+                                    resp.status = RpcResponseStatus::kSuccess;
+                                } else {
+                                    resp.status = RpcResponseStatus::kFail;
+                                }
+                                break;
+                            }
+                            default:
+                                resp.status = RpcResponseStatus::kUnknownCommand;
+                                break;
                         }
                         resp.id = request.id;
 
@@ -324,6 +356,23 @@ namespace omnistack::channel {
                 }
             }
         }
+    }
+
+    void Channel::Cleanup() {
+        if (raw_channel_.Get()) {
+            memory::FreeNamedShared(raw_channel_.Get());
+        }
+        token::DestroyToken(writer_token_.Get());
+        token::DestroyToken(reader_token_.Get());
+    }
+
+    void MultiWriterChannel::Cleanup() {
+        for (int i = 0; i <= memory::kMaxThread; i ++) {
+            if (channel_ptrs_[i].Get()) {
+                memory::FreeNamedShared(channel_ptrs_[i].Get());
+            }
+        }
+        token::DestroyToken(reader_token_.Get());
     }
 
     void StartControlPlane() {
@@ -655,6 +704,26 @@ namespace omnistack::channel {
         if (resp.status == RpcResponseStatus::kSuccess)
             return resp.get_multi_channel.channel.Get();
         return nullptr;
+    }
+
+    void DestroyChannel(Channel* channel) {
+        local_rpc_req.type = RpcRequestType::kDestroyChannel;
+        local_rpc_req.destroy_channel.channel = channel;
+        auto resp = SendLocalRpcMessage();
+        if (resp.status == RpcResponseStatus::kSuccess)
+            return ;
+        OMNI_LOG(common::kError) << "Failed to destroy channel\n";
+        exit(1);
+    }
+
+    void DestroyMultiWriterChannel(MultiWriterChannel* channel) {
+        local_rpc_req.type = RpcRequestType::kDestroyMultiWriterChannel;
+        local_rpc_req.destroy_mw_channel.channel = channel;
+        auto resp = SendLocalRpcMessage();
+        if (resp.status == RpcResponseStatus::kSuccess)
+            return ;
+        OMNI_LOG(common::kError) << "Failed to destroy channel\n";
+        exit(1);
     }
 
     void MultiWriterChannel::Init() {

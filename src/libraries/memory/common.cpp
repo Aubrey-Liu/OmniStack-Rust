@@ -261,6 +261,7 @@ namespace omnistack::memory {
             OMNI_LOG(common::kFatal)  << "Failed to allocate memory for region meta for DPDK no memory\n";
             exit(1);
         }
+        memset(region_meta, 0, aligned_size);
         region_meta->addr = region_meta;
         region_meta->iova = rte_mem_virt2iova(region_meta) + kMetaHeadroomSize;
 #else
@@ -277,7 +278,7 @@ namespace omnistack::memory {
         region_info.second += aligned_size;
         if (region_info.first > 0)
             usable_region.insert(region_info);
-        
+        memset(region_meta, 0, aligned_size);
         
         region_meta->iova = 0;
         region_meta->offset = reinterpret_cast<uint8_t*>(region_meta) - virt_shared_region;
@@ -385,8 +386,13 @@ namespace omnistack::memory {
 #endif
         if (region_meta_to_fd.count(region_meta) && used_regions.count(region_meta)) [[likely]] {
             if (region_meta_to_fd[region_meta].count(fd)) {
-                region_meta_to_fd[region_meta].erase(
-                    region_meta_to_fd[region_meta].find(fd));
+                if (region_meta_to_fd[region_meta].find(fd) == 
+                    region_meta_to_fd[region_meta].end()) {
+                    OMNI_LOG(common::kWarning) << "Cannot find fd " << fd << " in region meta\n";
+                } else {
+                    region_meta_to_fd[region_meta].erase(
+                        region_meta_to_fd[region_meta].find(fd));
+                }
                 region_meta->ref_cnt --;
                 if (!region_meta->ref_cnt) {
                     FreeRegionMeta(region_meta);
@@ -911,7 +917,7 @@ namespace omnistack::memory {
                 throw std::runtime_error("Failed to get virt_shared_region");
 
             usable_region.clear();
-            usable_region.insert(std::make_pair(kMaxTotalAllocateSize, 0));
+            usable_region.insert(std::make_pair(kMaxTotalAllocateSize - 64, 64));
         }
 #endif
 
