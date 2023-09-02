@@ -91,6 +91,7 @@ namespace omnistack::data_plane::io_node {
     }
 
     Packet* IoNode::MainLogic(Packet* packet) {
+        // OMNI_LOG_TAG(kDebug, "IoNode") << "send packet to nic " << packet->nic_ << "\n";
         const auto nic = packet->nic_;
         send_queues_[nic]->SendPacket(packet);
         if (!need_flush_[nic]) {

@@ -52,6 +52,7 @@ namespace omnistack::data_plane::node_user {
         inline void RemoveNodeFromFlushQueue(const memory::Pointer<node::BasicNode>& node) {
             for (int i = 0; i < flush_queue_size_; i ++) {
                 if (flush_queue_[i] == node.Get()) {
+                    flush_queue_[i]->node_user_info_.in_flush_queue_ = false;
                     flush_queue_[i] = flush_queue_[flush_queue_size_ - 1];
                     flush_queue_size_ --;
                     return;
@@ -69,8 +70,10 @@ namespace omnistack::data_plane::node_user {
         }
 
         inline void FlushAllQueueImm() {
-            for (int i = 0; i < flush_queue_size_; i ++)
+            for (int i = 0; i < flush_queue_size_; i ++) {
                 flush_queue_[i]->Flush();
+                flush_queue_[i]->node_user_info_.in_flush_queue_ = false;
+            }
             flush_queue_size_ = 0;
         }
 

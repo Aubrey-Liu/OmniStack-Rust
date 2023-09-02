@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
                     while (true) {
                         auto new_packet = socket::fast::write_begin(socket);
                         auto cur_tick = GetCurrentTickUs();
-                        // memcpy(new_packet->data_.Get(), &cur_tick, sizeof(cur_tick));
+                        memcpy(new_packet->data_.Get(), &cur_tick, sizeof(cur_tick));
                         new_packet->length_ = args::size;
                         int send_len = socket::fast::sendto(socket, new_packet, 0, (struct sockaddr *)&client_addr, client_addr_len);
                         if (send_len < 0) {
