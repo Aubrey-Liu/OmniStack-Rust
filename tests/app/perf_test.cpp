@@ -121,6 +121,7 @@ int main(int argc, char **argv) {
                         // OMNI_LOG(common::kDebug) << "Sent packet\n";
                     }
                 } else {
+                    uint64_t pingpong_ticks[1000000];
                     struct sockaddr_in client_addr;
                     socklen_t client_addr_len = sizeof(client_addr);
                     packet::Packet* packet;
@@ -139,7 +140,6 @@ int main(int argc, char **argv) {
                     while (true) {
                         auto new_packet = socket::fast::write_begin(socket);
                         auto cur_tick = GetCurrentTickUs();
-                        memcpy(new_packet->data_.Get(), &cur_tick, sizeof(cur_tick));
                         new_packet->length_ = args::size;
                         int send_len = socket::fast::sendto(socket, new_packet, 0, (struct sockaddr *)&client_addr, client_addr_len);
                         if (send_len < 0) {
@@ -152,14 +152,20 @@ int main(int argc, char **argv) {
                             OMNI_LOG(common::kError) << "Failed to recvfrom.\n";
                             return 1;
                         }
-                        // uint64_t end_tick = *reinterpret_cast<uint64_t*>(packet->data_ + packet->offset_);
                         auto end_tick = GetCurrentTickUs();
-                        last_sum_tick += end_tick - cur_tick;
+                        last_sum_tick += end_tick - cur_tick; //recv_cur_tick;
+                        pingpong_ticks[last_sum_tick_count] = end_tick - cur_tick;
                         last_sum_tick_count ++;
                         packet->Release();
 
                         if (end_tick - last_print_tick > 1000000) { // Print Per 1s
-                            OMNI_LOG(common::kInfo) << "Average RTT in last 1 second is " << last_sum_tick / last_sum_tick_count << "us." << std::endl;
+                            OMNI_LOG(common::kInfo) << "Average RTT in last 1 second is " << 1.0 * last_sum_tick / last_sum_tick_count << "us." << std::endl;
+                            if (last_sum_tick_count > 0) {
+                                std::sort(pingpong_ticks, pingpong_ticks + last_sum_tick_count);
+                                OMNI_LOG(common::kInfo) << "Median RTT in last 1 second is " << 1.0 * pingpong_ticks[last_sum_tick_count / 2] << "us." << std::endl;
+                                int percentile = last_sum_tick_count * 0.999;
+                                OMNI_LOG(common::kInfo) << "99.9th percentile RTT in last 1 second is " << 1.0 * pingpong_ticks[percentile] << "us." << std::endl;
+                            }
                             last_print_tick = end_tick;
                             last_sum_tick = 0;
                             last_sum_tick_count = 0;
@@ -241,6 +247,7 @@ int main(int argc, char **argv) {
                     uint64_t last_print_tick = GetCurrentTickUs();
                     uint64_t last_sum_tick = 0;
                     int last_sum_tick_count = 0;
+                    uint64_t pingpong_ticks[1000000];
 
                     /* Send a packet to client with curernt tick and wait the packet back and calc
                         the average latency and print per second. */
@@ -263,11 +270,18 @@ int main(int argc, char **argv) {
                         }
                         uint64_t end_tick = GetCurrentTickUs();
                         last_sum_tick += end_tick - cur_tick;
+                        pingpong_ticks[last_sum_tick_count] = end_tick - cur_tick;
                         last_sum_tick_count ++;
                         packet->Release();
 
                         if (end_tick - last_print_tick > 1000000) { // Print Per 1s
                             OMNI_LOG(common::kInfo) << "Average RTT in last 1 second is " << last_sum_tick / last_sum_tick_count << "us." << std::endl;
+                            if (last_sum_tick_count > 0) {
+                                std::sort(pingpong_ticks, pingpong_ticks + last_sum_tick_count);
+                                OMNI_LOG(common::kInfo) << "Median RTT in last 1 second is " << pingpong_ticks[last_sum_tick_count / 2] << "us." << std::endl;
+                                int percentile = last_sum_tick_count * 0.999;
+                                OMNI_LOG(common::kInfo) << "99.9th percentile RTT in last 1 second is " << pingpong_ticks[percentile] << "us." << std::endl;
+                            }
                             last_print_tick = end_tick;
                             last_sum_tick = 0;
                             last_sum_tick_count = 0;
