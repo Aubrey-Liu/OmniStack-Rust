@@ -38,7 +38,7 @@ namespace omnistack::data_plane::udp_senders {
     Packet* UdpSender::MainLogic(Packet* packet) {
         // OMNI_LOG_TAG(kDebug, "UdpSender") << "send udp packet, length = " << packet->length_ << "\n";
         // edit omnistack header
-        PacketHeader &udp = packet->packet_headers_[packet->header_tail_ ++];
+        PacketHeader &udp = packet->l4_header;
         udp.length_ = sizeof(UdpHeader);
         udp.offset_ = 0;
         packet->data_ = packet->data_ - sizeof(UdpHeader);

@@ -60,7 +60,7 @@ TEST(DataPlaneUdpSender, MainLogic) {
     node.info_.transport.udp.dport = htons(2);
     auto res = udp_sender->MainLogic(&pack);
     ASSERT_NE(res, nullptr);
-    auto header = reinterpret_cast<UdpHeader*>(res->data_ + res->packet_headers_[res->header_tail_ - 1].offset_);
+    auto header = res->GetL4Header<UdpHeader>();
     ASSERT_EQ(header->sport, htons(1));
     ASSERT_EQ(header->dport, htons(2));
     ASSERT_EQ(header->chksum, 0);

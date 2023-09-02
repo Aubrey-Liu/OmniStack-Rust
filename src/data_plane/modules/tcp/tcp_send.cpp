@@ -55,7 +55,7 @@ namespace omnistack::data_plane::tcp_send {
         auto packet = packet_pool->Reference(ref_packet);
 
         /* build tcp header */
-        auto& header_tcp = packet->packet_headers_[packet->header_tail_++];
+        auto& header_tcp = packet->l4_header;
         header_tcp.length_ = TcpHeaderLength(false, false, false, false, true);
         header_tcp.offset_ = 0;
         packet->data_ = packet->data_ - header_tcp.length_;
@@ -112,7 +112,7 @@ namespace omnistack::data_plane::tcp_send {
 
         Packet* ret = nullptr;
 
-        if(packet->header_tail_ == 0) {
+        if(0) {
             /* pure data */
             /* check if in valid state */
             if(flow->state_ > TcpFlow::State::kEstablished || flow->state_ < TcpFlow::State::kSynSent)

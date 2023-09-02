@@ -127,11 +127,11 @@ namespace omnistack::data_plane::node_user {
             // OMNI_LOG_TAG(kDebug, "NodeUser") << "NodeUser " << id_ << " received packet " << (void*)packet << "\n";
 
             node::NodeInfo tmp_node_info;
-            auto l2_hdr = reinterpret_cast<EthernetHeader*>(packet->data_ + packet->packet_headers_[0].offset_);
+            auto l2_hdr = packet->GetL2Header<EthernetHeader>();
             uint8_t l4_type = 0;
             switch (l2_hdr->type) {
                 [[likely]] case ETH_PROTO_TYPE_IPV4: {
-                    auto l3_hdr = reinterpret_cast<Ipv4Header*>(packet->data_ + packet->packet_headers_[1].offset_);
+                    auto l3_hdr = packet->GetL3Header<Ipv4Header>();
                     l4_type = l3_hdr->proto;
                     tmp_node_info.network_layer_type = node::NetworkLayerType::kIPv4;
                     tmp_node_info.network.ipv4.sip = l3_hdr->dst;
@@ -151,14 +151,14 @@ namespace omnistack::data_plane::node_user {
 
             switch (l4_type) {
                 case IP_PROTO_TYPE_TCP: {
-                    auto l4_hdr = reinterpret_cast<TcpHeader*>(packet->data_ + packet->packet_headers_[2].offset_);
+                    auto l4_hdr = packet->GetL4Header<TcpHeader>();
                     tmp_node_info.transport_layer_type = node::TransportLayerType::kTCP;
                     tmp_node_info.transport.tcp.sport = l4_hdr->dport;
                     tmp_node_info.transport.tcp.dport = l4_hdr->sport;
                     break;
                 }
                 case IP_PROTO_TYPE_UDP: {
-                    auto l4_hdr = reinterpret_cast<UdpHeader*>(packet->data_ + packet->packet_headers_[2].offset_);
+                    auto l4_hdr = packet->GetL4Header<UdpHeader>();
                     tmp_node_info.transport_layer_type = node::TransportLayerType::kUDP;
                     tmp_node_info.transport.udp.sport = l4_hdr->dport;
                     tmp_node_info.transport.udp.dport = 0;

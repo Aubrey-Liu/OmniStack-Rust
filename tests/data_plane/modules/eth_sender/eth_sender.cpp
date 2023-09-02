@@ -68,7 +68,7 @@ TEST(DataPlaneEthSender, MainLogic)
     node.info_.network_layer_type = NetworkLayerType::kIPv4;
     pack.nic_ = 1;
     auto res = eth_sender->MainLogic(&pack);
-    auto header = reinterpret_cast<EthernetHeader*>(res->data_ + res->packet_headers_[res->header_tail_ - 1].offset_);
+    auto header = res->GetL2Header<EthernetHeader>();
     ASSERT_EQ(header->dst[0], 1);
     ASSERT_EQ(header->src[0], 1);
     ASSERT_EQ(header->type, ETH_PROTO_TYPE_IPV4);

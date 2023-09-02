@@ -36,10 +36,10 @@ TEST(DataPlaneIpv4Recver, Functions)
     ASSERT_NE(ipv4_recver, nullptr);
     Packet pack = Packet();
     // check the Filter with pos and neg input
-    (reinterpret_cast<EthernetHeader *>(pack.data_ + pack.packet_headers_[0].offset_))->type = ETH_PROTO_TYPE_IPV4;
+    pack.GetL2Header<EthernetHeader>()->type = ETH_PROTO_TYPE_IPV4;
     auto result = ipv4_recver->DefaultFilter(&pack);
     ASSERT_EQ(result, true);
-    (reinterpret_cast<EthernetHeader *>(pack.data_ + pack.packet_headers_[0].offset_))->type = ~ETH_PROTO_TYPE_IPV4;
+    pack.GetL2Header<EthernetHeader>()->type = ~ETH_PROTO_TYPE_IPV4;
     result = ipv4_recver->GetFilter(0, 0)(&pack);
     ASSERT_EQ(result, false);
     result = ipv4_recver->allow_duplication_();

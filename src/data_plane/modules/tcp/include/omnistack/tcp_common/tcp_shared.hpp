@@ -203,7 +203,7 @@ namespace omnistack::data_plane::tcp_common {
         auto packet = packet_pool->Allocate();
 
         /* build tcp header */
-        auto& header_tcp = packet->packet_headers_[packet->header_tail_++];
+        auto& header_tcp = packet->l4_header;
         header_tcp.length_ = TcpHeaderLength(false, false, false, false, true);
         header_tcp.offset_ = 0;
         packet->data_ = packet->data_ - header_tcp.length_;
@@ -258,7 +258,7 @@ namespace omnistack::data_plane::tcp_common {
         auto packet = packet_pool->Allocate();
 
         /* build tcp header */
-        auto& header_tcp = packet->packet_headers_[packet->header_tail_++];
+        auto& header_tcp = packet->l4_header;
         header_tcp.length_ = TcpHeaderLength(true, true, true, true, true);
         header_tcp.offset_ = 0;
         packet->data_ = packet->data_ - header_tcp.length_;

@@ -38,10 +38,9 @@ namespace omnistack::data_plane::tcp_flow_cache_in {
     };
 
     bool TcpFlowCacheIn::DefaultFilter(Packet* packet) {
-        auto& ip = packet->packet_headers_[packet->header_tail_ - 2];
-        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + ip.offset_);
+        Ipv4Header* ipv4_header = packet->GetL3Header<Ipv4Header>();
         if(ipv4_header->version == 4) [[likely]] return ipv4_header->proto == IP_PROTO_TYPE_TCP;
-        Ipv6Header* ipv6_header = reinterpret_cast<Ipv6Header*>(packet->data_ + ip.offset_);
+        Ipv6Header* ipv6_header = packet->GetL3Header<Ipv6Header>();
         if(ipv6_header->version == 6) [[likely]] return ipv6_header->nh == IP_PROTO_TYPE_TCP;
         return false;
     }
@@ -50,10 +49,8 @@ namespace omnistack::data_plane::tcp_flow_cache_in {
         /* TODO: store flow hash or flow* in packet->node_ */
         auto flow = flow_cache_[packet->flow_hash_ & kTcpFlowCacheMask];
 
-        auto& tcp = packet->packet_headers_[packet->header_tail_ - 1];
-        auto tcp_header = reinterpret_cast<TcpHeader*>(packet->data_ + tcp.offset_);
-        auto& ip = packet->packet_headers_[packet->header_tail_ - 2];
-        auto ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + ip.offset_);
+        auto tcp_header = packet->GetL4Header<TcpHeader>();
+        auto ipv4_header = packet->GetL3Header<Ipv4Header>();
         uint32_t local_ip = ipv4_header->dst;
         uint32_t remote_ip = ipv4_header->src;
         uint16_t local_port = tcp_header->dport;

@@ -25,7 +25,7 @@ namespace omnistack::data_plane::eth_recver {
 
     Packet* EthRecver::MainLogic(Packet* packet) {
         EthernetHeader* eth_header = reinterpret_cast<EthernetHeader*>(packet->data_ + packet->offset_);
-        auto& eth = packet->packet_headers_[packet->header_tail_ ++];
+        auto& eth = packet->l2_header;
         eth.length_ = sizeof(EthernetHeader);
         eth.offset_ = packet->offset_;
         packet->offset_ += eth.length_;

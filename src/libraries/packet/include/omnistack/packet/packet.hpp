@@ -9,6 +9,7 @@
 
 #include <omnistack/common/constant.hpp>
 #include <omnistack/common/logger.h>
+#include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/memory/memory.h>
 #include <stdexcept>
 #include <sys/socket.h>
@@ -59,7 +60,7 @@ namespace omnistack::packet {
 
         uint16_t reference_count_;
         uint16_t length_;           // total length of data in mbuf
-        uint16_t header_tail_;      // index into packet_headers_
+        uint16_t depre_header_tail_;      // index into packet_headers_
         uint16_t offset_;           // current decoded data offset
         uint16_t nic_;              // id of source or target NIC
         MbufType mbuf_type_;        // Origin, DPDK, Indirect
@@ -69,7 +70,10 @@ namespace omnistack::packet {
         Pointer<char> data_;        // pointer to packet data
         uint32_t flow_hash_;
         uint32_t next_hop_filter_;      /* bitmask presents next hop nodes, if it is set by main logic, corresponding filter will be ignored */
-        PacketHeader packet_headers_[kPacketMaxHeaderNum];
+        PacketHeader l2_header;
+        PacketHeader l3_header;
+        PacketHeader l4_header;
+        PacketHeader pad_header;
         Pointer<Packet> next_packet_;
         Pointer<node::BasicNode> node_;        // pointer to the node which the packet belongs to
         /* a cache line ends here */
@@ -80,12 +84,30 @@ namespace omnistack::packet {
         char mbuf_[kPacketMbufSize];
 
         void AddHeaderOffset(uint16_t offset) {
-            for(uint32_t i = 0; i < header_tail_; i ++)
-                packet_headers_[i].offset_ += offset;
+            l2_header.offset_ += offset;
+            l3_header.offset_ += offset;
+            l4_header.offset_ += offset;
         }
 
-        inline char* GetHeaderPayload(int index) const {
-            return data_ + static_cast<uint32_t>(packet_headers_[index].offset_);
+        template<typename T>
+        inline T* GetL2Header() {
+            static_assert(std::is_same<T, EthernetHeader>::value, "Not a valid L2 Header");
+            return reinterpret_cast<T*>(data_.Get() + l2_header.offset_);
+        }
+
+        template<typename T>
+        inline T* GetL3Header() {
+            static_assert(std::is_same<T, Ipv4Header>::value ||
+                            std::is_same<T, Ipv6Header>::value ||
+                            std::is_same<T, ArpHeader>::value, "Not a valid L3 Header");
+            return reinterpret_cast<T*>(data_.Get() + l3_header.offset_);
+        }
+
+        template<typename T>
+        inline T* GetL4Header() {
+            static_assert(std::is_same<T, TcpHeader>::value ||
+                            std::is_same<T, UdpHeader>::value, "Not a valid L4 Header");
+            return reinterpret_cast<T*>(data_.Get() + l4_header.offset_);
         }
 
         inline uint64_t GetIova() const {
@@ -105,6 +127,8 @@ namespace omnistack::packet {
             }
         }
     };
+
+    static_assert(offsetof(Packet, root_packet_) == 64);
 
     class PacketPool {
     public:
@@ -193,7 +217,7 @@ namespace omnistack::packet {
         if(packet_copy == nullptr) [[unlikely]] return nullptr;
         packet_copy->reference_count_ = 1;
         packet_copy->length_ = packet->length_;
-        packet_copy->header_tail_ = 0;
+        // packet_copy->header_tail_ = 0;
         packet_copy->offset_ = packet->offset_;
         packet_copy->nic_ = packet->nic_;
         packet_copy->mbuf_type_ = Packet::MbufType::kOrigin;
@@ -218,12 +242,10 @@ namespace omnistack::packet {
 #else 
         memcpy(packet_copy->data_.Get(), packet->data_.Get(), packet->length_);
 #endif
-        while(packet_copy->header_tail_ != packet->header_tail_) {
-            auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
-            header.length_ = packet->packet_headers_[packet_copy->header_tail_].length_;
-            header.offset_ = packet->packet_headers_[packet_copy->header_tail_].offset_;
-            packet_copy->header_tail_ ++;
-        }
+        packet_copy->l2_header = packet->l2_header;
+        packet_copy->l3_header = packet->l3_header;
+        packet_copy->l4_header = packet->l4_header;
+        packet_copy->pad_header = packet->pad_header;
         return packet_copy;
     }
 
@@ -244,13 +266,11 @@ namespace omnistack::packet {
         packet_copy->node_ = packet->node_;
         packet_copy->root_packet_ = reinterpret_cast<void*>(packet);
         packet_copy->peer_addr_ = packet->peer_addr_;
-        packet_copy->header_tail_ = 0;
-        while(packet_copy->header_tail_ != packet->header_tail_) {
-            auto& header = packet_copy->packet_headers_[packet_copy->header_tail_];
-            header.length_ = packet->packet_headers_[packet_copy->header_tail_].length_;
-            header.offset_ = packet->packet_headers_[packet_copy->header_tail_].offset_;
-            packet_copy->header_tail_ ++;
-        }
+        // packet_copy->header_tail_ = 0;
+        packet_copy->l2_header = packet->l2_header;
+        packet_copy->l3_header = packet->l3_header;
+        packet_copy->l4_header = packet->l4_header;
+        packet_copy->pad_header = packet->pad_header;
         packet->reference_count_ ++;
         return packet_copy;
     }

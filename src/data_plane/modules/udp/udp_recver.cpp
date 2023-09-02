@@ -29,10 +29,9 @@ namespace omnistack::data_plane::udp_recvers {
     };
 
     bool UdpRecver::DefaultFilter(Packet* packet) {
-        auto& ip = packet->packet_headers_[packet->header_tail_ - 1];
-        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + ip.offset_);
+        Ipv4Header* ipv4_header = packet->GetL3Header<Ipv4Header>();
         if(ipv4_header->version == 4) [[likely]] return ipv4_header->proto == IP_PROTO_TYPE_UDP;
-        Ipv6Header* ipv6_header = reinterpret_cast<Ipv6Header*>(packet->data_ + ip.offset_);
+        Ipv6Header* ipv6_header = packet->GetL3Header<Ipv6Header>();
         if(ipv6_header->version == 6) [[likely]] return ipv6_header->nh == IP_PROTO_TYPE_UDP;
         return false;
     }
@@ -40,7 +39,7 @@ namespace omnistack::data_plane::udp_recvers {
     Packet* UdpRecver::MainLogic(Packet* packet) {
         // OMNI_LOG_TAG(kDebug, "UdpRecver") << "receive udp packet, length = " << packet->length_ << "\n";
         UdpHeader* udp_header = reinterpret_cast<UdpHeader*>(packet->data_ + packet->offset_);
-        PacketHeader &udp = packet->packet_headers_[packet->header_tail_ ++];
+        PacketHeader &udp = packet->l4_header;
         udp.length_ = sizeof(UdpHeader);
         udp.offset_ = packet->offset_;
         packet->offset_ += udp.length_;

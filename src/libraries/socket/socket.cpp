@@ -200,9 +200,9 @@ namespace omnistack::socket {
 
         int listen(int sockfd, int backlog) { // Passive Node
             auto cur_fd = global_fd_list[sockfd];
-            cur_fd->type = FileDescriptorType::kBasicListen;
             switch (cur_fd->type) {
                 [[likely]] case FileDescriptorType::kBasic: {
+                    cur_fd->type = FileDescriptorType::kBasicListen;
                     auto basic_node = cur_fd->basic_node;
                     basic_node->ReadMulti(); // Manually Create MultiWriter Channel
                     basic_node->PutIntoHashtable();
@@ -212,6 +212,7 @@ namespace omnistack::socket {
                     return ::listen(cur_fd->system_fd, backlog);
                 }
             }
+            errno = EINVAL;
             return -1;
         }
 
@@ -567,8 +568,8 @@ namespace omnistack::socket {
             struct sockaddr* src_addr, socklen_t* addrlen) {
             auto flg = read(sockfd, packet);
             if (flg > 0 && src_addr != nullptr) {
-                auto udp_header = reinterpret_cast<common::UdpHeader*>((*packet)->GetHeaderPayload(2));
-                auto ipv4_header = reinterpret_cast<common::Ipv4Header*>((*packet)->GetHeaderPayload(1));
+                auto udp_header = (*packet)->GetL4Header<common::UdpHeader>();
+                auto ipv4_header = (*packet)->GetL3Header<common::Ipv4Header>();
                 auto src_addr_ = reinterpret_cast<struct sockaddr_in*>(src_addr);
                 src_addr_->sin_family = AF_INET;
                 src_addr_->sin_addr.s_addr = ipv4_header->src;

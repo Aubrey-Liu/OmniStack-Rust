@@ -61,13 +61,13 @@ namespace omnistack::data_plane::firewall {
         }
         
         bool IsMatch(packet::Packet* packet) {
-            auto ethh = reinterpret_cast<common::EthernetHeader*>(packet->GetHeaderPayload(0));
+            auto ethh = packet->GetL2Header<common::EthernetHeader>();
             if (!InL2(ethh->type))
                 return false;
             
             switch (ethh->type) {
                 case ETH_PROTO_TYPE_IPV4: {
-                    auto iph = reinterpret_cast<common::Ipv4Header*>(packet->GetHeaderPayload(1));
+                    auto iph = packet->GetL3Header<common::Ipv4Header>();
                     if (src_ipv4 != 0 && (iph->src & src_cidr_mask) != (src_ipv4 & src_cidr_mask))
                         return false;
                     if (dst_ipv4 != 0 && (iph->dst & dst_cidr_mask) != (dst_ipv4 & dst_cidr_mask))
@@ -76,11 +76,11 @@ namespace omnistack::data_plane::firewall {
                         return false;
                     if (src_port != UINT32_MAX) {
                         if (iph->proto == IP_PROTO_TYPE_TCP) {
-                            auto tcph = reinterpret_cast<common::TcpHeader*>(packet->GetHeaderPayload(2));
+                            auto tcph = packet->GetL4Header<common::TcpHeader>();
                             if (tcph->sport != src_port)
                                 return false;
                         } else if (iph->proto == IP_PROTO_TYPE_UDP) {
-                            auto udph = reinterpret_cast<common::UdpHeader*>(packet->GetHeaderPayload(2));
+                            auto udph = packet->GetL4Header<common::UdpHeader>();
                             if (udph->sport != src_port)
                                 return false;
                         } else {
@@ -89,11 +89,11 @@ namespace omnistack::data_plane::firewall {
                     }
                     if (dst_port != UINT32_MAX) {
                         if (iph->proto == IP_PROTO_TYPE_TCP) {
-                            auto tcph = reinterpret_cast<common::TcpHeader*>(packet->GetHeaderPayload(2));
+                            auto tcph = packet->GetL4Header<common::TcpHeader>();
                             if (tcph->dport != dst_port)
                                 return false;
                         } else if (iph->proto == IP_PROTO_TYPE_UDP) {
-                            auto udph = reinterpret_cast<common::UdpHeader*>(packet->GetHeaderPayload(2));
+                            auto udph = packet->GetL4Header<common::UdpHeader>();
                             if (udph->dport != dst_port)
                                 return false;
                         } else {

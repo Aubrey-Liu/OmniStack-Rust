@@ -278,9 +278,9 @@ namespace omnistack::data_plane::tcp_state_in {
     Packet* TcpStateIn::MainLogic(Packet* packet) {
         auto flow = reinterpret_cast<TcpFlow*>(packet->custom_value_);
         if(flow != nullptr) tcp_shared_handle_->ReleaseFlow(flow);
-        auto& tcp = packet->packet_headers_[packet->header_tail_ - 1];
-        auto tcp_header = reinterpret_cast<TcpHeader*>(packet->data_ + tcp.offset_);
-        auto ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + packet->packet_headers_[packet->header_tail_ - 2].offset_);
+        auto tcp = packet->l4_header;
+        auto tcp_header = packet->GetL4Header<TcpHeader>();
+        auto ipv4_header = packet->GetL3Header<Ipv4Header>();
 
         uint32_t local_ip = ipv4_header->dst;
         uint32_t remote_ip = ipv4_header->src;

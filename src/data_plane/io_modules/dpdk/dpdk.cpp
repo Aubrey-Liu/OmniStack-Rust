@@ -15,7 +15,7 @@ namespace omnistack::io_module::dpdk {
     constexpr int kMtu = 1500;
     constexpr int kMaxNumQueues = 32;
     
-    constexpr int kMbufCount = 4096;
+    constexpr int kMbufCount = 8192;
     constexpr int kLocalCahe = 256;
     constexpr int kMBufSize = 
         AlignTo(common::kMtu + sizeof(common::EthernetHeader) + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM, 64);
@@ -293,25 +293,24 @@ namespace omnistack::io_module::dpdk {
         cur_mbuf->next = NULL;
 
         cur_mbuf->l2_len = sizeof(common::EthernetHeader);
-        const auto header_tail = packet->header_tail_ - 1;
-        common::EthernetHeader* ethh = (common::EthernetHeader*)packet->GetHeaderPayload(header_tail);
+        auto ethh = packet->GetL2Header<common::EthernetHeader>();
 
         switch (ethh->type) {
             [[likely]] case ETH_PROTO_TYPE_IPV4: {
-                common::Ipv4Header* ipv4h = (common::Ipv4Header*)packet->GetHeaderPayload(header_tail-1);
+                auto ipv4h = packet->GetL3Header<common::Ipv4Header>();
                 cur_mbuf->ol_flags |= RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_IPV4;
                 cur_mbuf->l3_len = (ipv4h->ihl << 2);
                 ipv4h->chksum = 0;
                 switch (ipv4h->proto) {
                     [[likely]] case IP_PROTO_TYPE_TCP: {
                         cur_mbuf->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
-                        auto tcph = (common::TcpHeader*)packet->GetHeaderPayload(header_tail-2);
+                        auto tcph = packet->GetL4Header<common::TcpHeader>();
                         tcph->chksum = rte_ipv4_phdr_cksum((const struct rte_ipv4_hdr*)ipv4h, cur_mbuf->ol_flags);
                         break;
                     }
                     case IP_PROTO_TYPE_UDP: {
                         cur_mbuf->ol_flags |= RTE_MBUF_F_TX_UDP_CKSUM;
-                        auto udph = (common::UdpHeader*)packet->GetHeaderPayload(header_tail-2);
+                        auto udph = packet->GetL4Header<common::UdpHeader>();
                         udph->chksum = rte_ipv4_phdr_cksum((const struct rte_ipv4_hdr*)ipv4h, cur_mbuf->ol_flags);
                         break;
                     }

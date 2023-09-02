@@ -93,7 +93,7 @@ namespace omnistack::data_plane::ipv4_sender {
         uint16_t dst_nic = 0;
         // edit omnistack's header.
         packet->AddHeaderOffset(sizeof(Ipv4Header));
-        auto& ipv4 = packet->packet_headers_[packet->header_tail_ ++];
+        auto& ipv4 = packet->l3_header;
         ipv4.length_ = sizeof(Ipv4Header);
         ipv4.offset_ = 0;
         packet->data_ = packet->data_ - sizeof(Ipv4Header);

@@ -36,7 +36,7 @@ TEST(DataPlaneUdpRecver, Functions) {
     ASSERT_NE(udp_recver, nullptr);
     Packet packet_ipv4 = Packet();
     Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet_ipv4.data_ + packet_ipv4.offset_);
-    auto& ipv4 = packet_ipv4.packet_headers_[packet_ipv4.header_tail_ ++];
+    auto& ipv4 = packet_ipv4.l3_header;
     ipv4.length_ = 20;
     ipv4.offset_ = packet_ipv4.offset_;
     packet_ipv4.length_ = ntohs(ipv4_header->len) + packet_ipv4.offset_;
@@ -47,7 +47,7 @@ TEST(DataPlaneUdpRecver, Functions) {
     ASSERT_EQ(result, true);
     Packet packet_ipv5 = Packet();
     Ipv4Header* ipv5_header = reinterpret_cast<Ipv4Header*>(packet_ipv5.data_ + packet_ipv5.offset_);
-    auto& ipv5 = packet_ipv5.packet_headers_[packet_ipv5.header_tail_ ++];
+    auto& ipv5 = packet_ipv5.l3_header;
     ipv5.length_ = 20;
     ipv5.offset_ = packet_ipv5.offset_;
     packet_ipv5.length_ = ntohs(ipv5_header->len) + packet_ipv5.offset_;

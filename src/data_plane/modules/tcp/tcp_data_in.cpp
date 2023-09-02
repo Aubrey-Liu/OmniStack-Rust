@@ -62,7 +62,7 @@ namespace omnistack::data_plane::tcp_data_in {
         auto flow = reinterpret_cast<TcpFlow*>(packet->custom_value_);
         if(flow == nullptr) return TcpInvalid(packet);
         tcp_shared_handle_->ReleaseFlow(flow);
-        auto tcp_header = reinterpret_cast<TcpHeader*>(packet->data_ + packet->packet_headers_[packet->header_tail_ - 1].offset_);
+        auto tcp_header = packet->GetL4Header<TcpHeader>();
 
         auto& recv_var = flow->receive_variables_;
         uint32_t seq_num = ntohl(tcp_header->seq);

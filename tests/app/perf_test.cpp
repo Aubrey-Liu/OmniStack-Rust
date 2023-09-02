@@ -222,6 +222,7 @@ int main(int argc, char **argv) {
                 return 1;
             }
             auto client = socket::bsd::accept(socket, nullptr, nullptr);
+            OMNI_LOG(common::kInfo) << "Connected to client " << client << std::endl;
             if (args::is_pingpong) {
                 if (!args::is_reversed) {
                     while (true) {

@@ -146,7 +146,7 @@ TEST(DataPlaneIpv4Sender, MainLogicPacketModify) {
     auto res = ipv4_sender->MainLogic(&pack);
     ASSERT_NE(res, nullptr);
     ASSERT_EQ(old_length, res->length_ - sizeof(Ipv4Header));
-    auto header = reinterpret_cast<Ipv4Header*>(res->data_ + res->packet_headers_[res->header_tail_ - 1].offset_);
+    auto header = res->GetL3Header<Ipv4Header>();
     ASSERT_EQ(header->src, htons(1));
     ASSERT_EQ(header->dst, htons(2));
     ASSERT_EQ(header->len, htons(pack.length_));

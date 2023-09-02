@@ -218,9 +218,8 @@ TEST(LibPacket, Duplicate) {
         }
         sprintf(packet->data_.Get(), "%s", "Hello World!");
         packet->length_ = strlen(packet->data_.Get());
-        packet->packet_headers_[0].offset_ = 0;
-        packet->packet_headers_[0].length_ = packet->length_;
-        packet->header_tail_ ++;
+        packet->l2_header.offset_ = 0;
+        packet->l2_header.length_ = packet->length_;
         auto packet2 = packet_pool->Duplicate(packet);
         if(packet2 == nullptr) {
             std::cerr << "Failed to duplicate packet." << std::endl;
@@ -242,15 +241,11 @@ TEST(LibPacket, Duplicate) {
             std::cerr << "Length is not the same." << std::endl;
             exit(1);
         }
-        if(packet2->header_tail_ != 1) {
-            std::cerr << "Header tail is not 1." << std::endl;
-            exit(1);
-        }
-        if(packet2->packet_headers_[0].offset_ != 0) {
+        if(packet2->l2_header.offset_ != 0) {
             std::cerr << "Header tail data is not data." << std::endl;
             exit(1);
         }
-        if(packet2->packet_headers_[0].length_ != packet->length_) {
+        if(packet2->l2_header.length_ != packet->length_) {
             std::cerr << "Header tail length is not data length." << std::endl;
             exit(1);
         }
@@ -300,9 +295,8 @@ TEST(LibPakcet, Reference) {
         }
         sprintf(packet->data_.Get(), "%s", "Hello World!");
         packet->length_ = strlen(packet->data_.Get());
-        packet->packet_headers_[0].offset_ = 0;
-        packet->packet_headers_[0].length_ = packet->length_;
-        packet->header_tail_ ++;
+        packet->l2_header.offset_ = 0;
+        packet->l2_header.length_ = packet->length_;
         auto packet2 = packet_pool->Reference(packet);
         if(packet2 == nullptr) {
             std::cerr << "Failed to reference packet." << std::endl;
@@ -324,15 +318,11 @@ TEST(LibPakcet, Reference) {
             std::cerr << "Length is not the same." << std::endl;
             exit(1);
         }
-        if(packet2->header_tail_ != 1) {
-            std::cerr << "Header tail is not 1." << std::endl;
-            exit(1);
-        }
-        if(packet2->packet_headers_[0].offset_ != 0) {
+        if(packet2->l2_header.offset_ != 0) {
             std::cerr << "Header tail data is not the same." << std::endl;
             exit(1);
         }
-        if(packet2->packet_headers_[0].length_ != packet->length_) {
+        if(packet2->l2_header.length_ != packet->length_) {
             std::cerr << "Header tail length is not the same." << std::endl;
             exit(1);
         }

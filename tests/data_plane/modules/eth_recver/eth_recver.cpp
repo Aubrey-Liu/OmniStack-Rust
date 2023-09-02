@@ -54,6 +54,6 @@ TEST(DataPlaneEthRecver, MainLogic)
     EthernetHeader* eth_header = reinterpret_cast<EthernetHeader*>(pack.data_ + pack.offset_);
     eth_header->type = ETH_PROTO_TYPE_IPV4;
     eth_recver->MainLogic(&pack);
-    ASSERT_EQ((reinterpret_cast<EthernetHeader*>(pack.data_ + pack.packet_headers_[0].offset_))->type, ETH_PROTO_TYPE_IPV4);
+    ASSERT_EQ(pack.GetL2Header<EthernetHeader>()->type, ETH_PROTO_TYPE_IPV4);
     dlclose(handle);
 }

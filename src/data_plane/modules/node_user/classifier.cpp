@@ -149,11 +149,11 @@ namespace omnistack::data_plane::classifier {
 
     Packet* NodeUserClassifier::MainLogic(Packet* packet) {
         node::NodeInfo tmp_info {.padding = 0};
-        auto l2_hdr = reinterpret_cast<EthernetHeader*>(packet->GetHeaderPayload(0));
+        auto l2_hdr = packet->GetL2Header<EthernetHeader>();
         uint8_t l4_type;
         switch (l2_hdr->type) {
             case ETH_PROTO_TYPE_IPV4: {
-                auto l3_hdr = reinterpret_cast<Ipv4Header*>(packet->GetHeaderPayload(1));
+                auto l3_hdr = packet->GetL3Header<Ipv4Header>();
                 l4_type = l3_hdr->proto;
                 tmp_info.network_layer_type = node::NetworkLayerType::kIPv4;
                 tmp_info.network.Set(l3_hdr->dst, l3_hdr->src);
@@ -168,14 +168,14 @@ namespace omnistack::data_plane::classifier {
         }
         switch (l4_type) {
             case IP_PROTO_TYPE_TCP: {
-                auto l4_hdr = reinterpret_cast<TcpHeader*>(packet->GetHeaderPayload(2));
+                auto l4_hdr = packet->GetL4Header<TcpHeader>();
                 tmp_info.transport_layer_type = node::TransportLayerType::kTCP;
                 tmp_info.transport.sport = l4_hdr->dport;
                 tmp_info.transport.dport = l4_hdr->sport;
                 break;
             }
             case IP_PROTO_TYPE_UDP: {
-                auto l4_hdr = reinterpret_cast<UdpHeader*>(packet->GetHeaderPayload(2));
+                auto l4_hdr = packet->GetL4Header<UdpHeader>();
                 tmp_info.transport_layer_type = node::TransportLayerType::kUDP;
                 tmp_info.transport.sport = l4_hdr->dport;
                 tmp_info.transport.dport = 0;

@@ -57,13 +57,13 @@ namespace omnistack::data_plane::nat {
     }
 
     Packet* Nat::MainLogic(Packet* packet) {
-        auto ethh = reinterpret_cast<EthernetHeader*>(packet->GetHeaderPayload(0));
+        auto ethh = packet->GetL2Header<EthernetHeader>();
         if (ethh->type != ETH_PROTO_TYPE_IPV4) return packet;
-        auto iph = reinterpret_cast<Ipv4Header*>(packet->GetHeaderPayload(1));
+        auto iph = packet->GetL3Header<Ipv4Header>();
         if (iph->proto != IP_PROTO_TYPE_TCP && 
             iph->proto != IP_PROTO_TYPE_UDP) return packet;
         if (iph->proto == IP_PROTO_TYPE_TCP) {
-            auto tcph = reinterpret_cast<TcpHeader*>(packet->GetHeaderPayload(2));
+            auto tcph = packet->GetL4Header<TcpHeader>();
             auto nat_entry = (NatEntry*)table_->Lookup(&tcph->dport);
             if (nat_entry != nullptr) {
                 tcph->dport = nat_entry->ori_port;
@@ -71,7 +71,7 @@ namespace omnistack::data_plane::nat {
             }
             return packet;
         } else if (iph->proto == IP_PROTO_TYPE_UDP) {
-            auto udph = reinterpret_cast<UdpHeader*>(packet->GetHeaderPayload(2));
+            auto udph = packet->GetL4Header<UdpHeader>();
             auto nat_entry = (NatEntry*)table_->Lookup(&udph->dport);
             if (nat_entry != nullptr) {
                 udph->dport = nat_entry->ori_port;

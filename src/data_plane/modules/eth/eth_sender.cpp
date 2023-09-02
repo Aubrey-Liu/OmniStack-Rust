@@ -38,12 +38,12 @@ namespace omnistack::data_plane::eth_sender {
     Packet* EthSender::MainLogic(Packet* packet) {
         // edit omnistack's header
         packet->AddHeaderOffset(sizeof(EthernetHeader));
-        auto& eth = packet->packet_headers_[packet->header_tail_ ++];
+        auto& eth = packet->l2_header;
         eth.length_ = sizeof(EthernetHeader);
         eth.offset_ = 0;
-        packet->data_ = packet->data_ - sizeof(EthernetHeader);
+        packet->data_ -= sizeof(EthernetHeader);
         packet->length_ += sizeof(EthernetHeader);
-        EthernetHeader* eth_header = reinterpret_cast<EthernetHeader*>(packet->data_.Get());
+        auto eth_header = reinterpret_cast<EthernetHeader*>(packet->data_.Get());
 
         // edit eth header
         // TODO: set the MAC address according to packet->nic_
