@@ -60,7 +60,7 @@ namespace omnistack::data_plane::tcp_send {
         header_tcp.offset_ = 0;
         packet->data_ = packet->data_ - header_tcp.length_;
         packet->length_ += header_tcp.length_;
-        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_ + header_tcp.offset_);
+        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_.Get());
         tcp->sport = flow->local_port_;
         tcp->dport = flow->remote_port_;
         tcp->seq = htonl(seq);
@@ -98,12 +98,13 @@ namespace omnistack::data_plane::tcp_send {
         // ipv4->dst = flow->remote_ip_;
 
         packet->node_ = flow->node_;
+        packet->peer_addr_.sin_addr.s_addr = flow->remote_ip_;
 
         return packet;
     } 
 
     Packet* TcpSend::MainLogic(Packet* packet) {
-        OMNI_LOG_TAG(kDebug, "TCP_SEND") << "enter main logic\n";
+        // OMNI_LOG_TAG(kDebug, "TCP_SEND") << "enter main logic\n";
         auto flow = reinterpret_cast<TcpFlow*>(packet->custom_value_);
         if(flow == nullptr) return TcpInvalid(packet);
         tcp_shared_handle_->ReleaseFlow(flow);
@@ -117,10 +118,12 @@ namespace omnistack::data_plane::tcp_send {
             if(flow->state_ > TcpFlow::State::kEstablished || flow->state_ < TcpFlow::State::kSynSent)
                 return TcpInvalid(packet);
 
+            // OMNI_LOG_TAG(kDebug, "TCP_SEND") << "send data packet, length = " << packet->length_ << "\n";
             /* check if can send immediately */
             /* get bytes can send from congestion control */
             uint32_t bytes_can_send = flow->congestion_control_->GetBytesCanSend();
-            if(!send_var.send_buffer_->EmptyUnsent() && bytes_can_send >= packet->length_) {
+            // OMNI_LOG_TAG(kDebug, "TCP_SEND") << "bytes_can_send = " << bytes_can_send << "\n";
+            if(send_var.send_buffer_->EmptyUnsent() && bytes_can_send >= packet->length_) {
                 /* send packet */
                 ret = BuildDataPacket(flow, send_var.send_nxt_, packet, packet_pool_);
                 send_var.send_nxt_ += packet->length_;
