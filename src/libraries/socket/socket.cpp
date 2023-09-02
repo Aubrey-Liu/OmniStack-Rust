@@ -23,6 +23,7 @@ namespace omnistack::socket {
         kUnknown,
         kLinux,
         kBasic,
+        kBasicListen,
         kEvent,
         kEpoll
     };
@@ -199,6 +200,7 @@ namespace omnistack::socket {
 
         int listen(int sockfd, int backlog) { // Passive Node
             auto cur_fd = global_fd_list[sockfd];
+            cur_fd->type = FileDescriptorType::kBasicListen;
             switch (cur_fd->type) {
                 [[likely]] case FileDescriptorType::kBasic: {
                     auto basic_node = cur_fd->basic_node;
@@ -216,9 +218,11 @@ namespace omnistack::socket {
         int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
             auto cur_fd = global_fd_list[sockfd];
             switch (cur_fd->type) {
-                [[likely]] case FileDescriptorType::kBasic: {
+                [[likely]] case FileDescriptorType::kBasicListen: {
                     auto basic_node = cur_fd->basic_node;
-                    auto new_node = (node::BasicNode*)basic_node->ReadMulti();
+                    auto new_node = cur_fd->packet_cache ? (node::BasicNode*)cur_fd->packet_cache :
+                        (node::BasicNode*)basic_node->ReadMulti();
+                    cur_fd->packet_cache = nullptr;
                     while (!new_node && cur_fd->blocking) [[unlikely]]
                         new_node = (node::BasicNode*)basic_node->ReadMulti();
                     if (new_node) [[likely]] {
@@ -346,6 +350,11 @@ namespace omnistack::socket {
                     ReleaseFd(fd);
                     break;
                 }
+                case FileDescriptorType::kBasicListen: {
+                    cur_fd->basic_node->CloseRef();
+                    ReleaseFd(fd);
+                    break;
+                }
                 case FileDescriptorType::kLinux:
                     ::close(cur_fd->system_fd);
                     ReleaseFd(fd);
@@ -464,6 +473,15 @@ namespace omnistack::socket {
                                 ret ++;
                             }
                             break;
+                        case FileDescriptorType::kBasicListen:
+                            if (cur_fd_->packet_cache == nullptr)
+                                cur_fd_->packet_cache = cur_fd_->basic_node->ReadMulti();
+                            if (cur_fd_->packet_cache != nullptr) [[likely]] {
+                                events[ret] = cur_fd_->epfd.polled_events[i];
+                                events[ret].events = EPOLLIN;
+                                ret ++;
+                            }
+                            break;
                         case FileDescriptorType::kLinux: {
                             struct pollfd cur_pfd = {
                                 .fd = cur_fd_->system_fd,
@@ -498,6 +516,7 @@ namespace omnistack::socket {
     namespace fast {
         int listen(int sockfd, int backlog, const std::vector<uint8_t>& graph_ids) { // Passive Node
             auto cur_fd = global_fd_list[sockfd];
+            cur_fd->type = FileDescriptorType::kBasicListen;
             switch (cur_fd->type) {
                 [[likely]] case FileDescriptorType::kBasic: {
                     auto basic_node = cur_fd->basic_node;
