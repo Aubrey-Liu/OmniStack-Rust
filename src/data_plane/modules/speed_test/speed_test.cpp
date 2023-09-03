@@ -32,7 +32,7 @@ namespace omnistack::data_plane::speed_test {
 
     Packet* SpeedTest::MainLogic(Packet* packet) {
         packet_count_ ++;
-        byte_count_ += packet->length_ - packet->offset_;
+        byte_count_ += packet->GetLength();
         if(packet_count_ & 0x3fff) [[unlikely]] {
             uint64_t now = omnistack::common::NowNs();
             if(now - last_time_ > 1000000000ULL) {

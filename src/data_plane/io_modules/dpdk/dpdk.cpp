@@ -15,7 +15,7 @@ namespace omnistack::io_module::dpdk {
     constexpr int kMtu = 1500;
     constexpr int kMaxNumQueues = 32;
     
-    constexpr int kMbufCount = 8192;
+    constexpr int kMbufCount = 4096;
     constexpr int kLocalCahe = 256;
     constexpr int kMBufSize = 
         AlignTo(common::kMtu + sizeof(common::EthernetHeader) + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM, 64);
@@ -280,15 +280,16 @@ namespace omnistack::io_module::dpdk {
     void DpdkSendQueue::SendPacket(packet::Packet* packet) {
         auto iova_addr = packet->GetIova();
         auto cur_mbuf = buffer_[index_++];
+        // OMNI_LOG_TAG(common::kDebug, "IO_DPDK") << "send packet, iova = " << iova_addr << "\n";
         if (iova_addr != 0) [[likely]] {
             struct rte_mbuf_ext_shared_info* shared_info = rte_pktmbuf_mtod(cur_mbuf, struct rte_mbuf_ext_shared_info*);
             shared_info->free_cb = FreePacket;
             shared_info->fcb_opaque = packet;
             rte_mbuf_ext_refcnt_set(shared_info, 1);
-            rte_pktmbuf_attach_extbuf(cur_mbuf, packet->data_ + packet->offset_,
-                iova_addr, packet->length_ - packet->offset_, shared_info);
+            rte_pktmbuf_attach_extbuf(cur_mbuf, packet->GetPayload(),
+                iova_addr, packet->GetLength(), shared_info);
         }
-        cur_mbuf->pkt_len = cur_mbuf->data_len = packet->length_ - packet->offset_;
+        cur_mbuf->pkt_len = cur_mbuf->data_len = packet->GetLength();
         cur_mbuf->nb_segs = 1;
         cur_mbuf->next = NULL;
 
@@ -321,10 +322,13 @@ namespace omnistack::io_module::dpdk {
                 cur_mbuf->ol_flags |= RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_IPV6;
                 break;
             }
+            default:
+                OMNI_LOG_TAG(common::kFatal, "IO_DPDK") << "Unsupported L3 type" << std::endl;
+                exit(1);
         }
 
         if (iova_addr == 0) [[unlikely]] {
-            rte_memcpy(rte_pktmbuf_mtod(cur_mbuf, char*), packet->data_ + packet->offset_, cur_mbuf->pkt_len);
+            rte_memcpy(rte_pktmbuf_mtod(cur_mbuf, char*), packet->GetPayload(), cur_mbuf->pkt_len);
         }
         if (index_ == kSendQueueSize) FlushSendPacket();
     }
@@ -358,9 +362,10 @@ namespace omnistack::io_module::dpdk {
         auto cur_mbuf = buffer_[index_++];
         auto ptr = rte_pktmbuf_mtod(cur_mbuf, char*);
         rte_prefetch0(ptr);
-        ret->data_.Set(ptr);
+        ret->SetData((char*)cur_mbuf->buf_addr);
+        ret->offset_ = cur_mbuf->data_off;
         ret->mbuf_type_ = packet::Packet::MbufType::kDpdk;
-        ret->length_ = cur_mbuf->pkt_len;
+        ret->SetLength(cur_mbuf->pkt_len);
         ret->flow_hash_ = cur_mbuf->hash.rss;
         ret->root_packet_.Set(cur_mbuf);
         return ret;
@@ -380,9 +385,10 @@ namespace omnistack::io_module::dpdk {
             auto cur_mbuf = buffer_[i];
             auto ptr = rte_pktmbuf_mtod(cur_mbuf, char*);
             rte_prefetch0(ptr);
-            packet->data_.Set(ptr);
+            packet->SetData((char*)cur_mbuf->buf_addr);
+            packet->offset_ = cur_mbuf->data_off;
             packet->mbuf_type_ = packet::Packet::MbufType::kDpdk;
-            packet->length_ = cur_mbuf->pkt_len;
+            packet->SetLength(cur_mbuf->pkt_len);
             packet->flow_hash_ = cur_mbuf->hash.rss;
             packet->root_packet_.Set(cur_mbuf);
             packet->next_packet_ = ret;

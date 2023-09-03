@@ -57,10 +57,10 @@ namespace omnistack::data_plane::tcp_send {
         /* build tcp header */
         auto& header_tcp = packet->l4_header;
         header_tcp.length_ = TcpHeaderLength(false, false, false, false, true);
-        header_tcp.offset_ = 0;
-        packet->data_ = packet->data_ - header_tcp.length_;
-        packet->length_ += header_tcp.length_;
-        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_.Get());
+        packet->offset_ -= header_tcp.length_;
+        header_tcp.offset_ = packet->offset_;
+        
+        auto tcp = packet->GetL4Header<TcpHeader>();
         tcp->sport = flow->local_port_;
         tcp->dport = flow->remote_port_;
         tcp->seq = htonl(seq);
@@ -84,19 +84,6 @@ namespace omnistack::data_plane::tcp_send {
         }
 #endif
 
-        /* build ipv4 header */
-        // auto& header_ipv4 = packet->packet_headers_[packet->header_tail_++];
-        // header_ipv4.length_ = sizeof(Ipv4Header);
-        // header_ipv4.offset_ = 0;
-        // header_tcp.offset_ = header_tcp.offset_ + header_ipv4.length_;
-        // packet->data_ = packet->data_ - header_ipv4.length_;
-        // packet->length_ += header_ipv4.length_;
-        // auto ipv4 = reinterpret_cast<Ipv4Header*>(packet->data_ + header_ipv4.offset_);
-        // ipv4->version = 4;
-        // ipv4->proto = IP_PROTO_TYPE_TCP;
-        // ipv4->src = flow->local_ip_;
-        // ipv4->dst = flow->remote_ip_;
-
         packet->node_ = flow->node_;
         packet->peer_addr_.sin_addr.s_addr = flow->remote_ip_;
 
@@ -112,25 +99,24 @@ namespace omnistack::data_plane::tcp_send {
 
         Packet* ret = nullptr;
 
-        if(0) {
+        if(packet->l4_header.length_ == 0) {
             /* pure data */
             /* check if in valid state */
             if(flow->state_ > TcpFlow::State::kEstablished || flow->state_ < TcpFlow::State::kSynSent)
                 return TcpInvalid(packet);
 
-            // OMNI_LOG_TAG(kDebug, "TCP_SEND") << "send data packet, length = " << packet->length_ << "\n";
             /* check if can send immediately */
             /* get bytes can send from congestion control */
             uint32_t bytes_can_send = flow->congestion_control_->GetBytesCanSend();
             // OMNI_LOG_TAG(kDebug, "TCP_SEND") << "bytes_can_send = " << bytes_can_send << "\n";
-            if(send_var.send_buffer_->EmptyUnsent() && bytes_can_send >= packet->length_) {
+            if(send_var.send_buffer_->EmptyUnsent() && bytes_can_send >= packet->GetLength()) {
                 /* send packet */
                 ret = BuildDataPacket(flow, send_var.send_nxt_, packet, packet_pool_);
-                send_var.send_nxt_ += packet->length_;
+                send_var.send_nxt_ += packet->GetLength();
                 send_var.send_buffer_->PushSent(packet);
 
                 /* update congestion control */
-                flow->congestion_control_->OnPacketSent(packet->length_);
+                flow->congestion_control_->OnPacketSent(packet->GetLength());
             }
             else {
                 /* store data in send buffer */
@@ -260,7 +246,7 @@ namespace omnistack::data_plane::tcp_send {
                         ret = packet;
 
                         /* update congestion control */
-                        flow->congestion_control_->OnPacketSent(send_var.send_buffer_->FrontSent()->length_);
+                        flow->congestion_control_->OnPacketSent(send_var.send_buffer_->FrontSent()->GetLength());
                     }
                     else if(tick >= send_var.rto_timeout_) [[unlikely]] {
                         /* update congestion control */
@@ -279,7 +265,7 @@ namespace omnistack::data_plane::tcp_send {
                         ret = packet;
 
                         /* update congestion control */
-                        flow->congestion_control_->OnPacketSent(send_var.send_buffer_->FrontSent()->length_);
+                        flow->congestion_control_->OnPacketSent(send_var.send_buffer_->FrontSent()->GetLength());
                     }
                 }
 
@@ -288,7 +274,7 @@ namespace omnistack::data_plane::tcp_send {
                 uint32_t bytes_can_send = flow->congestion_control_->GetBytesCanSend();
                 while(!send_var.send_buffer_->EmptyUnsent()) [[likely]] {
                     auto packet = send_var.send_buffer_->FrontUnsent();
-                    if(packet->length_ > bytes_can_send) break;
+                    if(packet->GetLength() > bytes_can_send) break;
                     send_var.send_buffer_->PopUnsent();
 
                     /* send packet */
@@ -296,12 +282,12 @@ namespace omnistack::data_plane::tcp_send {
                     tmp->next_packet_ = ret;
                     ret = tmp;
 
-                    send_var.send_nxt_ += packet->length_;
+                    send_var.send_nxt_ += packet->GetLength();
                     send_var.send_buffer_->PushSent(packet);
-                    bytes_can_send -= packet->length_;
+                    bytes_can_send -= packet->GetLength();
 
                     /* update congestion control */
-                    flow->congestion_control_->OnPacketSent(packet->length_);
+                    flow->congestion_control_->OnPacketSent(packet->GetLength());
                 }
             }
         }

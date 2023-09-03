@@ -271,14 +271,14 @@ namespace omnistack::socket {
                     }
 
                     if (packet != nullptr) [[likely]] {
-                        auto cur_length = packet->length_ - packet->offset_;
+                        auto cur_length = packet->GetLength();
                         auto ret = std::min(count, static_cast<size_t>(cur_length));
     #if defined(OMNIMEM_BACKEND_DPDK)
                         rte_memcpy(buf,
-                            packet->data_ + packet->offset_, ret);
+                            packet->GetPayload(), ret);
     #else
                         memcpy(buf,
-                            packet->data_ + packet->offset_, ret);
+                            packet->GetPayload(), ret);
     #endif
                         if (cur_length > ret && cur_fd->info.type == SOCK_STREAM) [[unlikely]] {
                             packet->offset_ += ret;
@@ -317,13 +317,13 @@ namespace omnistack::socket {
                         auto packet = node::BasicNode::packet_pool_->Allocate();
                         auto cur_size = std::min(count, cur_fd->max_packet_size);
     #if defined(OMNIMEM_BACKEND_DPDK)
-                        rte_memcpy(packet->data_ + packet->offset_, 
+                        rte_memcpy(packet->GetPayload(), 
                             reinterpret_cast<const char*>(buf) + ret, cur_size);
     #else
-                        memcpy(packet->data_ + packet->offset_, 
+                        memcpy(packet->GetPayload(), 
                             reinterpret_cast<const char*>(buf) + ret, cur_size);
     #endif
-                        packet->length_ += cur_size;
+                        packet->AddLength(cur_size);
                         packet->node_ = cur_fd->basic_node;
                         cur_fd->basic_node->WriteBottom(packet);
                         ret += cur_size;
@@ -550,7 +550,7 @@ namespace omnistack::socket {
 
                     if (packet != nullptr) [[likely]] {
                         *packet_ = packet;
-                        return packet->length_ - packet->offset_;
+                        return packet->GetLength();
                     } else if (!cur_fd->blocking) [[unlikely]] {
                         errno = EWOULDBLOCK;
                         return -1;
@@ -597,7 +597,7 @@ namespace omnistack::socket {
                 }
                 buf->node_ = cur_fd->basic_node;
                 cur_fd->basic_node->WriteBottom(buf);
-                auto ret = buf->length_ - buf->offset_;
+                auto ret = buf->GetLength();
                 node::FlushBottom();
                 return ret;
             }
@@ -612,7 +612,7 @@ namespace omnistack::socket {
 
             buf->peer_addr_ = *(struct sockaddr_in*)dest_addr;
             cur_node->WriteBottom(buf);
-            auto ret = buf->length_ - buf->offset_;
+            auto ret = buf->GetLength();
             node::FlushBottom();
             return ret;
         }

@@ -205,10 +205,10 @@ namespace omnistack::data_plane::tcp_common {
         /* build tcp header */
         auto& header_tcp = packet->l4_header;
         header_tcp.length_ = TcpHeaderLength(false, false, false, false, true);
-        header_tcp.offset_ = 0;
-        packet->data_ = packet->data_ - header_tcp.length_;
-        packet->length_ = header_tcp.length_;
-        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_.Get());
+        packet->offset_ -= header_tcp.length_;
+        header_tcp.offset_ = packet->offset_;
+
+        auto tcp = packet->GetL4Header<TcpHeader>();
         tcp->sport = flow->local_port_;
         tcp->dport = flow->remote_port_;
         tcp->seq = htonl(flow->send_variables_.send_nxt_);
@@ -232,18 +232,6 @@ namespace omnistack::data_plane::tcp_common {
         }
 #endif
 
-        /* build ipv4 header */
-        // auto& header_ipv4 = packet->packet_headers_[packet->header_tail_++];
-        // header_ipv4.length_ = sizeof(Ipv4Header);
-        // header_ipv4.offset_ = 0;
-        // header_tcp.offset_ = header_tcp.offset_ + header_ipv4.length_;
-        // packet->data_ = packet->data_ - header_ipv4.length_;
-        // auto ipv4 = reinterpret_cast<Ipv4Header*>(packet->data_ + header_ipv4.offset_);
-        // ipv4->version = 4;
-        // ipv4->proto = IP_PROTO_TYPE_TCP;
-        // ipv4->src = flow->local_ip_;
-        // ipv4->dst = flow->remote_ip_;
-
         packet->node_ = flow->node_;
         packet->peer_addr_.sin_addr.s_addr = flow->remote_ip_;
 
@@ -260,10 +248,10 @@ namespace omnistack::data_plane::tcp_common {
         /* build tcp header */
         auto& header_tcp = packet->l4_header;
         header_tcp.length_ = TcpHeaderLength(true, true, true, true, true);
-        header_tcp.offset_ = 0;
-        packet->data_ = packet->data_ - header_tcp.length_;
-        packet->length_ = header_tcp.length_;
-        auto tcp = reinterpret_cast<TcpHeader*>(packet->data_.Get());
+        packet->offset_ -= header_tcp.length_;
+        header_tcp.offset_ = packet->offset_;
+
+        auto tcp = packet->GetL4Header<TcpHeader>();
         tcp->sport = flow->local_port_;
         tcp->dport = flow->remote_port_;
         tcp->seq = htonl(flow->send_variables_.send_nxt_);
@@ -303,18 +291,6 @@ namespace omnistack::data_plane::tcp_common {
             tcp_options = tcp_options + 12;
         }
 #endif
-
-        /* build ipv4 header */
-        // auto& header_ipv4 = packet->packet_headers_[packet->header_tail_++];
-        // header_ipv4.length_ = sizeof(Ipv4Header);
-        // header_ipv4.offset_ = 0;
-        // header_tcp.offset_ = header_tcp.offset_ + header_ipv4.length_;
-        // packet->data_ = packet->data_ - header_ipv4.length_;
-        // auto ipv4 = reinterpret_cast<Ipv4Header*>(packet->data_ + header_ipv4.offset_);
-        // ipv4->version = 4;
-        // ipv4->proto = IP_PROTO_TYPE_TCP;
-        // ipv4->src = flow->local_ip_;
-        // ipv4->dst = flow->remote_ip_;
 
         packet->node_ = flow->node_;
         packet->peer_addr_.sin_addr.s_addr = flow->remote_ip_;

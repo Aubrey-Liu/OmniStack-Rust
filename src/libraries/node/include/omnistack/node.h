@@ -4,6 +4,8 @@
 #include <omnistack/channel/channel.h>
 #include <omnistack/packet/packet.hpp>
 #include <omnistack/memory/memory.h>
+#include <omnistack/common/logger.h>
+#include <arpa/inet.h>
 
 namespace omnistack {
     namespace node {
@@ -86,13 +88,25 @@ namespace omnistack {
             static_assert(sizeof(NetworkLayerType) == 4);
             uint32_t padding = 0;
 
+            inline
             uint32_t GetHash() {
                 constexpr int raw_length = sizeof(NodeInfo) / sizeof(uint32_t);
                 uint32_t* raw_data = (uint32_t*)this;
                 uint32_t ret = 0;
                 for (int i = 0; i < raw_length; i ++)
-                    ret = (ret << 3) ^ (raw_data[i]) ^ (raw_data[i] >> 3);
+                    ret = (ret << 1) ^ (raw_data[i]) ^ (raw_data[i] >> 3) ^ ret;
                 return ret;
+            }
+
+            inline
+            void PrintWith(common::LogLevel log_level = common::kInfo) {
+                OMNI_LOG_TAG(log_level, "NodeInfo") << "NodeInfo: "
+                    << "transport_layer_type = " << (int)transport_layer_type
+                    << "network_layer_type = " << (int)network_layer_type
+                    << "sip = " << inet_ntoa(*(in_addr*)&network.ipv4.sip)
+                    << "dip = " << inet_ntoa(*(in_addr*)&network.ipv4.dip)
+                    << "sport = " << ntohs(transport.tcp.sport)
+                    << "dport = " << ntohs(transport.tcp.dport);
             }
         };
         static_assert(sizeof(NodeInfo) == 48);

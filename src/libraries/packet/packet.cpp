@@ -8,13 +8,14 @@ namespace omnistack::packet {
 
     Packet::Packet() {
         reference_count_ = 1;
-        length_ = 0;
+        length_ = kPacketMbufHeadroom;
         // header_tail_ = 0;
-        offset_ = 0;
+        l4_header.length_ = 0;
+        offset_ = kPacketMbufHeadroom;
         mbuf_type_ = MbufType::kOrigin;
         custom_mask_ = 0;
         custom_value_ = 0;
-        data_ = mbuf_ + kPacketMbufHeadroom;
+        data_ = mbuf_;
         next_packet_ = nullptr;
         node_ = nullptr;
         // next_hop_filter_ = 0;

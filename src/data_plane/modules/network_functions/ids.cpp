@@ -91,8 +91,10 @@ namespace omnistack::data_plane::ids {
 
     packet::Packet* Ids::MainLogic(Packet* packet) {
         ACANode* p = root_;
-        for (int i = packet->offset_; i < packet->length_; i ++) {
-            p = p->next[packet->data_[i]];
+        auto ptr = packet->GetPayload();
+        auto length = packet->GetLength();
+        for (int i = 0; i < length; i ++) {
+            p = p->next[ptr[i]];
             if (p->count > 0) {
                 packet->Release();
                 return nullptr;

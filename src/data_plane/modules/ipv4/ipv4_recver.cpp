@@ -39,11 +39,11 @@ namespace omnistack::data_plane::ipv4_recver {
 
     Packet* Ipv4Recver::MainLogic(Packet* packet) {
         // record the input packet's header and update it's length
-        Ipv4Header* ipv4_header = reinterpret_cast<Ipv4Header*>(packet->data_ + packet->offset_);
+        Ipv4Header* ipv4_header = packet->GetPayloadType<Ipv4Header>();
         auto& ipv4 = packet->l3_header;
         ipv4.length_ = ipv4_header->ihl << 2;
         ipv4.offset_ = packet->offset_;
-        packet->length_ = ntohs(ipv4_header->len) + packet->offset_;
+        packet->SetLength(ntohs(ipv4_header->len));
         packet->offset_ += ipv4.length_;
 
         // check if the packet is invalid

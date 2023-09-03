@@ -177,9 +177,8 @@ namespace omnistack::node {
     void BasicNode::PutIntoHashtable() {
         if (!in_hashtable_) {
             auto temp_packet = temp_packet_pool->Allocate();
-            temp_packet->length_ += sizeof(NodeCommandHeader);
-            auto data = temp_packet->data_ + temp_packet->offset_;
-            auto header = reinterpret_cast<NodeCommandHeader*>(data);
+            temp_packet->AddLength(sizeof(NodeCommandHeader));
+            auto header = temp_packet->GetPayloadType<NodeCommandHeader>();
 
             header->type = NodeCommandType::kUpdateNodeInfo;
             temp_packet->node_ = this;
@@ -214,9 +213,8 @@ namespace omnistack::node {
 
     void BasicNode::ClearFromHashtableAndClose() {
         auto temp_packet = temp_packet_pool->Allocate();
-        temp_packet->length_ += sizeof(NodeCommandHeader);
-        auto data = temp_packet->data_ + temp_packet->offset_;
-        auto header = reinterpret_cast<NodeCommandHeader*>(data);
+        temp_packet->AddLength(sizeof(NodeCommandHeader));
+        auto header = temp_packet->GetPayloadType<NodeCommandHeader>();
 
         header->type = NodeCommandType::kClearNodeInfo;
         temp_packet->node_ = this;
@@ -224,9 +222,8 @@ namespace omnistack::node {
     }
 
     void BasicNode::WriteBottom(packet::Packet* packet) {
-        packet->length_ += sizeof(NodeCommandHeader);
-        packet->data_ -= sizeof(NodeCommandHeader);
-        auto header = reinterpret_cast<NodeCommandHeader*>(packet->data_ + packet->offset_);
+        packet->offset_ -= sizeof(NodeCommandHeader);
+        auto header = packet->GetPayloadType<NodeCommandHeader>();
         header->type = NodeCommandType::kPacket;
         packet->node_.Set(this);
         protocol_stack_nodes[com_user_id_]->Write(packet);

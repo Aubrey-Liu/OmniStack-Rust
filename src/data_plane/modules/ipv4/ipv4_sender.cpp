@@ -84,7 +84,6 @@ namespace omnistack::data_plane::ipv4_sender {
 
     Packet* Ipv4Sender::MainLogic(Packet* packet) {
         // assume no huge pack need to be fragile
-        // if(packet->length_ > 1480) [[unlikely]] return nullptr;
 
         // read src/dst ip from node
         uint32_t src_ip_addr = (packet->node_)->info_.network.ipv4.sip;
@@ -92,13 +91,11 @@ namespace omnistack::data_plane::ipv4_sender {
         uint8_t max_cidr = 0;
         uint16_t dst_nic = 0;
         // edit omnistack's header.
-        packet->AddHeaderOffset(sizeof(Ipv4Header));
         auto& ipv4 = packet->l3_header;
         ipv4.length_ = sizeof(Ipv4Header);
-        ipv4.offset_ = 0;
-        packet->data_ = packet->data_ - sizeof(Ipv4Header);
-        packet->length_ += sizeof(Ipv4Header);
-        Ipv4Header* header = reinterpret_cast<Ipv4Header*>(packet->data_.Get());
+        packet->offset_ -= sizeof(Ipv4Header);
+        ipv4.offset_ = packet->offset_;
+        auto header = packet->GetL3Header<Ipv4Header>();
 
         // find dst ip from route table
         for(int i = 0;i < route_table.size();i++)
@@ -123,7 +120,7 @@ namespace omnistack::data_plane::ipv4_sender {
         packet->nic_ = dst_nic;
         // give it correct proto type
         // fprintf(ipv4_sender_log, "MainLogic: found route path from %d to %d\n", src_ip_addr, dst_ip_addr);
-        EditIpv4Header(header, ipv4.length_ >> 2, packet->length_, 
+        EditIpv4Header(header, ipv4.length_ >> 2, packet->GetLength(), 
             ((*packet->node_).info_.transport_layer_type == TransportLayerType::kTCP) ? IP_PROTO_TYPE_TCP : IP_PROTO_TYPE_UDP, 
             src_ip_addr, dst_ip_addr);
         // fprintf(ipv4_sender_log, "MainLogic: finished editing ipv4 header with check_sum 0x%x\n", header->chksum);

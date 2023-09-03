@@ -36,24 +36,21 @@ namespace omnistack::data_plane::udp_senders {
     }
 
     Packet* UdpSender::MainLogic(Packet* packet) {
-        // OMNI_LOG_TAG(kDebug, "UdpSender") << "send udp packet, length = " << packet->length_ << "\n";
         // edit omnistack header
         PacketHeader &udp = packet->l4_header;
         udp.length_ = sizeof(UdpHeader);
-        udp.offset_ = 0;
-        packet->data_ = packet->data_ - sizeof(UdpHeader);
-        packet->length_ += sizeof(UdpHeader);
-        UdpHeader* udp_header = reinterpret_cast<UdpHeader*>(packet->data_ + udp.offset_);
+        packet->offset_ -= sizeof(UdpHeader);
+        udp.offset_ = packet->offset_;
+        auto udp_header = packet->GetL4Header<UdpHeader>();
 
-        const auto daddr = packet->peer_addr_;
+        const auto& daddr = packet->peer_addr_;
 
         // edit udp header, assume port are big-edian
         uint16_t src_port = (*packet->node_).info_.transport.udp.sport;
         uint16_t dst_port = daddr.sin_addr.s_addr;
         udp_header->sport = src_port;
         udp_header->dport = daddr.sin_port;
-        // udp_header->chksum = 0;
-        udp_header->len = htons(packet->length_);
+        udp_header->len = htons(packet->GetLength());
         return packet;
     }
 

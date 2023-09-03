@@ -36,7 +36,7 @@ namespace omnistack::data_plane::tcp_parser {
     }
 
     Packet* TcpParser::MainLogic(Packet* packet) {
-        TcpHeader* tcp_header = reinterpret_cast<TcpHeader*>(packet->data_ + packet->offset_);
+        auto tcp_header = packet->GetPayloadType<TcpHeader>();
         PacketHeader &tcp = packet->l4_header;
         tcp.length_ = tcp_header->dataofs << 2;
         tcp.offset_ = packet->offset_;

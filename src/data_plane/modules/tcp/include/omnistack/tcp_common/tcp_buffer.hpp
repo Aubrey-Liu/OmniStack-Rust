@@ -104,7 +104,7 @@ namespace omnistack::data_plane::tcp_common {
             if(TcpGreaterUint32(begin_seq, seq)) break;
             buffer_.pop();
             auto packet = entry.packet;
-            auto end_seq = begin_seq + packet->length_ - packet->offset_;
+            auto end_seq = begin_seq + packet->GetLength();
             if(TcpGreaterUint32(end_seq, seq)) [[likely]] {
                 packet->offset_ += seq - begin_seq;
                 seq = end_seq;
@@ -133,14 +133,14 @@ namespace omnistack::data_plane::tcp_common {
     inline void TcpSendBuffer::PopSent(uint32_t bytes) {
         while(bytes > 0 && !sent_buffer_.empty()) {
             auto packet = sent_buffer_.front();
-            auto packet_bytes = packet->length_;
+            auto packet_bytes = packet->GetLength();
             if(packet_bytes <= bytes) {
                 bytes -= packet_bytes;
                 packet->Release();
                 sent_buffer_.pop();
             }
             else {
-                packet->data_ = packet->data_ + bytes;
+                packet->offset_ += bytes;
                 break;
             }
         }

@@ -109,8 +109,8 @@ int main(int argc, char **argv) {
                         // OMNI_LOG(common::kDebug) << "Received packet normally length = " << recv_len << "\n";
 
                         auto new_packet = socket::fast::write_begin(socket);
-                        memcpy(new_packet->data_.Get(), packet->data_ + packet->offset_, recv_len);
-                        new_packet->length_ = recv_len;
+                        memcpy(new_packet->GetPayload(), packet->GetPayload(), recv_len);
+                        new_packet->SetLength(recv_len);
                         packet->Release();
 
                         int send_len = socket::fast::sendto(socket, new_packet, 0, (struct sockaddr *)&client_addr, client_addr_len);
@@ -137,10 +137,12 @@ int main(int argc, char **argv) {
                     uint64_t last_sum_tick = 0;
                     int last_sum_tick_count = 0;
 
+                    OMNI_LOG(common::kInfo) << "running in udp pingpong reversed\n";
+
                     while (true) {
                         auto new_packet = socket::fast::write_begin(socket);
                         auto cur_tick = GetCurrentTickUs();
-                        new_packet->length_ = args::size;
+                        new_packet->SetLength(args::size);
                         int send_len = socket::fast::sendto(socket, new_packet, 0, (struct sockaddr *)&client_addr, client_addr_len);
                         if (send_len < 0) {
                             OMNI_LOG(common::kError) << "Failed to sendto.\n";
@@ -207,7 +209,7 @@ int main(int argc, char **argv) {
 
                     while (true) {
                         auto new_packet = socket::fast::write_begin(socket);
-                        new_packet->length_ = args::size;
+                        new_packet->SetLength(args::size);
                         int send_len = socket::fast::sendto(socket, new_packet, 0, (struct sockaddr *)&client_addr, client_addr_len);
                         if (send_len < 0) {
                             OMNI_LOG(common::kError) << "Failed to sendto.\n";
@@ -234,8 +236,8 @@ int main(int argc, char **argv) {
                         }
 
                         auto new_packet = socket::fast::write_begin(client);
-                        memcpy(new_packet->data_.Get(), packet->data_ + packet->offset_, sizeof(uint64_t));
-                        new_packet->length_ = args::size;
+                        memcpy(new_packet->GetPayload(), packet->GetPayload(), sizeof(uint64_t));
+                        new_packet->SetLength(args::size);
                         packet->Release();
 
                         int send_len = socket::fast::write(client, new_packet);
@@ -255,8 +257,8 @@ int main(int argc, char **argv) {
                     while (true) {
                         auto new_packet = socket::fast::write_begin(client);
                         auto cur_tick = GetCurrentTickUs();
-                        memcpy(new_packet->data_.Get(), &cur_tick, sizeof(cur_tick));
-                        new_packet->length_ = args::size;
+                        memcpy(new_packet->GetPayload(), &cur_tick, sizeof(cur_tick));
+                        new_packet->SetLength(args::size);
                         int send_len = socket::fast::write(client, new_packet);
                         if (send_len < 0) {
                             OMNI_LOG(common::kError) << "Failed to send.\n";
@@ -269,7 +271,12 @@ int main(int argc, char **argv) {
                             OMNI_LOG(common::kError) << "Failed to recv.\n";
                             return 1;
                         }
+                        uint64_t pong_back = *(uint64_t *)packet->GetPayload();
                         uint64_t end_tick = GetCurrentTickUs();
+                        if (pong_back != cur_tick) {
+                            OMNI_LOG(common::kError) << "Pingpong failed.\n";
+                            return 1;
+                        }
                         last_sum_tick += end_tick - cur_tick;
                         pingpong_ticks[last_sum_tick_count] = end_tick - cur_tick;
                         last_sum_tick_count ++;
@@ -313,7 +320,7 @@ int main(int argc, char **argv) {
                 } else {
                     while (true) {
                         auto new_packet = socket::fast::write_begin(client);
-                        new_packet->length_ = args::size;
+                        new_packet->SetLength(args::size);
                         int send_len = socket::fast::write(client, new_packet);
                         if (send_len < 0) {
                             OMNI_LOG(common::kError) << "Failed to send.\n";

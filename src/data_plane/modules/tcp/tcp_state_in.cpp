@@ -478,7 +478,7 @@ namespace omnistack::data_plane::tcp_state_in {
         if (flow != nullptr && ( flow->state_ == TcpFlow::State::kEstablished || 
                                  flow->state_ == TcpFlow::State::kFinWait1    || 
                                  flow->state_ == TcpFlow::State::kFinWait2    )) [[likely]] {
-            if(packet->length_ > packet->offset_) [[likely]] {
+            if(packet->GetLength()) [[likely]] {
                 packet->next_hop_filter_ &= next_hop_filter_mask_data_;
                 packet->next_packet_ = ret;
                 packet->custom_value_ = reinterpret_cast<uint64_t>(flow);

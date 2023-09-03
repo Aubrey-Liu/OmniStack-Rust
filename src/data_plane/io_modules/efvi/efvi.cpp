@@ -185,9 +185,10 @@ namespace omnistack::io_module::ef_vi {
             auto mbuf = buffer_[buffer_count_++];
             auto packet = packet_pool_->Allocate();
             packet->mbuf_type_ = packet::Packet::MbufType::kEFVI;
-            packet->length_ = mbuf->length;
+            packet->SetData(mbuf->payload);
+            packet->offset_ = prefix_len_ + kHeadroomSize;
+            packet->SetLength(mbuf->length);
             packet->root_packet_.Set(mbuf);
-            packet->data_ = mbuf->payload + kHeadroomSize + prefix_len_;
             return packet;
         }
 
@@ -239,8 +240,8 @@ namespace omnistack::io_module::ef_vi {
         }
         auto mbuf = (EFVIMbuf*)memory_pool_->Get();
         buffer_[buffer_size_ ++] = mbuf;
-        mbuf->length = packet->length_ - packet->offset_;
-        MEMCPY(mbuf->payload, packet->data_ + packet->offset_, packet->length_ - packet->offset_);
+        mbuf->length = packet->GetLength();
+        MEMCPY(mbuf->payload, packet->GetPayload(), packet->GetLength());
         packet->Release();
     }
 

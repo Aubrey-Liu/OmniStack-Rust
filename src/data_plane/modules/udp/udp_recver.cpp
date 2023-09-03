@@ -37,8 +37,7 @@ namespace omnistack::data_plane::udp_recvers {
     }
 
     Packet* UdpRecver::MainLogic(Packet* packet) {
-        // OMNI_LOG_TAG(kDebug, "UdpRecver") << "receive udp packet, length = " << packet->length_ << "\n";
-        UdpHeader* udp_header = reinterpret_cast<UdpHeader*>(packet->data_ + packet->offset_);
+        auto udp_header = packet->GetPayloadType<UdpHeader>();
         PacketHeader &udp = packet->l4_header;
         udp.length_ = sizeof(UdpHeader);
         udp.offset_ = packet->offset_;

@@ -70,19 +70,19 @@ namespace omnistack::data_plane::tcp_data_in {
 
         /* clamp data */
         if(TcpLessUint32(seq_num, recv_var.recv_nxt_)) [[unlikely]] {
-            if(TcpGreaterUint32(seq_num + packet->length_ - packet->offset_, recv_var.recv_nxt_)) {
+            if(TcpGreaterUint32(seq_num + packet->GetLength(), recv_var.recv_nxt_)) {
                 /* receive duplicated data with new data */
                 packet->offset_ += recv_var.recv_nxt_ - seq_num;
                 seq_num = recv_var.recv_nxt_;
             }
             else {
                 /* receive duplicated data without new data */
-                packet->offset_ = packet->length_;
+                packet->SetLength(0);
             }
         }
         
         /* assembling data */
-        uint32_t data_length = packet->length_ - packet->offset_;
+        uint32_t data_length = packet->GetLength();
         if(data_length > 0) [[likely]] {
             if(seq_num == recv_var.recv_nxt_) [[likely]] {
                 uint32_t seq_end = seq_num + data_length;

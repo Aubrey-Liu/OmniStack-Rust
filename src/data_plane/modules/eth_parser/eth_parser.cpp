@@ -24,7 +24,7 @@ namespace omnistack::data_plane::eth_parser {
     };
 
     Packet* EthParser::MainLogic(Packet* packet) {
-        EthernetHeader* eth_header = reinterpret_cast<EthernetHeader*>(packet->data_ + packet->offset_);
+        EthernetHeader* eth_header = packet->GetPayloadType<EthernetHeader>();
         auto& eth = packet->l2_header;
         eth.length_ = sizeof(EthernetHeader);
         eth.offset_ = packet->offset_;

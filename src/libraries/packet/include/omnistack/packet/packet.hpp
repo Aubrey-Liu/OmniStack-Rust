@@ -44,6 +44,7 @@ namespace omnistack::packet {
 
     class Packet {
     public:
+        friend class PacketPool;
         Packet();
 
         enum class MbufType : uint16_t {
@@ -83,12 +84,6 @@ namespace omnistack::packet {
 
         char mbuf_[kPacketMbufSize];
 
-        void AddHeaderOffset(uint16_t offset) {
-            l2_header.offset_ += offset;
-            l3_header.offset_ += offset;
-            l4_header.offset_ += offset;
-        }
-
         template<typename T>
         inline T* GetL2Header() {
             static_assert(std::is_same<T, EthernetHeader>::value, "Not a valid L2 Header");
@@ -115,17 +110,32 @@ namespace omnistack::packet {
             if(mbuf_type_ == MbufType::kIndirect) cur_packet = reinterpret_cast<Packet*>(root_packet_.Get());
             switch (cur_packet->mbuf_type_) {
                 case MbufType::kOrigin:
-                    return memory::GetIova(cur_packet) + (data_.Get() - cur_packet->mbuf_);
+                    return memory::GetIova(cur_packet) + offsetof(Packet, mbuf_) + offset_;
 #if defined(OMNIMEM_BACKEND_DPDK)
                 case MbufType::kDpdk: {
                     auto mbuf = reinterpret_cast<rte_mbuf*>(cur_packet->root_packet_.Get());
-                    return rte_pktmbuf_iova(mbuf) + (data_.Get() - rte_pktmbuf_mtod(mbuf, char*));
+                    return mbuf->buf_iova + offset_;
                 }
 #endif
                 default:
                     return 0;
             }
         }
+
+        template<typename T>
+        inline T* GetPayloadType() {
+            return reinterpret_cast<T*>(data_ + offset_);
+        }
+
+        inline char* GetPayload() {
+            return data_ + offset_;
+        }
+
+        inline uint16_t GetLength() { return length_ - offset_; }
+        inline void SetLength(uint16_t length) { length_ = length + offset_; }
+        inline void AddLength(uint16_t length) { length_ += length; }
+
+        inline void SetData(char* data) { data_ = data; }
     };
 
     static_assert(offsetof(Packet, root_packet_) == 64);
@@ -212,35 +222,30 @@ namespace omnistack::packet {
     }
 
     inline Packet* PacketPool::Duplicate(Packet* packet) {
-        if(packet->mbuf_type_ == Packet::MbufType::kIndirect) packet = reinterpret_cast<Packet*>(packet->root_packet_.Get());
+        if(packet->mbuf_type_ == Packet::MbufType::kIndirect)
+            packet = reinterpret_cast<Packet*>(packet->root_packet_.Get());
         auto packet_copy = reinterpret_cast<Packet*>(memory_pool_->Get());
         if(packet_copy == nullptr) [[unlikely]] return nullptr;
         packet_copy->reference_count_ = 1;
         packet_copy->length_ = packet->length_;
-        // packet_copy->header_tail_ = 0;
         packet_copy->offset_ = packet->offset_;
         packet_copy->nic_ = packet->nic_;
         packet_copy->mbuf_type_ = Packet::MbufType::kOrigin;
         packet_copy->custom_mask_ = packet->custom_mask_;
         packet_copy->custom_value_ = packet->custom_value_;
         packet_copy->next_hop_filter_ = packet->next_hop_filter_;
-        switch (packet->mbuf_type_) {
-            case Packet::MbufType::kDpdk:
-                packet_copy->data_ = packet_copy->mbuf_ + kPacketMbufHeadroom;
-                break;
-            case Packet::MbufType::kOrigin:
-                packet_copy->data_ = packet_copy->mbuf_ + (packet->data_.Get() - packet->mbuf_);
-                break;
-            default:
-                throw std::runtime_error("Unkonwn packet type");
-        }
+        packet_copy->data_ = packet_copy->mbuf_;
         packet_copy->next_packet_ = nullptr;
         packet_copy->node_ = packet->node_;
         packet_copy->peer_addr_ = packet->peer_addr_;
 #if defined (OMNIMEM_BACKEND_DPDK)
-        rte_memcpy(packet_copy->data_.Get(), packet->data_.Get(), packet->length_);
+        rte_memcpy(packet_copy->data_ + packet_copy->offset_,
+            packet->data_ + packet->offset_,
+            packet->length_ - packet->offset_);
 #else 
-        memcpy(packet_copy->data_.Get(), packet->data_.Get(), packet->length_);
+        memcpy(packet_copy->data_ + packet_copy->offset_,
+            packet->data_ + packet->offset_,
+            packet->length_ - packet->offset_);
 #endif
         packet_copy->l2_header = packet->l2_header;
         packet_copy->l3_header = packet->l3_header;
@@ -250,7 +255,8 @@ namespace omnistack::packet {
     }
 
     inline Packet* PacketPool::Reference(Packet* packet) {
-        if(packet->mbuf_type_ == Packet::MbufType::kIndirect) packet = reinterpret_cast<Packet*>(packet->root_packet_.Get());
+        if(packet->mbuf_type_ == Packet::MbufType::kIndirect)
+            packet = reinterpret_cast<Packet*>(packet->root_packet_.Get());
         auto packet_copy = reinterpret_cast<Packet*>(memory_pool_->Get());
         if(packet_copy == nullptr) [[unlikely]] return nullptr;
         packet_copy->reference_count_ = 1;
@@ -266,7 +272,6 @@ namespace omnistack::packet {
         packet_copy->node_ = packet->node_;
         packet_copy->root_packet_ = reinterpret_cast<void*>(packet);
         packet_copy->peer_addr_ = packet->peer_addr_;
-        // packet_copy->header_tail_ = 0;
         packet_copy->l2_header = packet->l2_header;
         packet_copy->l3_header = packet->l3_header;
         packet_copy->l4_header = packet->l4_header;

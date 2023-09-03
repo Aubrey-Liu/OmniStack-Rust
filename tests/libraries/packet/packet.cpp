@@ -216,10 +216,10 @@ TEST(LibPacket, Duplicate) {
             std::cerr << "Failed to allocate packet." << std::endl;
             exit(1);
         }
-        sprintf(packet->data_.Get(), "%s", "Hello World!");
-        packet->length_ = strlen(packet->data_.Get());
+        sprintf(packet->GetPayload(), "%s", "Hello World!");
+        packet->SetLength(strlen(packet->GetPayload()));
         packet->l2_header.offset_ = 0;
-        packet->l2_header.length_ = packet->length_;
+        packet->l2_header.length_ = packet->GetLength();
         auto packet2 = packet_pool->Duplicate(packet);
         if(packet2 == nullptr) {
             std::cerr << "Failed to duplicate packet." << std::endl;
@@ -233,11 +233,11 @@ TEST(LibPacket, Duplicate) {
             std::cerr << "Reference count is not 1." << std::endl;
             exit(1);
         }
-        if(strcmp(packet->data_.Get(), packet2->data_.Get())) {
+        if(strcmp(packet->GetPayload(), packet2->GetPayload())) {
             std::cerr << "Data is not the same." << std::endl;
             exit(1);
         }
-        if(packet->length_ != packet2->length_) {
+        if(packet->GetLength() != packet2->GetLength()) {
             std::cerr << "Length is not the same." << std::endl;
             exit(1);
         }
@@ -245,7 +245,7 @@ TEST(LibPacket, Duplicate) {
             std::cerr << "Header tail data is not data." << std::endl;
             exit(1);
         }
-        if(packet2->l2_header.length_ != packet->length_) {
+        if(packet2->l2_header.length_ != packet->GetLength()) {
             std::cerr << "Header tail length is not data length." << std::endl;
             exit(1);
         }
@@ -293,10 +293,10 @@ TEST(LibPakcet, Reference) {
             std::cerr << "Failed to allocate packet." << std::endl;
             exit(1);
         }
-        sprintf(packet->data_.Get(), "%s", "Hello World!");
-        packet->length_ = strlen(packet->data_.Get());
+        sprintf(packet->GetPayload(), "%s", "Hello World!");
+        packet->SetLength(strlen(packet->GetPayload()));
         packet->l2_header.offset_ = 0;
-        packet->l2_header.length_ = packet->length_;
+        packet->l2_header.length_ = packet->GetLength();
         auto packet2 = packet_pool->Reference(packet);
         if(packet2 == nullptr) {
             std::cerr << "Failed to reference packet." << std::endl;
@@ -310,11 +310,11 @@ TEST(LibPakcet, Reference) {
             std::cerr << "Reference count is not 1." << std::endl;
             exit(1);
         }
-        if(packet->data_.Get() != packet2->data_.Get()) {
+        if(packet->GetPayload() != packet2->GetPayload()) {
             std::cerr << "Data is not the same." << std::endl;
             exit(1);
         }
-        if(packet->length_ != packet2->length_) {
+        if(packet->GetLength() != packet2->GetLength()) {
             std::cerr << "Length is not the same." << std::endl;
             exit(1);
         }
@@ -322,7 +322,7 @@ TEST(LibPakcet, Reference) {
             std::cerr << "Header tail data is not the same." << std::endl;
             exit(1);
         }
-        if(packet2->l2_header.length_ != packet->length_) {
+        if(packet2->l2_header.length_ != packet->GetLength()) {
             std::cerr << "Header tail length is not the same." << std::endl;
             exit(1);
         }
