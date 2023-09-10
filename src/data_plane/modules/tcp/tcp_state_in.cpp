@@ -126,6 +126,7 @@ namespace omnistack::data_plane::tcp_state_in {
 #if defined (OMNI_TCP_OPTION_WSOPT)
             send_var.send_wnd_ = ntohs(tcp_header->window) << remote_wscale;
             send_var.send_wscale_ = remote_wscale;
+            OMNI_LOG_TAG(kInfo, "TCP_STATE_IN") << "receive syn packet, raw window = " << ntohs(tcp_header->window) << "send_wnd = " << send_var.send_wnd_ << ", wscale = " << (uint32_t)remote_wscale << "\n";
 #else
             send_var.send_wnd_ = ntohs(tcp_header->window);
 #endif
@@ -165,6 +166,7 @@ namespace omnistack::data_plane::tcp_state_in {
 #if defined (OMNI_TCP_OPTION_WSOPT)
         if(tcp_header->syn) send_var.send_wscale_ = remote_wscale;
         send_var.send_wnd_ = ntohs(tcp_header->window) << send_var.send_wscale_;
+        OMNI_LOG_TAG(kInfo, "TCP_STATE_IN") << "connection established, send window = " << send_var.send_wnd_ << "\n";
 #else
         send_var.send_wnd_ = ntohs(tcp_header->window);
 #endif
@@ -255,24 +257,25 @@ namespace omnistack::data_plane::tcp_state_in {
 #else
             if(!send_var.is_retransmission_) EstimateRtt(flow, (uint32_t)(NowUs() - flow->send_variables_.rto_begin_));
 #endif
+
+            /* set retransmission timer */
+            if(send_var.send_una_ == send_var.send_nxt_) {
+                /* all packets acked */
+                send_var.rto_begin_ = 0;
+                send_var.rto_timeout_ = 0;
+            }
+            else {
+                /* restart retransmission timer */
+                send_var.rto_begin_ = NowUs();
+                send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_; 
+            }
+
+            flow->congestion_control_->OnPacketAcked(ack_bytes);
         }
-        else if(send_var.send_nxt_ == send_var.send_una_ && ack_num == send_var.send_una_) {
+        else if(send_var.send_nxt_ != send_var.send_una_ && ack_num == send_var.send_una_) {
             /* duplicate ack */
+            flow->congestion_control_->OnPacketAcked(0);
         }
-
-        if(send_var.send_una_ == send_var.send_nxt_) {
-            /* all packets acked */
-            send_var.rto_begin_ = 0;
-            send_var.rto_timeout_ = 0;
-        }
-        else {
-            /* restart retransmission timer */
-            send_var.rto_begin_ = NowUs();
-            send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_; 
-        }
-
-        /* update congestion control */
-        flow->congestion_control_->OnPacketAcked(ack_num - send_var.send_una_);
     }
 
     Packet* TcpStateIn::MainLogic(Packet* packet) {
@@ -440,7 +443,6 @@ namespace omnistack::data_plane::tcp_state_in {
                         /* raise event: connection established */
                         OMNI_LOG_TAG(kDebug, "TcpStateIn") << "connection established to (" << remote_ip << "," << remote_port << ")\n";
                         raise_event_(new(event_pool_->Get()) TcpEventConnected(local_ip, remote_ip, local_port, remote_port));
-                        OMNI_LOG_TAG(kDebug, "TcpStateIn") << "event raised\n";
                         break;
                     }
                     case TcpFlow::State::kFinWait1:

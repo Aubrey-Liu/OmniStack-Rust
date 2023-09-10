@@ -4,6 +4,7 @@
 
 #include <omnistack/module/module.hpp>
 #include <omnistack/node.h>
+#include <omnistack/common/config.h>
 #include <omnistack/common/protocol_headers.hpp>
 
 namespace omnistack::data_plane::eth_sender {
@@ -24,9 +25,13 @@ namespace omnistack::data_plane::eth_sender {
 
         Packet* MainLogic(Packet* packet) override;
 
+        void Initialize(std::string_view name_prefix, PacketPool* packet_pool) override;
+
         constexpr bool allow_duplication_() override { return true; }
 
         constexpr ModuleType type_() override { return ModuleType::kReadWrite; }
+    private:
+        std::vector<const char*> nic_to_mac;
     };
 
     bool EthSender::DefaultFilter(Packet* packet) {
@@ -45,8 +50,12 @@ namespace omnistack::data_plane::eth_sender {
 
         // edit eth header
         // TODO: set the MAC address according to packet->nic_
-        memset(eth_header->dst, packet->nic_, sizeof(eth_header->dst));
-        memset(eth_header->src, packet->nic_, sizeof(eth_header->src));
+        memcpy(eth_header->src, nic_to_mac[packet->nic_], 6);
+        // TODO: add ARP module
+        static unsigned char dst_mac[6] = {0x08, 0xc0, 0xeb, 0x24, 0x6c, 0xe3};
+        memcpy(eth_header->dst, dst_mac, 6);
+        // memset(eth_header->dst, packet->nic_, sizeof(eth_header->dst));
+        // memset(eth_header->src, packet->nic_, sizeof(eth_header->src));
         if((*packet->node_).info_.network_layer_type == NetworkLayerType::kIPv4)
             eth_header->type = ETH_PROTO_TYPE_IPV4;
         else if((*packet->node_).info_.network_layer_type == NetworkLayerType::kIPv6)
@@ -54,6 +63,14 @@ namespace omnistack::data_plane::eth_sender {
         else
             eth_header->type = ETH_PROTO_TYPE_ARP;
         return packet;
+    }
+
+    void EthSender::Initialize(std::string_view name_prefix, PacketPool* packet_pool)
+    {
+        auto& nic_config = config::kStackConfig->GetNicConfigs();
+        nic_to_mac.resize(nic_config.size());
+        for(int i = 0; i < nic_config.size(); i ++)
+            nic_to_mac[i] = nic_config[i].mac_raw_;
     }
 
 }

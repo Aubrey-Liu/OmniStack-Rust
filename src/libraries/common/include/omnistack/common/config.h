@@ -94,6 +94,7 @@ namespace omnistack {
                 uint32_t ipv4_raw_;
                 std::string netmask_;
                 uint32_t netmask_raw_;
+                char mac_raw_[6];
 
                 NicConfig(Json::Value root) {
                     REQUIRED_STR(root, "driver_name", driver_name_);
@@ -157,11 +158,11 @@ namespace omnistack {
                 }
             };
 
-            inline const std::vector<GraphEntry>& GetGraphEntries() const {return graphs_;}
-            inline const std::vector<NicConfig>& GetNicConfigs() const {return nics_;}
-            inline const std::vector<ArpEntry>& GetArpEntries() const {return arps_;}
-            inline const std::vector<RouteEntry>& GetRouteEntries() const {return routes_;}
-            inline const std::vector<DynamicLinkEntry>& GetDynamicLinkEntries() const {return dynamic_links_;}
+            inline std::vector<GraphEntry>& GetGraphEntries() {return graphs_;}
+            inline std::vector<NicConfig>& GetNicConfigs() {return nics_;}
+            inline std::vector<ArpEntry>& GetArpEntries() {return arps_;}
+            inline std::vector<RouteEntry>& GetRouteEntries() {return routes_;}
+            inline std::vector<DynamicLinkEntry>& GetDynamicLinkEntries() {return dynamic_links_;}
 
         private:
             std::string name_;

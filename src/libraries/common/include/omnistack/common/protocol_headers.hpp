@@ -7,7 +7,13 @@
 
 namespace omnistack::common {
 
+
+
 #pragma pack(1)
+struct MacAddr {
+    uint8_t raw[6];
+};
+
 struct EthernetHeader {
     uint8_t dst[6];
     uint8_t src[6];

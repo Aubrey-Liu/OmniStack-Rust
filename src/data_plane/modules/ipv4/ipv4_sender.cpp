@@ -131,7 +131,6 @@ namespace omnistack::data_plane::ipv4_sender {
     void Ipv4Sender::Initialize(std::string_view name_prefix, PacketPool* packet_pool)
     {
         ipv4_sender_log = fopen("./ipv4_sender_log.txt", "w");
-        // TODO: init a correct route table
         auto& route_config = config::kStackConfig->GetRouteEntries();
         for(auto route : route_config) {
             route_table.emplace_back(Route(route.ipv4_raw_, route.cidr_, route.nic_));

@@ -121,7 +121,7 @@ namespace omnistack::io_module::dpdk {
             
         virtual int AcqurieNumAdapters() override;
 
-        virtual void InitializeAdapter(int port_id, int num_queues) override;
+        virtual common::MacAddr InitializeAdapter(int port_id, int num_queues) override;
 
         virtual std::pair<io::IoSendQueue*, io::IoRecvQueue*> InitializeQueue(int queue_id, packet::PacketPool* packet_pool) override;
 
@@ -195,7 +195,7 @@ namespace omnistack::io_module::dpdk {
     
     int DpdkAdapter::AcqurieNumAdapters() { return -1; }
 
-    void DpdkAdapter::InitializeAdapter(int port_id, int num_queues) {
+    common::MacAddr DpdkAdapter::InitializeAdapter(int port_id, int num_queues) {
         num_queues_ = num_queues;
         port_id_ = port_id;
 
@@ -222,6 +222,12 @@ namespace omnistack::io_module::dpdk {
             auto ret = rte_flow_flush(port_id_, nullptr);
             if (ret) throw std::runtime_error("Failed to flush flow");
         }
+
+        struct rte_ether_addr mac_addr;
+        rte_eth_macaddr_get(port_id_, &mac_addr);
+        common::MacAddr mac;
+        for(int i = 0; i < 6; i ++) mac.raw[i] = mac_addr.addr_bytes[i];
+        return mac;
     }
 
     std::pair<io::IoSendQueue*, io::IoRecvQueue*>

@@ -164,7 +164,7 @@ namespace omnistack::data_plane::tcp_common {
                     break;
                 case TCP_OPTION_KIND_TSPOT:
                     if(timestamp != nullptr) *timestamp = *reinterpret_cast<uint32_t*>(options + 2);
-                    if(timestamp_echo != nullptr) *timestamp_echo = *reinterpret_cast<uint32_t*>(options + 6);
+                    if(timestamp_echo != nullptr) *timestamp_echo = ntohl(*reinterpret_cast<uint32_t*>(options + 6));
                     options = options + 10;
                     break;
                 default:
@@ -227,7 +227,7 @@ namespace omnistack::data_plane::tcp_common {
             *(tcp_options + 2) = TCP_OPTION_KIND_TSPOT;
             *(tcp_options + 3) = TCP_OPTION_LENGTH_TSPOT;
             *reinterpret_cast<uint32_t*>(tcp_options + 4) = htonl(static_cast<uint32_t>(NowMs()));
-            *reinterpret_cast<uint32_t*>(tcp_options + 8) = htonl(flow->receive_variables_.timestamp_recent_);
+            *reinterpret_cast<uint32_t*>(tcp_options + 8) = flow->receive_variables_.timestamp_recent_;
             tcp_options = tcp_options + 12;
         }
 #endif
@@ -287,7 +287,7 @@ namespace omnistack::data_plane::tcp_common {
             *(tcp_options + 2) = TCP_OPTION_KIND_TSPOT;
             *(tcp_options + 3) = TCP_OPTION_LENGTH_TSPOT;
             *reinterpret_cast<uint32_t*>(tcp_options + 4) = htonl(static_cast<uint32_t>(NowMs()));
-            *reinterpret_cast<uint32_t*>(tcp_options + 8) = htonl(flow->receive_variables_.timestamp_recent_);
+            *reinterpret_cast<uint32_t*>(tcp_options + 8) = flow->receive_variables_.timestamp_recent_;
             tcp_options = tcp_options + 12;
         }
 #endif

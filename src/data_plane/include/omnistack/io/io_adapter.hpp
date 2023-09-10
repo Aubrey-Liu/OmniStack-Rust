@@ -68,7 +68,7 @@ namespace omnistack {
             BaseIoAdapter() = default;
             virtual ~BaseIoAdapter() = default;
 
-            virtual void InitializeAdapter(int port_id, int num_queues) = 0;
+            virtual common::MacAddr InitializeAdapter(int port_id, int num_queues) = 0;
 
             virtual std::pair<IoSendQueue*, IoRecvQueue*> InitializeQueue(int queue_id, packet::PacketPool* packet_pool) = 0;
 

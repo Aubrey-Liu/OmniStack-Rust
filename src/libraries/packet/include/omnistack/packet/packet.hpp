@@ -180,6 +180,7 @@ namespace omnistack::packet {
     };
 
     inline void Packet::Release() {
+        if(reference_count_ == 0) printf("double free!\n");
         if (reference_count_ == 1) [[likely]] {
             switch (mbuf_type_) {
                 case MbufType::kOrigin:
@@ -198,6 +199,7 @@ namespace omnistack::packet {
                     /* TODO: report error */
                     break;
             }
+            reference_count_ = 0;
             PacketPool::Free(this);
         } else reference_count_--;
     }

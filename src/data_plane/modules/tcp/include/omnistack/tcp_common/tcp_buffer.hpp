@@ -79,11 +79,16 @@ namespace omnistack::data_plane::tcp_common {
         bool EmptyUnsent() const;
 
     private:
-        TcpSendBuffer() = default;
+        TcpSendBuffer() {
+            sent_head = sent_tail = nullptr;
+            unsent_head = unsent_tail = nullptr;
+        }
         ~TcpSendBuffer() = default;
 
-        std::queue<Packet*> sent_buffer_;
-        std::queue<Packet*> unsent_buffer_;
+        Packet* sent_head;
+        Packet* sent_tail;
+        Packet* unsent_head;
+        Packet* unsent_tail;
     };
 
     inline TcpReceiveBuffer* TcpReceiveBuffer::Create(memory::MemoryPool* buffer_pool) {
@@ -131,47 +136,63 @@ namespace omnistack::data_plane::tcp_common {
     }
 
     inline void TcpSendBuffer::PopSent(uint32_t bytes) {
-        while(bytes > 0 && !sent_buffer_.empty()) {
-            auto packet = sent_buffer_.front();
+        while(bytes > 0 && sent_head != nullptr) {
+            if(sent_head == sent_tail && sent_head->next_packet_.Get() != nullptr)
+                    OMNI_LOG(kDebug) << "error next_packet_\n";
+            auto packet = sent_head;
             auto packet_bytes = packet->GetLength();
             if(packet_bytes <= bytes) {
                 bytes -= packet_bytes;
+                sent_head = packet->next_packet_.Get();
                 packet->Release();
-                sent_buffer_.pop();
             }
             else {
                 packet->offset_ += bytes;
                 break;
             }
         }
+        if(sent_head == nullptr) sent_tail = nullptr;
     }
 
     inline void TcpSendBuffer::PushSent(Packet* packet) {
-        sent_buffer_.push(packet);
+        if(sent_head == nullptr && sent_tail != nullptr) OMNI_LOG(kDebug) << "error list\n";
+        if(sent_head == nullptr) sent_head = sent_tail = packet;
+        else {
+            sent_tail->next_packet_ = packet;
+            sent_tail = packet;
+        }
     }
 
     inline Packet* TcpSendBuffer::FrontSent() const {
-        return sent_buffer_.front();
+        return sent_head;
     }
 
     inline bool TcpSendBuffer::EmptySent() const {
-        return sent_buffer_.empty();
+        return sent_head == nullptr;
     }
 
     inline void TcpSendBuffer::PopUnsent() {
-        unsent_buffer_.pop();
+        auto head = unsent_head->next_packet_.Get();
+        if(unsent_head == unsent_tail && head != nullptr) OMNI_LOG(kDebug) << "error unsent list\n";
+        unsent_head->next_packet_ = nullptr;
+        unsent_head = head;
+        if(unsent_head == nullptr) unsent_tail ==nullptr;
     }
 
     inline void TcpSendBuffer::PushUnsent(Packet* packet) {
-        unsent_buffer_.push(packet);
+        if(unsent_head == nullptr) unsent_head = unsent_tail = packet;
+        else {
+            unsent_tail->next_packet_ = packet;
+            unsent_tail = packet;
+        }
     }
 
     inline Packet* TcpSendBuffer::FrontUnsent() const {
-        return unsent_buffer_.front();
+        return unsent_head;
     }
 
     inline bool TcpSendBuffer::EmptyUnsent() const {
-        return unsent_buffer_.empty();
+        return unsent_head == nullptr;
     }
 
 }

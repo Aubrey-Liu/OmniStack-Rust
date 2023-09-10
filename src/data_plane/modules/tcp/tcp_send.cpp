@@ -79,7 +79,7 @@ namespace omnistack::data_plane::tcp_send {
             *(tcp_options + 2) = TCP_OPTION_KIND_TSPOT;
             *(tcp_options + 3) = TCP_OPTION_LENGTH_TSPOT;
             *reinterpret_cast<uint32_t*>(tcp_options + 4) = htonl(static_cast<uint32_t>(NowMs()));
-            *reinterpret_cast<uint32_t*>(tcp_options + 8) = htonl(flow->receive_variables_.timestamp_recent_);
+            *reinterpret_cast<uint32_t*>(tcp_options + 8) = flow->receive_variables_.timestamp_recent_;
             tcp_options = tcp_options + 12;
         }
 #endif
@@ -244,6 +244,7 @@ namespace omnistack::data_plane::tcp_send {
                         auto packet = BuildDataPacket(flow, send_var.send_una_, send_var.send_buffer_->FrontSent(), packet_pool_);
                         packet->next_packet_ = ret;
                         ret = packet;
+                        // OMNI_LOG_TAG(kDebug, "TCP_SEND") << "fast retransmission!\n";
 
                         /* update congestion control */
                         flow->congestion_control_->OnPacketSent(send_var.send_buffer_->FrontSent()->GetLength());
@@ -259,20 +260,30 @@ namespace omnistack::data_plane::tcp_send {
                         send_var.rto_begin_ = NowUs();
                         send_var.rto_timeout_ = send_var.rto_begin_ + send_var.rxtcur_;
 
-                        /* retransmit packet */
-                        auto packet = BuildDataPacket(flow, send_var.send_una_, send_var.send_buffer_->FrontSent(), packet_pool_);
-                        packet->next_packet_ = ret;
-                        ret = packet;
+                        /* retransmit packets */
+                        uint32_t burst = 0;
+                        auto rt_head = send_var.send_buffer_->FrontSent();
+                        uint32_t rt_seq = send_var.send_una_;
+                        while(burst < kTcpRetransmissionBurst && rt_head != nullptr) {
+                            auto packet = BuildDataPacket(flow, rt_seq, rt_head, packet_pool_);
+                            packet->next_packet_ = ret;
+                            ret = packet;
 
-                        /* update congestion control */
-                        flow->congestion_control_->OnPacketSent(send_var.send_buffer_->FrontSent()->GetLength());
+                            /* update congestion control */
+                            flow->congestion_control_->OnPacketSent(rt_head->GetLength());
+
+                            rt_seq += rt_head->GetLength();
+                            rt_head = rt_head->next_packet_.Get();
+                            burst ++;
+                        }
                     }
                 }
 
                 /* check if new data can be sent */
                 /* get bytes can send from congestion control */
                 uint32_t bytes_can_send = flow->congestion_control_->GetBytesCanSend();
-                while(!send_var.send_buffer_->EmptyUnsent()) [[likely]] {
+                uint32_t burst = 0;
+                while(!send_var.send_buffer_->EmptyUnsent() && burst < kTcpSendBurstSize) [[likely]] {
                     auto packet = send_var.send_buffer_->FrontUnsent();
                     if(packet->GetLength() > bytes_can_send) break;
                     send_var.send_buffer_->PopUnsent();
@@ -285,6 +296,7 @@ namespace omnistack::data_plane::tcp_send {
                     send_var.send_nxt_ += packet->GetLength();
                     send_var.send_buffer_->PushSent(packet);
                     bytes_can_send -= packet->GetLength();
+                    burst ++;
 
                     /* update congestion control */
                     flow->congestion_control_->OnPacketSent(packet->GetLength());

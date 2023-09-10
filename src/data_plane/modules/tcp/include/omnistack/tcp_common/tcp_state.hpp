@@ -27,7 +27,7 @@ namespace omnistack::data_plane::tcp_common {
     public:
         uint32_t send_una_;             // send unacknowledged
         uint32_t send_nxt_;             // next to be sent
-        uint32_t send_wnd_;             // send window
+        uint32_t send_wnd_;             // calculated send window
         uint32_t iss_;                  // initial send sequence number
         uint32_t send_wl1_;             // segment sequence number used for last window update
         uint32_t send_wl2_;             // segment acknowledgment number used for last window update

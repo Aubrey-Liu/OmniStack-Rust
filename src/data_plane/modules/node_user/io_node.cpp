@@ -48,15 +48,16 @@ namespace omnistack::data_plane::io_node {
                 func->InitializeDriver();
             };
             io::ModuleFactory::instance_().Iterate(init_func);
-            auto adapter_configs = config::kStackConfig->GetNicConfigs();
+            auto& adapter_configs = config::kStackConfig->GetNicConfigs();
             for (int i = 0; i < adapter_configs.size(); i ++) { /// TODO: iterate all needed nic
-                auto adapter_config = adapter_configs[i];
+                auto& adapter_config = adapter_configs[i];
                 auto adapter = io::ModuleFactory::instance_().Create(common::Crc32(adapter_config.driver_name_));
                 if (adapter == nullptr) {
                     OMNI_LOG(common::kFatal) << "Cannot find driver " << adapter_config.driver_name_ << "\n";
                     exit(1);
                 }
-                adapter->InitializeAdapter(adapter_config.port_, config::kStackConfig->GetGraphEntries().size());
+                auto mac_addr = adapter->InitializeAdapter(adapter_config.port_, config::kStackConfig->GetGraphEntries().size());
+                memcpy(adapter_config.mac_raw_, mac_addr.raw, 6);
                 adapters_[i] = adapter;
             }
             num_adapters_ = adapter_configs.size();

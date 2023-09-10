@@ -3,6 +3,7 @@
 //
 
 #include <omnistack/tcp_common/tcp_shared.hpp>
+#include <omnistack/common/logger.h>
 #include <cmath>
 
 namespace omnistack::data_plane::tcp_common::cubic {
@@ -43,10 +44,12 @@ namespace omnistack::data_plane::tcp_common::cubic {
         uint32_t cwnd_;
         uint32_t ssthresh_;
         uint32_t recovery_;
+        uint32_t recovery_end_;
+        uint32_t recovery_bonus_;
         uint32_t w_max_;
         double k_value_;
         uint64_t avoidance_tick_;
-        uint8_t duplicated_ack_count_;
+        uint64_t duplicated_ack_count_;
     };
 
     Cubic::Cubic(TcpFlow* flow) : TcpCongestionControl(flow) {
@@ -57,6 +60,8 @@ namespace omnistack::data_plane::tcp_common::cubic {
         else cwnd_ = kTcpMaxSegmentSize * 4;
         ssthresh_ = UINT32_MAX >> 1;
         recovery_ = flow->send_variables_.iss_;
+        recovery_end_ = recovery_;
+        recovery_bonus_ = 0;
         w_max_ = cwnd_;
         k_value_ = 0;
         avoidance_tick_ = 0;
@@ -89,11 +94,11 @@ namespace omnistack::data_plane::tcp_common::cubic {
             /* duplicated ACK */
             if(state_ == State::kFastRecovery) {
                 cwnd_ += flow_->mss_;
-                if(cwnd_ > w_max_) {
-                    state_ = State::kCongestionAvoidance;
-                    avoidance_tick_ = NowUs();
-                    UpdateKValue();
-                }
+                // if(cwnd_ > w_max_) {
+                //     state_ = State::kCongestionAvoidance;
+                //     avoidance_tick_ = NowUs();
+                //     UpdateKValue();
+                // }
             }
             else {
                 ++ duplicated_ack_count_;
@@ -104,7 +109,9 @@ namespace omnistack::data_plane::tcp_common::cubic {
                     cwnd_ = cwnd_ * kConstantBetaU / kConstantBetaV;
                     ssthresh_ = std::max(cwnd_, flow_->mss_ * 2U);
                     recovery_ = flow_->send_variables_.send_nxt_;
+                    recovery_end_ = recovery_;
                     flow_->send_variables_.fast_retransmission_ = 1;
+                    OMNI_LOG_TAG(common::kDebug, "Cubic") << "trigger fast retransmission, snd_una = " << flow_->send_variables_.send_una_ << ", recovery = " << recovery_ << "\n";
                 }
             }
         }
@@ -132,6 +139,7 @@ namespace omnistack::data_plane::tcp_common::cubic {
                 case State::kFastRecovery:
                     if(TcpGreaterUint32(flow_->send_variables_.send_una_, recovery_)) {
                         duplicated_ack_count_ = 0;
+                        recovery_end_ = flow_->send_variables_.send_nxt_ + 3 * flow_->mss_;
                         state_ = State::kCongestionAvoidance;
                         cwnd_ = std::min(ssthresh_, std::max(flow_->send_variables_.send_nxt_ - flow_->send_variables_.send_una_, static_cast<uint32_t>(flow_->mss_)) + flow_->mss_);
                         avoidance_tick_ = NowUs();
@@ -160,11 +168,14 @@ namespace omnistack::data_plane::tcp_common::cubic {
 
     uint32_t Cubic::GetBytesCanSend() const {
         uint32_t inflight = flow_->send_variables_.send_nxt_ - flow_->send_variables_.send_una_;
-        uint32_t send_wnd = flow_->send_variables_.send_wnd_ << flow_->send_variables_.send_wscale_;
+        uint32_t send_wnd = flow_->send_variables_.send_wnd_;
         uint32_t wnd = std::min(send_wnd, cwnd_);
         if(duplicated_ack_count_ <= 2) wnd += flow_->mss_;
         if(duplicated_ack_count_ == 2) wnd += flow_->mss_;
-        return inflight < wnd ? wnd - inflight : 0;
+        uint32_t ret = inflight < wnd ? wnd - inflight : 0;
+        if(TcpGreaterUint32(recovery_end_, flow_->send_variables_.send_nxt_))
+            ret += recovery_end_ - flow_->send_variables_.send_nxt_;
+        return ret;
     }
 
 }
