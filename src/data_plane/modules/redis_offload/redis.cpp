@@ -46,8 +46,15 @@ namespace omnistack::data_plane::redis_offload {
         PacketPool* packet_pool_;
     };
 
+    void RedisOffload::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
+        packet_pool_ = packet_pool;
+
+        redis_.clear();
+    }
+
     Packet* RedisOffload::MainLogic(Packet* packet) {
-        auto tcph = packet->GetPayloadType<TcpHeader>();
+        auto tcph = packet->GetL4Header<TcpHeader>();
+        // OMNI_LOG_TAG(common::kDebug, "Redis") << "RECV REQUEST dport = " << ntohs(tcph->dport) << "\n";
         if (ntohs(tcph->dport) != 6379)
             return packet;
         
@@ -60,8 +67,8 @@ namespace omnistack::data_plane::redis_offload {
             payload[cmd_len] = '\0';
             if (strcmp(payload, "*3\r\n") != 0)
                 supported_cmd = false;
-            payload += cmd_len;
             payload[cmd_len] = old_c;
+            payload += cmd_len;
             if (!supported_cmd) {
                 OMNI_LOG(common::kFatal) << "Should not appear in test\n";
                 exit(1);
