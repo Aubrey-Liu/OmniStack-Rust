@@ -144,15 +144,13 @@ namespace omnistack::data_plane::tcp_data_in {
         ack_list_top_ = 0;
 
         /* set next hop filter mask */
-        uint32_t node_user_mask = 0;
         uint32_t ipv4_sender_mask = 0;
         uint32_t universe_mask = 0;
         for(auto son : downstream_nodes_) {
             universe_mask |= son.filter_mask;
-            if(son.module_type == ConstCrc32("NodeUser")) node_user_mask |= son.filter_mask;
-            else if(son.module_type == ConstCrc32("Ipv4Sender")) ipv4_sender_mask |= son.filter_mask;
+            if(son.module_type == ConstCrc32("Ipv4Sender")) ipv4_sender_mask |= son.filter_mask;
         }
-        next_hop_filter_mask_ack_ = ~node_user_mask & universe_mask;
+        next_hop_filter_mask_ack_ = ipv4_sender_mask;
         next_hop_filter_mask_data_ = ~ipv4_sender_mask & universe_mask;
     }
 
