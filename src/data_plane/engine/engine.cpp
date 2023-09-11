@@ -308,10 +308,14 @@ namespace omnistack::data_plane {
                 auto return_packet = modules_[node_idx]->MainLogic(packet);
                 /* if multiple packets are returned, they will be in reverse order while applying filters */
                 if(return_packet != nullptr) [[likely]] {
+                    if(return_packet->next_hop_filter_ == 0) [[unlikely]]
+                        return_packet->next_hop_filter_ = next_hop_filter_default_[node_idx];
                     modules_[node_idx]->ApplyDownstreamFilters(return_packet);
                     ForwardPacket(return_packet, node_idx);
                 }
                 while (return_packet != nullptr) [[unlikely]] {
+                    if(return_packet->next_hop_filter_ == 0) [[unlikely]]
+                        return_packet->next_hop_filter_ = next_hop_filter_default_[node_idx];
                     modules_[node_idx]->ApplyDownstreamFilters(return_packet);
                     ForwardPacket(return_packet, node_idx);
                 }
