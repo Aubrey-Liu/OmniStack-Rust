@@ -1,8 +1,14 @@
 #include <omnistack/socket/socket.h>
+#include <omnistack/socket/socket_c.h>
 #include <omnistack/node.h>
 #include <omnistack/common/protocol_headers.hpp>
 #include <omnistack/common/logger.h>
 #include <omnistack/common/time.hpp>
+
+#include <omnistack/memory/memory.h>
+#include <omnistack/token/token.h>
+#include <omnistack/channel/channel.h>
+#include <omnistack/node.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -469,7 +475,7 @@ namespace omnistack::socket {
                             if (cur_fd_->packet_cache == nullptr)
                                 cur_fd_->packet_cache = cur_fd_->basic_node->Read();
                             if (cur_fd_->packet_cache != nullptr) [[likely]] {
-                                events[ret] = cur_fd_->epfd.polled_events[i];
+                                events[ret] = cur_fd->epfd.polled_events[i];
                                 events[ret].events = EPOLLIN;
                                 ret ++;
                             }
@@ -478,7 +484,7 @@ namespace omnistack::socket {
                             if (cur_fd_->packet_cache == nullptr)
                                 cur_fd_->packet_cache = cur_fd_->basic_node->ReadMulti();
                             if (cur_fd_->packet_cache != nullptr) [[likely]] {
-                                events[ret] = cur_fd_->epfd.polled_events[i];
+                                events[ret] = cur_fd->epfd.polled_events[i];
                                 events[ret].events = EPOLLIN;
                                 ret ++;
                             }
@@ -494,7 +500,7 @@ namespace omnistack::socket {
                             if (cur_fd_->epfd.polled_events[i].events & EPOLLOUT)
                                 cur_pfd.events |= POLLOUT;
                             if (poll(&cur_pfd, 1, 0)) {
-                                events[ret] = cur_fd_->epfd.polled_events[i];
+                                events[ret] = cur_fd->epfd.polled_events[i];
                                 events[ret].events = 0;
                                 if (cur_pfd.revents & POLLIN)
                                     events[ret].events |= EPOLLIN;
@@ -617,4 +623,76 @@ namespace omnistack::socket {
             return ret;
         }
     }    
+}
+
+int omni_epoll_create(int size) {
+    return omnistack::socket::bsd::epoll_create(size);
+}
+
+int omni_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout) {
+    return omnistack::socket::bsd::epoll_wait(epfd, events, maxevents, timeout);
+}
+
+int omni_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
+    return omnistack::socket::bsd::epoll_ctl(epfd, op, fd, event);
+}
+
+void omni_close(int fd) {
+    omnistack::socket::bsd::close(fd);
+}
+
+int omni_listen(int fd, int backlog) {
+    return omnistack::socket::bsd::listen(fd, backlog);
+}
+
+int omni_accept(int fd, struct sockaddr *addr, socklen_t *addrlen) {
+    return omnistack::socket::bsd::accept(fd, addr, addrlen);
+}
+
+int omni_socket(int domain, int type, int protocol) {
+    return omnistack::socket::bsd::socket(domain, type, protocol);
+}
+
+int omni_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    return omnistack::socket::bsd::bind(sockfd, addr, addrlen);
+}
+
+int omni_fcntl(int fd, int cmd, ...) {
+    return 0;
+}
+
+ssize_t omni_read(int fd, void *buf, size_t count) {
+    return omnistack::socket::bsd::read(fd, buf, count);
+}
+
+ssize_t omni_write(int fd, const void *buf, size_t count) {
+    return omnistack::socket::bsd::write(fd, buf, count);
+}
+
+void omni_bind_cpu(int cpu) {
+    /** Use pthread to bind cpu **/
+    {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(cpu, &cpuset);
+        pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+    }
+
+    omnistack::memory::BindedCPU(cpu);
+}
+
+void omni_new_thread() {
+    static std::once_flag once = std::once_flag();
+    std::call_once(once, []() {
+        using namespace omnistack;
+    #if defined(OMNIMEM_BACKEND_DPDK)
+        memory::InitializeSubsystem(0, true);
+    #else
+        memory::InitializeSubsystem();
+    #endif
+        token::InitializeSubsystem();
+        channel::InitializeSubsystem();
+        node::InitializeSubsystem();
+    });
+    omnistack::memory::InitializeSubsystemThread();
 }

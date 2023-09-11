@@ -18,7 +18,7 @@ namespace omnistack::packet {
         data_ = mbuf_;
         next_packet_ = nullptr;
         node_ = nullptr;
-        // next_hop_filter_ = 0;
+        next_hop_filter_ = 0;
         // root_packet_ = this;
     }
 
