@@ -5,6 +5,7 @@
 #include <omnistack/packet/packet.hpp>
 #include <omnistack/memory/memory.h>
 #include <omnistack/common/logger.h>
+#include <omnistack/common/hash.hpp>
 #include <arpa/inet.h>
 
 namespace omnistack {
@@ -90,12 +91,12 @@ namespace omnistack {
 
             inline
             uint32_t GetHash() {
-                constexpr int raw_length = sizeof(NodeInfo) / sizeof(uint32_t);
-                uint32_t* raw_data = (uint32_t*)this;
-                uint32_t ret = 0;
-                for (int i = 0; i < raw_length; i ++)
-                    ret = (ret << 1) ^ (raw_data[i]) ^ (raw_data[i] >> 3) ^ ret;
-                return ret;
+                // constexpr int raw_length = sizeof(NodeInfo) / sizeof(uint32_t);
+                char* raw_data = (char*)this;
+                // uint32_t ret = 0;
+                // for (int i = 0; i < raw_length; i ++)
+                //     ret = (ret << 1) ^ (raw_data[i]) ^ (raw_data[i] >> 3) ^ ret;
+                return common::Crc32(raw_data, sizeof(NodeInfo));
             }
 
             inline

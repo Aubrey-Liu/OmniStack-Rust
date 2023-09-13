@@ -107,6 +107,8 @@ namespace omnistack::data_plane::classifier {
                     throw std::runtime_error("Failed to allocate memory pool");
             }
         }
+        
+        memset(flow_table_, 0, sizeof(flow_table_));
     }
 
     Packet* NodeUserClassifier::TimerLogic(uint64_t tick) {

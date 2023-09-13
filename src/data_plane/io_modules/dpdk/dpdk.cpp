@@ -6,6 +6,7 @@
 #include <rte_ethdev.h>
 #include <rte_prefetch.h>
 #include <numa.h>
+#include <rte_version.h>
 
 namespace omnistack::io_module::dpdk {
     consteval int AlignTo(int v, int align) {
@@ -15,14 +16,14 @@ namespace omnistack::io_module::dpdk {
     constexpr int kMtu = 1500;
     constexpr int kMaxNumQueues = 32;
     
-    constexpr int kMbufCount = 4096;
+    constexpr int kMbufCount = 4095;
     constexpr int kLocalCahe = 256;
     constexpr int kMBufSize = 
         AlignTo(common::kMtu + sizeof(common::EthernetHeader) + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM, 64);
     constexpr int kSendQueueSize = 32;
-    constexpr int kRecvQueueSize = 128;
-    constexpr int kDefaultRxDescSize = 512;
-    constexpr int kDefaultTxDescSize = 512;
+    constexpr int kRecvQueueSize = 32;
+    constexpr int kDefaultRxDescSize = 256;
+    constexpr int kDefaultTxDescSize = 256;
 
     constexpr char kName[] = "Dpdk";
 
@@ -41,8 +42,8 @@ namespace omnistack::io_module::dpdk {
             .max_lro_pkt_size = common::kMtu + sizeof(common::EthernetHeader),
             .split_hdr_size = 0,
             .offloads = DEV_RX_OFFLOAD_RSS_HASH | 
-                DEV_RX_OFFLOAD_CHECKSUM |
-                DEV_RX_OFFLOAD_TCP_LRO
+                DEV_RX_OFFLOAD_CHECKSUM
+                //| DEV_RX_OFFLOAD_TCP_LRO
         },
         .txmode = {
             .mq_mode = ETH_MQ_TX_NONE,
@@ -51,7 +52,7 @@ namespace omnistack::io_module::dpdk {
                 DEV_TX_OFFLOAD_UDP_CKSUM   |
                 DEV_TX_OFFLOAD_TCP_CKSUM   |
                 DEV_TX_OFFLOAD_SCTP_CKSUM  |
-                DEV_TX_OFFLOAD_TCP_TSO |
+                DEV_TX_OFFLOAD_TCP_TSO     |
                 DEV_TX_OFFLOAD_UDP_TSO,
         },
         .rx_adv_conf = {
@@ -179,10 +180,11 @@ namespace omnistack::io_module::dpdk {
         
         struct rte_eth_rxconf rxq_conf = adapter->dev_info_.default_rxconf;
         rxq_conf.offloads = adapter->queue_conf_.rxmode.offloads;
-        rxq_conf.rx_thresh.pthresh = 16;
-        rxq_conf.rx_thresh.hthresh = 8;
-        rxq_conf.rx_thresh.wthresh = 0;
+        // rxq_conf.rx_thresh.pthresh = 16;
+        // rxq_conf.rx_thresh.hthresh = 8;
+        // rxq_conf.rx_thresh.wthresh = 0;
 
+        assert(current_socket == rte_eth_dev_socket_id(port_id_));
         auto ret = rte_eth_rx_queue_setup(
             port_id_, queue_id,
             adapter->nb_rx_desc_, current_socket,
@@ -237,12 +239,22 @@ namespace omnistack::io_module::dpdk {
         {
             char name[RTE_MEMPOOL_NAMESIZE];
             sprintf(name, "omni_driver_pool-%d-%d", port_id_, queue_id);
+#if RTE_VERSION >= RTE_VERSION_NUM(2,2,0,0)
+            mempool_ = rte_pktmbuf_pool_create(name, kMbufCount,
+                                    kLocalCahe, 64,
+                                    kMBufSize, memory::GetCurrentSocket());
+#else
             mempool_ = rte_mempool_create(
                 name, kMbufCount, kMBufSize, kLocalCahe,
-                sizeof(struct rte_pktmbuf_pool_private),
+                64,
                 rte_pktmbuf_pool_init, NULL,
                 rte_pktmbuf_init, NULL,
                 memory::GetCurrentSocket(), 0);
+#endif
+            if (mempool_ == nullptr) {
+                OMNI_LOG(common::kFatal) << "Failed to create mempool" << std::endl;
+                exit(1);
+            }
         }
 
         auto tx_queue = new DpdkSendQueue();
@@ -258,7 +270,7 @@ namespace omnistack::io_module::dpdk {
             if (ret) throw std::runtime_error("Failed to enable promiscuous mode");
         }
 
-        {
+        if (0) {
             struct rte_eth_fc_conf fc_conf;
             memset(&fc_conf, 0, sizeof(fc_conf));
             {
@@ -379,7 +391,6 @@ namespace omnistack::io_module::dpdk {
 
     packet::Packet* DpdkRecvQueue::RecvPackets() {
         static packet::Packet* ret_packets[kRecvQueueSize];
-
         auto size = rte_eth_rx_burst(port_id_, queue_id_, buffer_, kRecvQueueSize);
         if(size == 0) [[unlikely]] return nullptr;
         packet::Packet* ret = nullptr;

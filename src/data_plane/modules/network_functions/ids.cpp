@@ -5,6 +5,7 @@
 #include <fstream>
 #include <queue>
 #include <omnistack/common/config.h>
+#include <sys/time.h>
 
 namespace omnistack::data_plane::ids {
     
@@ -41,13 +42,20 @@ namespace omnistack::data_plane::ids {
     private:
         ACANode* root_;
 
+        uint64_t packet_count = 0;
+        uint64_t packet_size_sum = 0;
+        uint64_t last_print_us = 0;
+
         void AddPattern(std::string_view pattern);
     };
 
     void Ids::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
         auto conf = config::ConfigManager::GetModuleConfig("Ids");
         auto patterns = conf["patterns"];
+
+        root_ = new(memory::AllocateLocal(sizeof(ACANode))) ACANode();
         for(auto& pattern : patterns) {
+            OMNI_LOG(common::kInfo) << "Add pattern " << pattern.asString() << "\n";
             AddPattern(pattern.asString());
         }
 
@@ -75,26 +83,46 @@ namespace omnistack::data_plane::ids {
                 }
             }
         }
+
+        packet_count = 0;
+        packet_size_sum = 0;
+        last_print_us = 0;
     }
 
     void Ids::AddPattern(std::string_view pattern) {
-        if(root_ == nullptr)
-            root_ = new(memory::AllocateLocal(sizeof(ACANode))) ACANode();
         ACANode* p = root_;
         for(auto c : pattern) {
-            if(p->next[c] == nullptr)
-                p->next[c] = new ACANode();
-            p = p->next[c];
+            auto idx = (uint8_t)c;
+            if(p->next[idx] == nullptr)
+                p->next[idx] = new(memory::AllocateLocal(sizeof(ACANode))) ACANode();
+            p = p->next[idx];
         }
         p->count++;
     }
 
     packet::Packet* Ids::MainLogic(Packet* packet) {
+        packet_count ++;
+        packet_size_sum += packet->GetLength();
+        struct timeval tv;
+        gettimeofday(&tv, nullptr);
+        auto current_us = tv.tv_sec * 1000000 + tv.tv_usec;
+
+        if (current_us - last_print_us > 1000000) {
+            OMNI_LOG(common::kInfo) << "OmniStackIDS: " << packet_count << " packets, " << packet_size_sum << " bytes, " << packet_size_sum / packet_count << " bytes/packet\n";
+            OMNI_LOG(common::kInfo) << "OmniStackIDS: " << packet_size_sum * 8.0 / (current_us - last_print_us) << " Mbps\n";
+            // click_chatter("OmniStackIDS: %lu packets, %lu bytes, %lu bytes/packet", packet_count, packet_size_sum, packet_size_sum / packet_count);
+            // click_chatter("OmniStackIDS: %.3f Mbps", packet_size_sum * 8.0 / (current_us - last_print_us));
+            
+            packet_count = 0;
+            packet_size_sum = 0;
+            last_print_us = current_us;
+        }
+
         ACANode* p = root_;
         auto ptr = packet->GetPayload();
         auto length = packet->GetLength();
         for (int i = 0; i < length; i ++) {
-            p = p->next[ptr[i]];
+            p = p->next[(uint8_t)ptr[i]];
             if (p->count > 0) {
                 packet->Release();
                 return nullptr;
