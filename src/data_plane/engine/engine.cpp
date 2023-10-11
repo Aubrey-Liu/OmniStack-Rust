@@ -33,7 +33,9 @@ namespace omnistack::data_plane {
     }
 
     Engine* Engine::Create(EngineCreateInfo& info) {
+        // OMNI_LOG(kInfo) << "Engine on core " << info.logic_core << " creating\n";
         auto engine = new Engine();
+        // OMNI_LOG(kInfo) << "Engine on core " << info.logic_core << " start initializing\n";
         engine->Init(*info.sub_graph, info.logic_core, info.name_prefix);
         return engine;
     }
@@ -50,10 +52,14 @@ namespace omnistack::data_plane {
         }
         memory::BindedCPU(core);
 
+        // OMNI_LOG(kInfo) << "Engine on core " << core << " core binded\n";
+
         /* create packet pool */
         packet_pool_ = PacketPool::CreatePacketPool(name_prefix, kDefaultPacketPoolSize);
         packet_queue_count_ = 0;
         
+        // OMNI_LOG(kInfo) << "Engine on core " << core << " packet pool allocated\n";
+
         auto& graph = sub_graph.graph_;
         std::map<uint32_t, uint32_t> global_to_local;
 
@@ -122,6 +128,8 @@ namespace omnistack::data_plane {
                 SortLinks(links);
         }
 
+        // OMNI_LOG(kInfo) << "Engine on core " << core << " forward structure initialized\n";
+
         /* initialize module filters */
         {
             for(uint32_t u = 0; u < module_num_; u ++) {
@@ -173,15 +181,21 @@ namespace omnistack::data_plane {
 
         }
 
+        // OMNI_LOG(kInfo) << "Engine on core " << core << " module filters initialized\n";
+
         /* set event entry point */
         {
             for(auto& i : modules_) i->set_raise_event_(RaiseEvent);
         }
 
+        // OMNI_LOG(kInfo) << "Engine on core " << core << " event entry set\n";
+
         /* initialize module */
         {
             for(auto& i : modules_) i->Initialize(name_prefix, packet_pool_);
         }
+
+        // OMNI_LOG(kInfo) << "Engine on core " << core << " module initialized\n";
 
         /* register events */
         {

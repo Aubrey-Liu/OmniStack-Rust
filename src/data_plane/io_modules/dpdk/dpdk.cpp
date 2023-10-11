@@ -390,7 +390,7 @@ namespace omnistack::io_module::dpdk {
     }
 
     packet::Packet* DpdkRecvQueue::RecvPackets() {
-        static packet::Packet* ret_packets[kRecvQueueSize];
+        static thread_local packet::Packet* ret_packets[kRecvQueueSize];
         auto size = rte_eth_rx_burst(port_id_, queue_id_, buffer_, kRecvQueueSize);
         if(size == 0) [[unlikely]] return nullptr;
         packet::Packet* ret = nullptr;

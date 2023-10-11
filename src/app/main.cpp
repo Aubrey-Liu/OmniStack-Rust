@@ -69,6 +69,7 @@ namespace omnistack {
     static void* EngineThreadEntry(void* arg) {
         memory::InitializeSubsystemThread();
         auto create_info = reinterpret_cast<data_plane::EngineCreateInfo*>(arg);
+        // OMNI_LOG(kInfo) << "Engine " << create_info->engine_id << " started\n";
         auto engine = data_plane::Engine::Create(*create_info);
         stop_flag[create_info->engine_id] = engine->GetStopFlag();
         engine->Run();
@@ -131,8 +132,8 @@ int main(int argc, char **argv) {
     std::vector<int> sub_graph_cpus;
     auto graph_entries = stack_config.GetGraphEntries();
     for(auto& graph_entry : graph_entries) {
-        auto graph_config = omnistack::config::ConfigManager::GetGraphConfig(graph_entry.structure_);
-        auto cpus = graph_entry.cpus_;
+        auto& graph_config = omnistack::config::ConfigManager::GetGraphConfig(graph_entry.structure_);
+        auto& cpus = graph_entry.cpus_;
         graphs.push_back(omnistack::CreateGraph(graph_config));
         graph_names.push_back(graph_entry.name_);
         sub_graphs.push_back(&((*graphs.rbegin())->sub_graph_(0)));    // there is only one subgraph now

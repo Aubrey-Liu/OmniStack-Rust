@@ -466,6 +466,7 @@ namespace omnistack::memory {
 #else
             nevents = epoll_wait(epfd, events, kMaxEvents, 1000);
 #endif
+
             for (int eidx = 0; eidx < nevents; eidx ++) {
                 auto& evt = events[eidx];
 #if defined (__APPLE__)
@@ -515,7 +516,7 @@ namespace omnistack::memory {
                             }
 #else
                             struct epoll_event ev{};
-                            ev.events = EPOLLIN | EPOLLET;
+                            ev.events = EPOLLIN;
                             ev.data.fd = new_fd;
                             if (epoll_ctl(epfd, EPOLL_CTL_ADD, new_fd, &ev)) {
                                 std::cerr << "Failed to set epoll for new process\n";
@@ -546,6 +547,7 @@ namespace omnistack::memory {
                     if (!peer_closed) {
                         // A normal Rpc Request
                         RpcResponse resp{};
+                        // OMNI_LOG(common::kInfo) << "Received RPC Request " << static_cast<int>(rpc_request.type) << std::endl;
                         switch (rpc_request.type) {
                             case RpcRequestType::kGetProcessId: {
                                 if (fd_to_process_info.count(fd)) {
@@ -1042,6 +1044,7 @@ namespace omnistack::memory {
     }
 
     static RpcResponse SendLocalRpcRequest() {
+        // OMNI_LOG(common::kInfo) << "Sending RPC Request " << static_cast<int>(local_rpc_request.type) << std::endl;
         {
             std::unique_lock<std::mutex> _(rpc_request_lock);
             local_rpc_request.id = ++rpc_id;

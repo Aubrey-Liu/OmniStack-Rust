@@ -4,6 +4,7 @@
 #include <omnistack/node/node_common.h>
 #include <omnistack/common/config.h>
 #include <omnistack/common/logger.h>
+#include <omnistack/common/time.hpp>
 
 namespace omnistack::data_plane::io_node {
     using namespace omnistack::common;
@@ -31,10 +32,11 @@ namespace omnistack::data_plane::io_node {
     private:
         inline static std::once_flag driver_init_flag_;
         inline static io::BaseIoAdapter* adapters_[kMaxAdapters];
-        inline static io::IoRecvQueue* recv_queues_[kMaxAdapters];
-        inline static io::IoSendQueue* send_queues_[kMaxAdapters];
+        io::IoRecvQueue* recv_queues_[kMaxAdapters];
+        io::IoSendQueue* send_queues_[kMaxAdapters];
         inline static int num_adapters_;
-        inline static int num_initialized_port_;
+        inline static int num_initialized_port_ = 0;
+        inline static bool ports_initialized_ = false;
         inline static std::mutex initialized_port_mutex_;
         
         int id_;
@@ -62,6 +64,13 @@ namespace omnistack::data_plane::io_node {
             }
             num_adapters_ = adapter_configs.size();
         }
+
+// #define STATISTICS_RAW
+#ifdef STATISTICS_RAW
+        uint64_t packet_count_ = 0;
+        uint64_t byte_count_ = 0;
+        uint64_t last_time_ = 0;
+#endif
     };
 
     void IoNode::Initialize(std::string_view name_prefix, PacketPool* packet_pool) {
@@ -80,14 +89,18 @@ namespace omnistack::data_plane::io_node {
         {
             std::lock_guard<std::mutex> lock(initialized_port_mutex_);
             num_initialized_port_ ++;
-
             if (num_initialized_port_ == config::kStackConfig->GetGraphEntries().size()) { /// TODO: set number of queues
                 for (int i = 0; i < num_adapters_; i ++) {
                     adapters_[i]->Start();
                 }
 
+                ports_initialized_ = true;
                 OMNI_LOG(common::kInfo) << "All NIC initialized and started\n";
             }
+        }
+
+        while(ports_initialized_ == false) {
+            usleep(1000);
         }
     }
 
@@ -103,6 +116,7 @@ namespace omnistack::data_plane::io_node {
     }
 
     Packet* IoNode::TimerLogic(uint64_t tick) {
+        // OMNI_LOG_TAG(kDebug, "IoNode") << id_ << " IoNode timer logic\n";
         if (need_flush_stack_top_) [[unlikely]] {
             while (need_flush_stack_top_) {
                 auto nic = need_flush_stack_[-- need_flush_stack_top_];
@@ -111,10 +125,34 @@ namespace omnistack::data_plane::io_node {
             }
         }
 
+#ifdef STATISTICS_RAW
         for (int i = 0; i < num_adapters_; i ++) {
             auto ret = recv_queues_[i]->RecvPackets();
-            if(ret != nullptr) [[likely]] return ret;
+            if(ret != nullptr) [[likely]] {
+                while(ret != nullptr) {
+                    packet_count_ ++;
+                    if((packet_count_ & 0x7fffff) == 0) [[unlikely]] {
+                        uint64_t now = omnistack::common::NowNs();
+                        uint64_t pps = 1.0 * packet_count_ * 1000000000ULL / (now - last_time_);
+                        OMNI_LOG_TAG(kInfo, "IoNode") << id_ << ": " << pps << " pps\n";
+                        packet_count_ = 0;
+                        last_time_ = now;
+                    }
+                    auto next = ret->next_packet_.Get();
+                    ret->Release();
+                    ret = next;
+                }
+            }
         }
         return nullptr;
+#else
+        for (int i = 0; i < num_adapters_; i ++) {
+            auto ret = recv_queues_[i]->RecvPackets();
+            if(ret != nullptr) [[likely]] {
+                return ret;
+            }
+        }
+        return nullptr;
+#endif
     }
 }
