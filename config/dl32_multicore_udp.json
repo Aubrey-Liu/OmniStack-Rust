@@ -25,6 +25,11 @@
             "cpus": [25],
             "name": "UDP1",
             "structure": "UDP_COMMON"
+        },
+        {
+            "cpus": [26],
+            "name": "UDP2",
+            "structure": "UDP_COMMON"
         }
     ],
     "routes": [

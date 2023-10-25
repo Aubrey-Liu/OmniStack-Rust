@@ -24,6 +24,12 @@ namespace omnistack::common {
                 last_time.time_since_epoch()).count();
     }
 
+    inline uint64_t NowUsImm() {
+        last_time = std::chrono::steady_clock::now();
+        return std::chrono::duration_cast<std::chrono::microseconds>(
+                last_time.time_since_epoch()).count();
+    }
+
     inline uint64_t NowMs() {
         if(!((++cnt) &= 15)) last_time = std::chrono::steady_clock::now();
         return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -31,9 +37,9 @@ namespace omnistack::common {
     }
 
     inline uint64_t NowMsImm() {
-        auto cur_time = std::chrono::steady_clock::now();
+        last_time = std::chrono::steady_clock::now();
         return std::chrono::duration_cast<std::chrono::milliseconds>(
-                cur_time.time_since_epoch()).count();
+                last_time.time_since_epoch()).count();
     }
 
     inline uint64_t NowS() {
