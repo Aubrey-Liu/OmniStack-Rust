@@ -1,0 +1,17 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/cpp
+{
+	"name": "C++",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/rust:1": {}
+	},
+	"runArgs": [
+		"--privileged"
+	],
+	"postCreateCommand": "echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages",
+	"postStartCommand": "git config --global --add safe.directory /workspaces/omnistack",
+	"remoteUser": "root"
+}
