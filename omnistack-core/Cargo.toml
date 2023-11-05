@@ -8,6 +8,7 @@ build = "build.rs"
 once_cell = "1.18.0"
 autocxx = "0.26.0"
 cxx = "1.0"
+colored = "2.0.4"
 ctor = "0.2.5"
 concat-idents = "1.1.5"
 
