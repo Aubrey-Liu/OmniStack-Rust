@@ -1,0 +1,9 @@
+[package]
+name = "omnistack"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+omnistack-core = { version = "*", path = "../omnistack-core" }
+
+[features]
