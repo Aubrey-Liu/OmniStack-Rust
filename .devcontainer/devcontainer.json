@@ -11,7 +11,6 @@
 	"runArgs": [
 		"--privileged"
 	],
-	"postCreateCommand": "echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages",
-	"postStartCommand": "git config --global --add safe.directory /workspaces/omnistack",
+	"postStartCommand": "bash /tmp/enable-hugepages.sh && git config --global --add safe.directory /workspaces/omnistack",
 	"remoteUser": "root"
 }

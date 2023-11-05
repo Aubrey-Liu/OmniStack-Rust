@@ -4,6 +4,8 @@ ARG REINSTALL_CMAKE_VERSION_FROM_SOURCE="3.27.7"
 
 COPY ./reinstall-cmake.sh /tmp/
 
+COPY ./enable-hugepages.sh /tmp/
+
 RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
         chmod +x /tmp/reinstall-cmake.sh && /tmp/reinstall-cmake.sh ${REINSTALL_CMAKE_VERSION_FROM_SOURCE}; \
     fi \
