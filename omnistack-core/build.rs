@@ -2,50 +2,41 @@ const SRC_PATH: &'static str = "../src/";
 
 fn main() {
     let inc_paths = [
-        "data_plane/include",
-        "libraries/channel/include",
         "libraries/memory/include",
-        "libraries/hashtable/include",
-        "libraries/node/include",
-        "libraries/packet/include",
-        "libraries/token/include",
         "libraries/common/include",
-        "libraries/socket/include",
+        // "libraries/channel/include",
+        // "libraries/hashtable/include",
+        // "libraries/node/include",
+        // "libraries/packet/include",
+        // "libraries/token/include",
+        // "libraries/socket/include",
+        // "data_plane/include",
     ]
     .iter()
-    .map(|p| SRC_PATH.to_string() + p)
+    .map(|p| format!("{}{}", SRC_PATH, p))
     .map(|p| std::path::PathBuf::from(p));
 
-    let compiled_files = [
-        "libraries/memory/common.cpp",
-        "libraries/channel/channel.cpp",
-    ]
-    .iter()
-    .map(|p| SRC_PATH.to_string() + p)
-    .map(|p| std::path::PathBuf::from(p));
+    let compiled_files = ["libraries/memory/common.cpp"]
+        .iter()
+        .map(|p| format!("{}{}", SRC_PATH, p))
+        .map(|p| std::path::PathBuf::from(p));
 
+    let mut clang_flags = vec!["-std=c++20"];
     #[cfg(feature = "dpdk")]
-    let mut b = autocxx_build::Builder::new("src/lib.rs", inc_paths)
-        .extra_clang_args(&["-std=c++20", "-D OMNIMEM_BACKEND_DPDK"])
+    clang_flags.push("-D OMNIMEM_BACKEND_DPDK");
+
+    let mut b = autocxx_build::Builder::new("src/lib.rs", inc_paths.clone())
+        .extra_clang_args(&clang_flags)
         .build()
         .unwrap();
 
-    #[cfg(not(feature = "dpdk"))]
-    let mut b = autocxx_build::Builder::new("src/lib.rs", inc_paths)
-        .extra_clang_args(&["-std=c++20"])
-        .build()
-        .unwrap();
-
+    let b = b
+        .flag_if_supported("-std=c++2a")
+        .opt_level(2)
+        .files(compiled_files.clone());
     #[cfg(feature = "dpdk")]
-    b.flag_if_supported("-std=c++2a")
-        .files(compiled_files)
-        .define("OMNIMEM_BACKEND_DPDK", None)
-        .compile("omnistack-core");
-
-    #[cfg(not(feature = "dpdk"))]
-    b.flag_if_supported("-std=c++2a")
-        .files(compiled_files)
-        .compile("omnistack-core");
+    let b = b.define("OMNIMEM_BACKEND_DPDK", None);
+    b.warnings(false).compile("omnistack-core");
 
     println!("cargo:rustc-link-lib=numa");
     pkg_config::probe_library("libdpdk").unwrap();

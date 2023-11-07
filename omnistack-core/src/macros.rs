@@ -5,18 +5,18 @@ macro_rules! register_module {
     ($ty:ident, $buildfn:expr) => {
         $crate::concat_idents!(fn_name = __register_, $ty {
             #[allow(non_snake_case)]
-            #[$crate::ctor]
-            fn fn_name() {
-                $crate::modules::registry::register(stringify!($ty), $buildfn);
+            #[$crate::constructor(65535)]
+            extern "C" fn fn_name() {
+                $crate::modules::factory::register(stringify!($ty), $buildfn);
             }
         });
     };
     ($ty:ident, $buildfn:expr, $id:expr) => {
         $crate::concat_idents!(fn_name = __register_, $id {
             #[allow(non_snake_case)]
-            #[$crate::ctor]
-            fn fn_name() {
-                $crate::modules::registry::register($id, $buildfn);
+            #[$crate::constructor(65535)]
+            extern "C" fn fn_name() {
+                $crate::modules::factory::register($id, $buildfn);
             }
         });
     };

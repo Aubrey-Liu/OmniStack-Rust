@@ -1,12 +1,25 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 use colored::Colorize;
-use once_cell::sync::Lazy;
+use static_init::dynamic;
 
-pub trait Module {}
+pub type PacketId = usize;
 
-type ModuleBuildFn = fn() -> Box<dyn Module>;
+pub struct Packet {
+    pub id: usize,
+}
+
+pub trait Module {
+    unsafe fn process(&self, packet: *mut Packet) {
+        dbg!(packet.as_ref().unwrap().id);
+    }
+}
+
+pub type ModuleTy = Box<dyn Module + Send>;
+type ModuleBuildFn = fn() -> ModuleTy;
+
+#[dynamic]
+pub(crate) static mut MODULE_FACTORY: HashMap<&'static str, ModuleBuildFn> = HashMap::new();
 
 /// Register a module with its identifier and builder.
 ///
@@ -18,7 +31,7 @@ pub fn register(id: &'static str, f: ModuleBuildFn) {
     //     "info".bright_green().bold(),
     //     id
     // );
-    if MODULES.lock().unwrap().insert(id, f).is_some() {
+    if MODULE_FACTORY.write().insert(id, f).is_some() {
         println!(
             "{}: Module '{}' has already been registered",
             "warning".bright_yellow().bold(),
@@ -26,9 +39,6 @@ pub fn register(id: &'static str, f: ModuleBuildFn) {
         );
     }
 }
-
-static MODULES: Lazy<Mutex<HashMap<&'static str, ModuleBuildFn>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[cfg(test)]
 mod test {
@@ -39,7 +49,7 @@ mod test {
     fn test_register_module() {
         pub struct Foo;
         impl Foo {
-            fn new() -> Box<dyn Module> {
+            fn new() -> ModuleTy {
                 Box::new(Foo)
             }
         }
@@ -49,7 +59,7 @@ mod test {
         // register_module!(Foo, Foo::new);  // can't register twice; shouldn't compile
         register_module!(Foo, Foo::new, "Foo2");
 
-        let m = MODULES.lock().unwrap();
+        let m = MODULE_FACTORY.read();
 
         m.get("Foo").expect("Foo should be registered");
         m.get("Foo2").expect("Foo2 should be registered");
