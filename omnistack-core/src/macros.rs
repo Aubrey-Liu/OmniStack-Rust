@@ -11,13 +11,4 @@ macro_rules! register_module {
             }
         });
     };
-    ($ty:ident, $buildfn:expr, $id:expr) => {
-        $crate::concat_idents!(fn_name = __register_, $id {
-            #[allow(non_snake_case)]
-            #[$crate::constructor(65535)]
-            extern "C" fn fn_name() {
-                $crate::modules::factory::register($id, $buildfn);
-            }
-        });
-    };
 }

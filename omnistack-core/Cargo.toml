@@ -2,21 +2,18 @@
 name = "omnistack-core"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"
 
 [dependencies]
-colored = "2.0.4"
+omnistack-sys = { path = "../omnistack-sys" }
+crossbeam = "0.8.2"
+once_cell = "1.18.0"
+thiserror = "1.0.50"
+json = "0.12.4"
 concat-idents = "1.1.5"
 static_init = "1.0.3"
-autocxx = "0.26.0"
-cxx = "1.0"
-json = "0.12.4"
-crossbeam = "0.8.2"
-
-[build-dependencies]
-autocxx-build = "0.26.0"
-pkg-config = "0.3.27"
+ctrlc = "3.4.1"
+colored = "2.0.4"
+core_affinity = "0.8.1"
+num_cpus = "1.0"
 
 [features]
-default = ["dpdk"]
-dpdk = []

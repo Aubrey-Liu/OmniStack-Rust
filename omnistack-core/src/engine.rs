@@ -1,23 +1,21 @@
-#![allow(unused)]
-
+use std::cell::Cell;
 use std::collections::HashMap;
-use std::thread;
+use std::thread::JoinHandle;
+use std::time::Instant;
 
-use static_init::dynamic;
-use crossbeam::channel::{Sender, Receiver, bounded, unbounded};
-use crate::modules::factory::{Packet, PacketId, MODULE_FACTORY};
-use crate::prelude::*;
+use core_affinity::CoreId;
+use crossbeam::channel::{bounded, Receiver, TryRecvError};
+use crossbeam::deque::{Stealer, Worker as TaskQueue};
+
+use crate::modules::factory::{build_module, get_module, MODULE_FACTORY};
+use crate::modules::{ModuleId, Result};
+use crate::packet::{Packet, PacketPool};
+use crate::prelude::Module;
 
 type NodeId = usize;
-type GraphId = usize;
 
-enum LinkType {
-    Local,
-    Remote(Sender<Message>),
-}
-
+#[derive(Clone, Copy, Debug)]
 struct Link {
-    ty: LinkType,
     to: NodeId,
 }
 
@@ -27,23 +25,83 @@ impl PartialEq for Link {
     }
 }
 
-#[derive(Default)]
-pub struct Engine {
-    all_nodes: HashMap<NodeId, Node>,
+pub struct Engine;
+
+#[derive(Debug, Clone, Copy)]
+pub struct Task {
+    pub data: *mut Packet,
+    pub node_id: NodeId,
 }
 
-#[dynamic]
-static mut ENGINE: Engine = Engine::default();
+unsafe impl Send for Task {}
 
-#[dynamic]
-static PACKET_POOL: [Packet; 1024] = std::array::from_fn(|_| Packet { id: 0 });
+struct Worker {
+    nodes: Vec<Node>,
+    task_queue: TaskQueue<Task>,
+    stealers: Vec<Stealer<Task>>,
+    ctrl_ch: Receiver<CtrlMsg>,
+}
+
+#[derive(Clone)]
+struct Node {
+    module: &'static dyn Module,
+    out_links: Vec<Link>, // todo: smallvec?
+}
+
+unsafe impl Send for Node {}
+
+pub struct Context<'a> {
+    node: &'a Node,
+    tasks: &'a TaskQueue<Task>,
+}
+
+impl Context<'_> {
+    pub fn generate_downsteam_tasks(&self, data: *mut Packet) {
+        unsafe { data.as_mut().unwrap().refcnt += self.node.out_links.len() - 1 };
+
+        for link in &self.node.out_links {
+            self.push_task(Task {
+                data,
+                node_id: link.to,
+            })
+        }
+    }
+
+    pub fn push_task(&self, task: Task) {
+        self.tasks.push(task)
+    }
+}
+
+#[derive(Debug)]
+pub enum CtrlMsg {
+    ShutDown,
+}
+
+unsafe impl Send for CtrlMsg {}
 
 impl Engine {
-    pub fn init(config: &str) {
-        let config = json::parse(config).expect("config should be in json format");
+    const NUM_CPUS: usize = 2; // todo: remove hardcode
 
+    pub fn run(config: &str) -> Result<()> {
+        PacketPool::init(0);
+
+        let graph = Self::build_graph(config);
+
+        let mut workers = Self::run_workers(graph)?;
+
+        while let Some(t) = workers.pop() {
+            t.join().expect("error joining a thread");
+        }
+
+        Ok(())
+    }
+
+    fn build_graph(config: &str) -> Vec<Node> {
+        let config = json::parse(config).expect("config should be in json format");
         let nodes = &config["nodes"];
         let edges = &config["edges"];
+        let mut graph = Vec::new();
+        let mut node_ids = HashMap::new();
 
         assert!(!nodes.is_null(), "key `nodes` not found in config");
         assert!(!edges.is_null(), "key `edges` not found in config");
@@ -53,25 +111,23 @@ impl Engine {
             assert!(!node["name"].is_null(), "node doesn't have key `name`");
 
             let id = node["id"]
-                .as_usize()
-                .expect(r#"invalie node["id"] type, shoule be usize"#);
+                .as_str()
+                .expect(r#"invalie node["id"] type, shoule be str"#);
             let name = node["name"]
                 .as_str()
                 .expect(r#"invalie node["name"] type, shoule be str"#);
 
+            assert!(!node_ids.contains_key(&id), "duplicate node id `{}`", id);
             assert!(
-                !ENGINE.read().all_nodes.contains_key(&id),
-                "duplicate node id `{}`",
-                id
-            );
-            assert!(
-                MODULE_FACTORY.read().contains_key(&name),
+                unsafe { MODULE_FACTORY.contains_key(&name) },
                 "module name `{}` doesn't exist",
                 name
             );
 
-            let new_node = Node::new(MODULE_FACTORY.read().get(&name).unwrap()());
-            ENGINE.write().all_nodes.insert(id, new_node);
+            let new_node = Node::new(build_module(name));
+            let node_id = graph.len();
+            node_ids.insert(id, node_id);
+            graph.insert(node_id, new_node);
         }
 
         for edge in edges.members() {
@@ -80,33 +136,32 @@ impl Engine {
             let (src, dst) = (
                 edge.next()
                     .unwrap()
-                    .as_usize()
-                    .expect("invalid node id type, should be usize"),
+                    .as_str()
+                    .expect("invalid node id type, should be str"),
                 edge.next()
                     .unwrap()
-                    .as_usize()
-                    .expect("invalid node id type, should be usize"),
+                    .as_str()
+                    .expect("invalid node id type, should be str"),
             );
 
             assert!(
-                ENGINE.read().all_nodes.contains_key(&src),
+                node_ids.contains_key(&src),
                 "node id `{}` doesn't exist",
                 src
             );
             assert!(
-                ENGINE.read().all_nodes.contains_key(&dst),
+                node_ids.contains_key(&dst),
                 "node id `{}` doesn't exist",
                 dst
             );
 
-            // todo: support bi-directional links (be wary of cycles)
+            let src_id = node_ids.get(&src).copied().unwrap();
+            let dst_id = node_ids.get(&dst).copied().unwrap();
 
-            let link = Link {
-                to: dst,
-                ty: LinkType::Local,
-            };
-            let mut engine = ENGINE.write();
-            let src_node = engine.all_nodes.get_mut(&src).unwrap();
+            // todo: support bi-directional links (be wary of cycles)
+            let link = Link { to: dst_id };
+
+            let src_node = graph.get_mut(src_id).unwrap();
             assert!(
                 !src_node.out_links.contains(&link),
                 "duplicate edge `{}-{}`",
@@ -115,85 +170,122 @@ impl Engine {
             );
             src_node.out_links.push(link);
         }
+
+        graph
     }
 
-    pub fn run() {
-        // todo: channel size / unbound ?
-        let (sd, rv) = bounded(1024);
+    fn run_workers(nodes: Vec<Node>) -> Result<Vec<JoinHandle<()>>> {
+        let mut threads = Vec::new();
+        let mut ctrl_chs = Vec::new();
 
-        // todo: multiple graphs (low priority)
-        let nodes = ENGINE.read().all_nodes.keys().copied().collect();
+        let task_queues: Vec<_> = (0..Self::NUM_CPUS).map(|_| TaskQueue::new_fifo()).collect();
+        let stealers: Vec<_> = (0..Self::NUM_CPUS)
+            .map(|id| {
+                task_queues
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(qid, tq)| if id == qid { None } else { Some(tq.stealer()) })
+                    .collect()
+            })
+            .collect();
 
-        sd.send(Message::Data { pkt_id: 0, to: 0 });
-        sd.send(Message::Terminate);
+        for ((id, st), tq) in (0..Self::NUM_CPUS).zip(stealers).zip(task_queues) {
+            let (sd, rv) = bounded(1024);
+            let worker = Worker::new(nodes.clone(), tq, st, rv, id);
 
-        let t = thread::spawn(|| {
-            Processor::new(nodes, rv).run();
-        });
-        t.join();
-    }
-}
+            threads.push(std::thread::spawn(move || {
+                core_affinity::set_for_current(CoreId { id });
+                worker.run().unwrap(); // todo: handle errors gracefully
+            }));
 
-pub enum Message {
-    Data { pkt_id: PacketId, to: NodeId },
-    Terminate,
-}
+            ctrl_chs.push(sd);
+        }
 
-pub struct Processor {
-    nodes: Vec<NodeId>,
-    in_ch: Receiver<Message>,
-}
-
-impl Processor {
-    pub fn new(nodes: Vec<NodeId>, in_ch: Receiver<Message>) -> Self {
-        Self { nodes, in_ch }
-    }
-
-    pub fn run(&self) {
-        for msg in self.in_ch.iter() {
-            match msg {
-                Message::Data { pkt_id, to } => {
-                    self.process(pkt_id, to)
-                }
-                Message::Terminate => break,
+        ctrlc::set_handler(move || {
+            for ch in &ctrl_chs {
+                ch.send(CtrlMsg::ShutDown)
+                    .expect("cannot send the shutdown CtrlMsg");
             }
+        })
+        .expect("error when setting ctrl-c handler");
+
+        Ok(threads)
+    }
+}
+
+impl Worker {
+    thread_local! {
+        static CORE_ID: Cell<i32> = Cell::new(-1);
+    }
+
+    pub fn new(
+        nodes: Vec<Node>,
+        task_queue: TaskQueue<Task>,
+        stealers: Vec<Stealer<Task>>,
+        ctrl_ch: Receiver<CtrlMsg>,
+        core_id: usize,
+    ) -> Self {
+        Self::CORE_ID.set(core_id as i32);
+
+        Self {
+            nodes,
+            task_queue,
+            stealers,
+            ctrl_ch,
         }
     }
 
-    pub fn process(&self, pkt_id: PacketId, node_id: NodeId) {
-        let mut packet = Packet { id: pkt_id }; // todo: get packet from the pool
-        unsafe {
-            ENGINE
-                .read()
-                .all_nodes
-                .get(&node_id)
-                .unwrap()
-                .module
-                .process(&mut packet as *mut _)
+    pub fn run(&self) -> Result<()> {
+        loop {
+            while let Some(job) = self.find_job() {
+                self.process_job(job)?;
+            }
+
+            match self.ctrl_ch.try_recv() {
+                Ok(msg) => match msg {
+                    CtrlMsg::ShutDown => break,
+                },
+                Err(TryRecvError::Empty) => {
+                    for (id, node) in self.nodes.iter().enumerate() {
+                        // todo: make a context
+                        let ctx = Context {
+                            node: self.nodes.get(id).unwrap(),
+                            tasks: &self.task_queue,
+                        };
+                        node.module.tick(&ctx, Instant::now())?;
+                    }
+                }
+                Err(TryRecvError::Disconnected) => break,
+            }
+        }
+
+        Ok(())
+    }
+
+    fn find_job(&self) -> Option<Task> {
+        self.task_queue.pop().or_else(|| {
+            self.stealers
+                .iter()
+                .map(|s| s.steal_batch_with_limit_and_pop(&self.task_queue, 8))
+                .find_map(|j| j.success())
+        })
+    }
+
+    fn process_job(&self, job: Task) -> Result<()> {
+        let node = self.nodes.get(job.node_id).unwrap();
+        let ctx = Context {
+            node,
+            tasks: &self.task_queue,
         };
 
-        // todo: non-recursive traversal
-        for link in &ENGINE.read().all_nodes.get(&node_id).unwrap().out_links {
-            match &link.ty {
-                LinkType::Local => self.process(pkt_id, link.to),
-                LinkType::Remote(sd) => sd.send(Message::Data {
-                    pkt_id,
-                    to: link.to,
-                }).expect("message should be sent successfully")
-            }
-        }
+        node.module.process(&ctx, job.data)
     }
-}
-
-struct Node {
-    module: ModuleTy,
-    out_links: Vec<Link>, // todo: smallvec?
 }
 
 impl Node {
-    pub fn new(module: ModuleTy) -> Self {
+    pub fn new(module_id: ModuleId) -> Self {
         Self {
-            module,
+            module: get_module(module_id).unwrap(),
             out_links: Vec::new(),
         }
     }

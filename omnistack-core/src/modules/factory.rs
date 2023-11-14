@@ -1,43 +1,56 @@
 use std::collections::HashMap;
 
 use colored::Colorize;
-use static_init::dynamic;
+use once_cell::sync::Lazy;
 
-pub type PacketId = usize;
+use super::{Module, ModuleId};
 
-pub struct Packet {
-    pub id: usize,
-}
+type ModuleBuildFn = dyn Fn() -> Box<dyn Module>;
 
-pub trait Module {
-    unsafe fn process(&self, packet: *mut Packet) {
-        dbg!(packet.as_ref().unwrap().id);
-    }
-}
+pub(crate) static mut MODULE_FACTORY: Lazy<HashMap<&'static str, Box<ModuleBuildFn>>> =
+    Lazy::new(HashMap::new);
 
-pub type ModuleTy = Box<dyn Module + Send>;
-type ModuleBuildFn = fn() -> ModuleTy;
-
-#[dynamic]
-pub(crate) static mut MODULE_FACTORY: HashMap<&'static str, ModuleBuildFn> = HashMap::new();
+pub(crate) static mut MODULES: Lazy<HashMap<ModuleId, Box<dyn Module>>> =
+    Lazy::new(HashMap::new);
 
 /// Register a module with its identifier and builder.
 ///
 /// Normally users should not use this method directly,
 /// and please use [`register_module`] instead.
-pub fn register(id: &'static str, f: ModuleBuildFn) {
+pub fn register<T, F>(id: &'static str, f: F)
+where
+    T: Module + 'static,
+    F: Fn() -> T + 'static,
+{
     // println!(
     //     "{}: Module '{}' is registered",
     //     "info".bright_green().bold(),
     //     id
     // );
-    if MODULE_FACTORY.write().insert(id, f).is_some() {
+    let f = move || -> Box<dyn Module> {
+        let m = f();
+        Box::new(m)
+    };
+
+    if unsafe { MODULE_FACTORY.insert(id, Box::new(f)).is_some() } {
         println!(
             "{}: Module '{}' has already been registered",
             "warning".bright_yellow().bold(),
             id
         );
     }
+}
+
+pub fn build_module(name: &str) -> ModuleId {
+    let m = unsafe { MODULE_FACTORY.get(&name).unwrap()() };
+    let id = unsafe { MODULES.len() };
+    unsafe { MODULES.insert(id, m) };
+    id
+}
+
+#[inline]
+pub fn get_module(id: ModuleId) -> Option<&'static dyn Module> {
+    unsafe { MODULES.get(&id).map(|m| m.as_ref()) }
 }
 
 #[cfg(test)]
@@ -49,19 +62,17 @@ mod test {
     fn test_register_module() {
         pub struct Foo;
         impl Foo {
-            fn new() -> ModuleTy {
-                Box::new(Foo)
+            fn new() -> Self {
+                Foo
             }
         }
         impl Module for Foo {}
 
         register_module!(Foo, Foo::new);
         // register_module!(Foo, Foo::new);  // can't register twice; shouldn't compile
-        register_module!(Foo, Foo::new, "Foo2");
 
-        let m = MODULE_FACTORY.read();
-
-        m.get("Foo").expect("Foo should be registered");
-        m.get("Foo2").expect("Foo2 should be registered");
+        unsafe {
+            MODULE_FACTORY.get("Foo").expect("Foo should be registered");
+        }
     }
 }

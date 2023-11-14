@@ -1,3 +1,3 @@
 [workspace]
-members = ["omnistack", "omnistack-core"]
+members = ["omnistack", "omnistack-core", "omnistack-sys"]
 resolver = "2"

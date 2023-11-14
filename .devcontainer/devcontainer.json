@@ -9,6 +9,7 @@
 		"ghcr.io/devcontainers/features/rust:1": {}
 	},
 	"runArgs": [
+		"--cpus=2",
 		"--privileged"
 	],
 	"postStartCommand": "bash /tmp/enable-hugepages.sh && git config --global --add safe.directory /workspaces/omnistack",
