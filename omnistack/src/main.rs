@@ -1,23 +1,30 @@
+use std::time::Instant;
+
 use omnistack_core::prelude::*;
 
-struct Node1;
+struct Node1 {
+    last: Instant
+}
+
 struct Node2;
 
 impl Module for Node1 {
-    fn tick(&self, ctx: &Context, now: std::time::Instant) -> omnistack_core::modules::Result<()> {
-        let p = PacketPool::allocate().unwrap();
-        ctx.generate_downsteam_tasks(p);
-
-        println!("at {:?}: generated a packet", now);
+    fn tick(&mut self, ctx: &Context, now: Instant) -> omnistack_core::module_utils::Result<()> {
+        if now.duration_since(self.last).as_millis() > 500 {
+            let p = PacketPool::allocate().unwrap();
+            ctx.push_task_downstream(p);
+            println!("at {:?}: generated a packet", now);
+            self.last = now;
+        }
 
         Ok(())
     }
 }
 
 impl Module for Node2 {
-    fn process(&self, ctx: &Context, packet: *mut Packet) -> omnistack_core::modules::Result<()> {
+    fn process(&mut self, ctx: &Context, packet: *mut Packet) -> omnistack_core::module_utils::Result<()> {
         println!("Node2 received 1 packet");
-        ctx.generate_downsteam_tasks(packet);
+        ctx.push_task_downstream(packet);
 
         Ok(())
     }
@@ -25,7 +32,7 @@ impl Module for Node2 {
 
 impl Node1 {
     fn new() -> Self {
-        Node1
+        Node1 { last: Instant::now() }
     }
 }
 
@@ -42,16 +49,16 @@ fn main() {
     let config = r#"{
         "nodes": [
             { "id": "n1", "name": "Node1" },
-            { "id": "nic", "name": "Nic" },
-            { "id": "n2", "name": "Node2" }
+            { "id": "n2", "name": "Node2" },
+            { "id": "dpdk", "name": "Dpdk" }
         ],
         "edges": [
-            ["n1", "nic"],
-            ["nic", "n1"],
             ["n1", "n2"],
-            ["n2", "nic"]
+            ["n2", "dpdk"]
         ]
     }"#;
 
     Engine::run(config).expect("failed to boot engine");
+
+    // todo: start the omnistack server only once (lock file?)
 }

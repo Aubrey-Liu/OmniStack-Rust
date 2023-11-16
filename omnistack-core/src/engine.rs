@@ -7,8 +7,7 @@ use core_affinity::CoreId;
 use crossbeam::channel::{bounded, Receiver, TryRecvError};
 use crossbeam::deque::{Stealer, Worker as TaskQueue};
 
-use crate::modules::factory::{build_module, get_module, MODULE_FACTORY};
-use crate::modules::{ModuleId, Result};
+use crate::module_utils::*;
 use crate::packet::{Packet, PacketPool};
 use crate::prelude::Module;
 
@@ -27,6 +26,7 @@ impl PartialEq for Link {
 
 pub struct Engine;
 
+#[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Task {
     pub data: *mut Packet,
@@ -42,24 +42,25 @@ struct Worker {
     ctrl_ch: Receiver<CtrlMsg>,
 }
 
-#[derive(Clone)]
-struct Node {
-    module: &'static dyn Module,
+pub(crate) struct Node {
+    module: &'static mut dyn Module,
     out_links: Vec<Link>, // todo: smallvec?
 }
 
 unsafe impl Send for Node {}
 
-pub struct Context<'a> {
-    node: &'a Node,
-    tasks: &'a TaskQueue<Task>,
+pub struct Context {
+    pub(crate) node: *const Node,
+    pub(crate) tq: *const TaskQueue<Task>,
 }
 
-impl Context<'_> {
-    pub fn generate_downsteam_tasks(&self, data: *mut Packet) {
-        unsafe { data.as_mut().unwrap().refcnt += self.node.out_links.len() - 1 };
+impl Context {
+    pub fn push_task_downstream(&self, data: *mut Packet) {
+        let links = unsafe { &(&*self.node).out_links };
 
-        for link in &self.node.out_links {
+        unsafe { data.as_mut().unwrap().refcnt += links.len() - 1 };
+
+        for link in links {
             self.push_task(Task {
                 data,
                 node_id: link.to,
@@ -68,7 +69,7 @@ impl Context<'_> {
     }
 
     pub fn push_task(&self, task: Task) {
-        self.tasks.push(task)
+        unsafe { (&*self.tq).push(task) }
     }
 }
 
@@ -80,14 +81,17 @@ pub enum CtrlMsg {
 unsafe impl Send for CtrlMsg {}
 
 impl Engine {
-    const NUM_CPUS: usize = 2; // todo: remove hardcode
+    const NUM_CPUS: usize = 4; // todo: remove hardcode
 
     pub fn run(config: &str) -> Result<()> {
         PacketPool::init(0);
 
-        let graph = Self::build_graph(config);
+        let mut graphs = Vec::new();
+        for _ in 0..Self::NUM_CPUS {
+            graphs.push(Self::build_graph(config))
+        }
 
-        let mut workers = Self::run_workers(graph)?;
+        let mut workers = Self::run_workers(graphs)?;
 
         while let Some(t) = workers.pop() {
             t.join().expect("error joining a thread");
@@ -174,7 +178,7 @@ impl Engine {
         graph
     }
 
-    fn run_workers(nodes: Vec<Node>) -> Result<Vec<JoinHandle<()>>> {
+    fn run_workers(graphs: Vec<Vec<Node>>) -> Result<Vec<JoinHandle<()>>> {
         let mut threads = Vec::new();
         let mut ctrl_chs = Vec::new();
 
@@ -189,9 +193,13 @@ impl Engine {
             })
             .collect();
 
-        for ((id, st), tq) in (0..Self::NUM_CPUS).zip(stealers).zip(task_queues) {
-            let (sd, rv) = bounded(1024);
-            let worker = Worker::new(nodes.clone(), tq, st, rv, id);
+        for (((id, gp), tq), st) in (0..Self::NUM_CPUS)
+            .zip(graphs)
+            .zip(task_queues)
+            .zip(stealers)
+        {
+            let (sd, rv) = bounded(1);
+            let mut worker = Worker::new(gp, tq, st, rv, id);
 
             threads.push(std::thread::spawn(move || {
                 core_affinity::set_for_current(CoreId { id });
@@ -235,7 +243,7 @@ impl Worker {
         }
     }
 
-    pub fn run(&self) -> Result<()> {
+    pub fn run(&mut self) -> Result<()> {
         loop {
             while let Some(job) = self.find_job() {
                 self.process_job(job)?;
@@ -246,13 +254,13 @@ impl Worker {
                     CtrlMsg::ShutDown => break,
                 },
                 Err(TryRecvError::Empty) => {
-                    for (id, node) in self.nodes.iter().enumerate() {
-                        // todo: make a context
-                        let ctx = Context {
-                            node: self.nodes.get(id).unwrap(),
-                            tasks: &self.task_queue,
-                        };
-                        node.module.tick(&ctx, Instant::now())?;
+                    for id in 0..self.nodes.len() {
+                        let ctx = self.make_context(id);
+                        self.nodes
+                            .get_mut(id)
+                            .unwrap()
+                            .module
+                            .tick(&ctx, Instant::now())?;
                     }
                 }
                 Err(TryRecvError::Disconnected) => break,
@@ -271,14 +279,21 @@ impl Worker {
         })
     }
 
-    fn process_job(&self, job: Task) -> Result<()> {
-        let node = self.nodes.get(job.node_id).unwrap();
+    fn process_job(&mut self, job: Task) -> Result<()> {
+        let node = self.nodes.get_mut(job.node_id).unwrap();
         let ctx = Context {
-            node,
-            tasks: &self.task_queue,
+            node: node as *const _,
+            tq: &self.task_queue,
         };
 
         node.module.process(&ctx, job.data)
+    }
+
+    fn make_context(&self, node_id: NodeId) -> Context {
+        Context {
+            node: self.nodes.get(node_id).unwrap() as *const _,
+            tq: &self.task_queue,
+        }
     }
 }
 

@@ -11,7 +11,7 @@ pub struct Packet {
     pub refcnt: usize,
 }
 
-const PACKET_BUF_SIZE: usize = 1500;
+pub const PACKET_BUF_SIZE: usize = 1500;
 const PACKET_POOL_CAP: usize = 65536;
 
 pub struct PacketPool(Mutex<MemoryPool<Packet>>);

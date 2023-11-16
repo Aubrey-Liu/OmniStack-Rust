@@ -25,17 +25,17 @@ impl<T> MemoryPool<T> {
     pub fn init(&mut self, capacity: usize, core_id: i32) {
         let arg0 = CString::new("").unwrap();
         let argv = [arg0.as_ptr()];
-        let ret = unsafe { omnistack_sys::rte_eal_init(1, argv.as_ptr().cast()) };
+        let ret = unsafe { crate::ffi::rte_eal_init(1, argv.as_ptr().cast()) };
         if ret != 0 {
             panic!("failed to init dpdk");
         }
 
         self.data = unsafe {
-            omnistack_sys::rte_malloc_socket(
+            crate::ffi::rte_malloc_socket(
                 std::ptr::null(),
                 std::mem::size_of::<Block<T>>() * capacity,
                 std::mem::align_of::<Block<T>>() as c_uint,
-                omnistack_sys::numa_node_of_cpu(core_id),
+                crate::ffi::numa_node_of_cpu(core_id),
             ).cast()
         };
 
