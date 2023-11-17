@@ -12,10 +12,18 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 // todo: design errors
 #[derive(Debug, Error)]
-pub enum Error {}
+pub enum Error {
+    #[error("failed to init dpdk")]
+    DpdkInitErr,
+
+    #[error("unknown errors")]
+    Unknown
+}
 
 pub trait Module: Send {
-    fn init(&mut self) {}
+    fn init(&mut self) -> Result<()> {
+        Ok(())
+    }
 
     /// process a packet
     #[allow(unused_variables)]

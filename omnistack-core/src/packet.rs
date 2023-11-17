@@ -27,8 +27,8 @@ impl PacketPool {
         &PACKET_POOL
     }
 
-    pub fn init(core_id: i32) {
-        Self::get().0.lock().unwrap().init(PACKET_POOL_CAP, core_id);
+    pub fn init(core_num: usize) {
+        Self::get().0.lock().unwrap().init(PACKET_POOL_CAP, core_num);
     }
 
     pub fn allocate() -> Option<*mut Packet> {

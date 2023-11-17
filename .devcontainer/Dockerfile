@@ -13,7 +13,8 @@ RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
 
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends gcc-10 g++-10 libjsoncpp-dev \
-       python3 python3-pip python3-setuptools python3-wheel ninja-build \
+       python3 python3-pip python3-setuptools python3-wheel ninja-build pciutils \
+       kmod \
     && pip3 install meson pyelftools
 
 RUN wget https://fast.dpdk.org/rel/dpdk-21.11.5.tar.xz \

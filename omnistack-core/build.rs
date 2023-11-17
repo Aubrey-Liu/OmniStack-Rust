@@ -11,5 +11,6 @@ fn main() {
     cc::Build::new()
         .files(c_files)
         .include("src")
+        .flag_if_supported("-mssse3")
         .compile("omnistack-clib");
 }

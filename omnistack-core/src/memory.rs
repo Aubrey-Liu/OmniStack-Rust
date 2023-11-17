@@ -22,21 +22,27 @@ impl<T> MemoryPool<T> {
         }
     }
 
-    pub fn init(&mut self, capacity: usize, core_id: i32) {
-        let arg0 = CString::new("").unwrap();
-        let argv = [arg0.as_ptr()];
-        let ret = unsafe { crate::ffi::rte_eal_init(1, argv.as_ptr().cast()) };
-        if ret != 0 {
-            panic!("failed to init dpdk");
+    // todo: local packet pool
+    pub fn init(&mut self, capacity: usize, _core_num: usize) {
+        extern "C" {
+            fn rte_malloc_socket(
+                ty: *const c_char,
+                size: usize,
+                align: c_uint,
+                socket: c_int,
+            ) -> *mut c_void;
+
+            fn numa_node_of_cpu(cpu: c_int) -> c_int;
         }
 
         self.data = unsafe {
-            crate::ffi::rte_malloc_socket(
+            rte_malloc_socket(
                 std::ptr::null(),
                 std::mem::size_of::<Block<T>>() * capacity,
                 std::mem::align_of::<Block<T>>() as c_uint,
-                crate::ffi::numa_node_of_cpu(core_id),
-            ).cast()
+                numa_node_of_cpu(0),
+            )
+            .cast()
         };
 
         self.len = capacity;

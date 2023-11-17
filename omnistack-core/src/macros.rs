@@ -21,7 +21,9 @@ macro_rules! module_cbindgen {
                 $crate::paste! {
                     #[allow(unused, improper_ctypes)]
                     #[no_mangle]
-                    pub(crate) fn [<$prefix _init>](module: *mut super::$ty);
+                    pub(crate) fn [<$prefix _init>](
+                        module: *mut super::$ty,
+                    ) -> ::std::ffi::c_int;
                 }
 
                 $crate::paste! {

@@ -1,5 +1,7 @@
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::ffi::*;
+use std::mem::transmute;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
@@ -84,7 +86,18 @@ impl Engine {
     const NUM_CPUS: usize = 4; // todo: remove hardcode
 
     pub fn run(config: &str) -> Result<()> {
-        PacketPool::init(0);
+        extern "C" {
+            fn rte_eal_init(argc: c_int, argv: *mut *mut c_char) -> c_int;
+        }
+
+        let arg0 = CString::new("").unwrap();
+        let argv = [arg0.as_ptr()];
+        let ret = unsafe { rte_eal_init(1, transmute(argv)) };
+        if ret < 0 {
+            return Err(Error::DpdkInitErr);
+        }
+
+        PacketPool::init(Self::NUM_CPUS);
 
         let mut graphs = Vec::new();
         for _ in 0..Self::NUM_CPUS {
@@ -129,6 +142,7 @@ impl Engine {
             );
 
             let new_node = Node::new(build_module(name));
+            new_node.module.init().unwrap();
             let node_id = graph.len();
             node_ids.insert(id, node_id);
             graph.insert(node_id, new_node);
