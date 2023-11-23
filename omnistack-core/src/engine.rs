@@ -51,16 +51,20 @@ pub(crate) struct Node {
 
 unsafe impl Send for Node {}
 
+#[repr(C)]
 pub struct Context {
-    pub(crate) node: *const Node,
-    pub(crate) tq: *const TaskQueue<Task>,
+    pub node: *const c_void,
+    pub tq: *const c_void,
+    pub pktpool: PacketPool,
 }
 
 impl Context {
-    pub fn push_task_downstream(&self, data: *mut Packet) {
-        let links = unsafe { &(&*self.node).out_links };
+    #[no_mangle]
+    pub extern "C" fn push_task_downstream(&self, data: *mut Packet) {
+        let node: *const Node = self.node.cast();
+        let links = unsafe { &(&*node).out_links };
 
-        unsafe { data.as_mut().unwrap().refcnt += links.len() - 1 };
+        unsafe { (&mut *data).refcnt += links.len() - 1 };
 
         for link in links {
             self.push_task(Task {
@@ -70,8 +74,20 @@ impl Context {
         }
     }
 
-    pub fn push_task(&self, task: Task) {
-        unsafe { (&*self.tq).push(task) }
+    #[no_mangle]
+    pub extern "C" fn push_task(&self, task: Task) {
+        let tq: *const TaskQueue<Task> = self.tq.cast();
+        unsafe { (&*tq).push(task) }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn packet_alloc(&self) -> Option<&mut Packet> {
+        self.pktpool.allocate()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn packet_dealloc(&self, packet: *mut Packet) {
+        self.pktpool.deallocate(packet)
     }
 }
 
@@ -83,24 +99,18 @@ pub enum CtrlMsg {
 unsafe impl Send for CtrlMsg {}
 
 impl Engine {
-    const NUM_CPUS: usize = 4; // todo: remove hardcode
+    const NUM_CORES: usize = 1; // todo: remove hardcode
 
     pub fn run(config: &str) -> Result<()> {
-        extern "C" {
-            fn rte_eal_init(argc: c_int, argv: *mut *mut c_char) -> c_int;
-        }
-
         let arg0 = CString::new("").unwrap();
         let argv = [arg0.as_ptr()];
-        let ret = unsafe { rte_eal_init(1, transmute(argv)) };
+        let ret = unsafe { omnistack_sys::dpdk::eal::rte_eal_init(1, transmute(argv)) };
         if ret < 0 {
             return Err(Error::DpdkInitErr);
         }
 
-        PacketPool::init(Self::NUM_CPUS);
-
         let mut graphs = Vec::new();
-        for _ in 0..Self::NUM_CPUS {
+        for _ in 0..Self::NUM_CORES {
             graphs.push(Self::build_graph(config))
         }
 
@@ -196,8 +206,10 @@ impl Engine {
         let mut threads = Vec::new();
         let mut ctrl_chs = Vec::new();
 
-        let task_queues: Vec<_> = (0..Self::NUM_CPUS).map(|_| TaskQueue::new_fifo()).collect();
-        let stealers: Vec<_> = (0..Self::NUM_CPUS)
+        let task_queues: Vec<_> = (0..Self::NUM_CORES)
+            .map(|_| TaskQueue::new_fifo())
+            .collect();
+        let stealers: Vec<_> = (0..Self::NUM_CORES)
             .map(|id| {
                 task_queues
                     .iter()
@@ -207,7 +219,7 @@ impl Engine {
             })
             .collect();
 
-        for (((id, gp), tq), st) in (0..Self::NUM_CPUS)
+        for (((id, gp), tq), st) in (0..Self::NUM_CORES)
             .zip(graphs)
             .zip(task_queues)
             .zip(stealers)
@@ -260,7 +272,7 @@ impl Worker {
     pub fn run(&mut self) -> Result<()> {
         loop {
             while let Some(job) = self.find_job() {
-                self.process_job(job)?;
+                self.process_with_ctx(job.node_id, job.data)?;
             }
 
             match self.ctrl_ch.try_recv() {
@@ -268,13 +280,8 @@ impl Worker {
                     CtrlMsg::ShutDown => break,
                 },
                 Err(TryRecvError::Empty) => {
-                    for id in 0..self.nodes.len() {
-                        let ctx = self.make_context(id);
-                        self.nodes
-                            .get_mut(id)
-                            .unwrap()
-                            .module
-                            .tick(&ctx, Instant::now())?;
+                    for node_id in 0..self.nodes.len() {
+                        self.tick_with_ctx(node_id)?;
                     }
                 }
                 Err(TryRecvError::Disconnected) => break,
@@ -293,21 +300,26 @@ impl Worker {
         })
     }
 
-    fn process_job(&mut self, job: Task) -> Result<()> {
-        let node = self.nodes.get_mut(job.node_id).unwrap();
+    fn process_with_ctx(&mut self, node_id: NodeId, pkt: *mut Packet) -> Result<()> {
+        let node = self.nodes.get_mut(node_id).unwrap();
         let ctx = Context {
-            node: node as *const _,
-            tq: &self.task_queue,
+            node: &node as *const _ as *const _,
+            tq: &self.task_queue as *const _ as *const _,
+            pktpool: PacketPool::get_or_create("mp"),
         };
 
-        node.module.process(&ctx, job.data)
+        node.module.process(&ctx, pkt)
     }
 
-    fn make_context(&self, node_id: NodeId) -> Context {
-        Context {
-            node: self.nodes.get(node_id).unwrap() as *const _,
-            tq: &self.task_queue,
-        }
+    fn tick_with_ctx(&mut self, node_id: NodeId) -> Result<()> {
+        let node = self.nodes.get_mut(node_id).unwrap();
+        let ctx = Context {
+            node: &node as *const _ as *const _,
+            tq: &self.task_queue as *const _ as *const _,
+            pktpool: PacketPool::get_or_create("mp"),
+        };
+
+        node.module.tick(&ctx, Instant::now())
     }
 }
 

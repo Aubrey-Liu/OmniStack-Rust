@@ -1,50 +1,57 @@
-use std::sync::Mutex;
+use std::ffi::*;
 
-use crate::memory::MemoryPool;
+use omnistack_sys::dpdk::packet as sys;
 
 pub type PacketId = usize;
+
+pub const PACKET_BUF_SIZE: usize = 1500;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Packet {
     pub buf: [u8; PACKET_BUF_SIZE],
     pub refcnt: usize,
+    mbuf: *mut sys::rte_mbuf
 }
 
-pub const PACKET_BUF_SIZE: usize = 1500;
-const PACKET_POOL_CAP: usize = 65536;
-
-pub struct PacketPool(Mutex<MemoryPool<Packet>>);
-
-unsafe impl Send for PacketPool {}
+#[repr(C)]
+pub struct PacketPool {
+    mempool: *mut sys::rte_mempool
+}
 
 // todo: is lock necessary? faster mutex?
 
 impl PacketPool {
-    fn get() -> &'static PacketPool {
-        static PACKET_POOL: PacketPool = PacketPool(Mutex::new(MemoryPool::empty()));
+    pub fn get_or_create(name: &str) -> Self {
+        let name = CString::new(format!("omnistack-{name}")).unwrap();
 
-        &PACKET_POOL
+        Self {
+            mempool: unsafe { sys::pktpool_create(name.as_ptr()) },
+        }
     }
 
-    pub fn init(core_num: usize) {
-        Self::get().0.lock().unwrap().init(PACKET_POOL_CAP, core_num);
+    pub fn allocate(&self) -> Option<&'static mut Packet> {
+        let raw_pkt = unsafe {
+            sys::pktpool_alloc(self.mempool)
+        };
+
+        if raw_pkt.m.is_null() {
+            return None;
+        }
+
+        let pkt = unsafe { &mut *(raw_pkt.data.cast::<Packet>()) };
+        pkt.mbuf = raw_pkt.m;
+        pkt.refcnt = 1;
+
+        Some(pkt)
     }
 
-    pub fn allocate() -> Option<*mut Packet> {
-        Self::get().0.lock().unwrap().allocate().map(|packet| {
-            unsafe { packet.as_mut().unwrap().refcnt = 1 };
-            packet
-        })
-    }
-
-    pub fn deallocate(packet: *mut Packet) {
-        let packet = unsafe { packet.as_mut().unwrap() };
-        debug_assert!(packet.refcnt != 0, "doubly free a packet");
+    pub fn deallocate(&self, packet: *mut Packet) {
+        let packet = unsafe { &mut *packet };
 
         packet.refcnt -= 1;
         if packet.refcnt == 0 {
-            Self::get().0.lock().unwrap().deallocate(packet as *mut _);
+            unsafe { sys::pktpool_dealloc(packet.mbuf) };
             println!("a packet is freed");
         }
     }
