@@ -1,22 +1,23 @@
 use std::ffi::*;
 
-use omnistack_sys::dpdk::packet as sys;
+use omnistack_sys::dpdk as sys;
 
 pub type PacketId = usize;
 
 pub const PACKET_BUF_SIZE: usize = 1500;
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Packet {
-    pub buf: [u8; PACKET_BUF_SIZE],
     pub refcnt: usize,
-    mbuf: *mut sys::rte_mbuf
+    mbuf: *mut sys::rte_mbuf,
+
+    pub buf: &'static [u8; PACKET_BUF_SIZE],
 }
 
 #[repr(C)]
 pub struct PacketPool {
-    mempool: *mut sys::rte_mempool
+    mempool: *mut sys::rte_mempool,
 }
 
 // todo: is lock necessary? faster mutex?
@@ -30,10 +31,8 @@ impl PacketPool {
         }
     }
 
-    pub fn allocate(&self) -> Option<&'static mut Packet> {
-        let raw_pkt = unsafe {
-            sys::pktpool_alloc(self.mempool)
-        };
+    pub fn allocate(&self) -> Option<&mut Packet> {
+        let raw_pkt = unsafe { sys::pktpool_alloc(self.mempool) };
 
         if raw_pkt.m.is_null() {
             return None;

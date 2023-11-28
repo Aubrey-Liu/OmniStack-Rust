@@ -2,15 +2,17 @@ use std::time::Instant;
 
 use omnistack_core::prelude::*;
 
+#[derive(Debug)]
 struct Node1 {
     last: Instant
 }
 
+#[derive(Debug)]
 struct Node2;
 
 impl Module for Node1 {
     fn tick(&mut self, ctx: &Context, now: Instant) -> omnistack_core::module_utils::Result<()> {
-        if now.duration_since(self.last).as_millis() > 500 {
+        if now.duration_since(self.last).as_millis() > 1000 {
             let p = ctx.packet_alloc().unwrap();
             ctx.push_task_downstream(p);
             println!("at {:?}: generated a packet", now);

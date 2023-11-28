@@ -7,23 +7,17 @@ use std::time::Instant;
 
 use core_affinity::CoreId;
 use crossbeam::channel::{bounded, Receiver, TryRecvError};
-use crossbeam::deque::{Stealer, Worker as TaskQueue};
 
 use crate::module_utils::*;
 use crate::packet::{Packet, PacketPool};
-use crate::prelude::Module;
 
-type NodeId = usize;
+pub type NodeId = usize;
+pub type TaskQueue = crossbeam::deque::Worker<Task>;
+pub type TaskStealer = crossbeam::deque::Stealer<Task>;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Link {
     to: NodeId,
-}
-
-impl PartialEq for Link {
-    fn eq(&self, other: &Self) -> bool {
-        self.to == other.to
-    }
 }
 
 pub struct Engine;
@@ -39,13 +33,13 @@ unsafe impl Send for Task {}
 
 struct Worker {
     nodes: Vec<Node>,
-    task_queue: TaskQueue<Task>,
-    stealers: Vec<Stealer<Task>>,
+    task_queue: TaskQueue,
+    stealers: Vec<TaskStealer>,
     ctrl_ch: Receiver<CtrlMsg>,
 }
 
 pub(crate) struct Node {
-    module: &'static mut dyn Module,
+    module: Box<dyn Module>,
     out_links: Vec<Link>, // todo: smallvec?
 }
 
@@ -76,8 +70,8 @@ impl Context {
 
     #[no_mangle]
     pub extern "C" fn push_task(&self, task: Task) {
-        let tq: *const TaskQueue<Task> = self.tq.cast();
-        unsafe { (&*tq).push(task) }
+        let tq: *const TaskQueue = self.tq.cast();
+        unsafe { (&*tq).push(task) };
     }
 
     #[no_mangle]
@@ -99,7 +93,7 @@ pub enum CtrlMsg {
 unsafe impl Send for CtrlMsg {}
 
 impl Engine {
-    const NUM_CORES: usize = 1; // todo: remove hardcode
+    const NUM_CPUS: usize = 1; // todo: remove hardcode
 
     pub fn run(config: &str) -> Result<()> {
         let arg0 = CString::new("").unwrap();
@@ -110,7 +104,7 @@ impl Engine {
         }
 
         let mut graphs = Vec::new();
-        for _ in 0..Self::NUM_CORES {
+        for _ in 0..Self::NUM_CPUS {
             graphs.push(Self::build_graph(config))
         }
 
@@ -146,12 +140,12 @@ impl Engine {
 
             assert!(!node_ids.contains_key(&id), "duplicate node id `{}`", id);
             assert!(
-                unsafe { MODULE_FACTORY.contains_key(&name) },
+                Factory::get().contains_name(&name),
                 "module name `{}` doesn't exist",
                 name
             );
 
-            let new_node = Node::new(build_module(name));
+            let mut new_node = Node::new(build_module(name));
             new_node.module.init().unwrap();
             let node_id = graph.len();
             node_ids.insert(id, node_id);
@@ -206,10 +200,8 @@ impl Engine {
         let mut threads = Vec::new();
         let mut ctrl_chs = Vec::new();
 
-        let task_queues: Vec<_> = (0..Self::NUM_CORES)
-            .map(|_| TaskQueue::new_fifo())
-            .collect();
-        let stealers: Vec<_> = (0..Self::NUM_CORES)
+        let task_queues: Vec<_> = (0..Self::NUM_CPUS).map(|_| TaskQueue::new_fifo()).collect();
+        let stealers: Vec<_> = (0..Self::NUM_CPUS)
             .map(|id| {
                 task_queues
                     .iter()
@@ -219,7 +211,7 @@ impl Engine {
             })
             .collect();
 
-        for (((id, gp), tq), st) in (0..Self::NUM_CORES)
+        for (((id, gp), tq), st) in (0..Self::NUM_CPUS)
             .zip(graphs)
             .zip(task_queues)
             .zip(stealers)
@@ -254,8 +246,8 @@ impl Worker {
 
     pub fn new(
         nodes: Vec<Node>,
-        task_queue: TaskQueue<Task>,
-        stealers: Vec<Stealer<Task>>,
+        task_queue: TaskQueue,
+        stealers: Vec<TaskStealer>,
         ctrl_ch: Receiver<CtrlMsg>,
         core_id: usize,
     ) -> Self {
@@ -301,32 +293,28 @@ impl Worker {
     }
 
     fn process_with_ctx(&mut self, node_id: NodeId, pkt: *mut Packet) -> Result<()> {
-        let node = self.nodes.get_mut(node_id).unwrap();
-        let ctx = Context {
-            node: &node as *const _ as *const _,
-            tq: &self.task_queue as *const _ as *const _,
-            pktpool: PacketPool::get_or_create("mp"),
-        };
-
-        node.module.process(&ctx, pkt)
+        let ctx = self.make_context(node_id);
+        self.nodes[node_id].module.process(&ctx, pkt)
     }
 
     fn tick_with_ctx(&mut self, node_id: NodeId) -> Result<()> {
-        let node = self.nodes.get_mut(node_id).unwrap();
-        let ctx = Context {
-            node: &node as *const _ as *const _,
+        let ctx = self.make_context(node_id);
+        self.nodes[node_id].module.tick(&ctx, Instant::now())
+    }
+
+    fn make_context(&self, node_id: NodeId) -> Context {
+        Context {
+            node: &self.nodes[node_id] as *const _ as *const _,
             tq: &self.task_queue as *const _ as *const _,
             pktpool: PacketPool::get_or_create("mp"),
-        };
-
-        node.module.tick(&ctx, Instant::now())
+        }
     }
 }
 
 impl Node {
-    pub fn new(module_id: ModuleId) -> Self {
+    pub fn new(module: Box<dyn Module>) -> Self {
         Self {
-            module: get_module(module_id).unwrap(),
+            module,
             out_links: Vec::new(),
         }
     }

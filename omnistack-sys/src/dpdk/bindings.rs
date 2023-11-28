@@ -559,3 +559,6 @@ extern "C" {
 extern "C" {
     pub fn pktpool_dealloc(m: *mut rte_mbuf);
 }
+extern "C" {
+    pub fn port_init(port: u16, mbuf_pool: *mut rte_mempool) -> ::std::os::raw::c_int;
+}

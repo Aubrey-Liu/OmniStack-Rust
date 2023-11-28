@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::time::Instant;
 
 use once_cell::sync::Lazy;
@@ -17,7 +18,7 @@ pub enum Error {
     DpdkInitErr,
 
     #[error("unknown errors")]
-    Unknown
+    Unknown,
 }
 
 pub trait Module: Send {
@@ -38,12 +39,27 @@ pub trait Module: Send {
     }
 }
 
-type ModuleBuildFn = dyn Fn() -> Box<dyn Module>;
+pub struct Factory {
+    builders: HashMap<&'static str, ModuleBuildFn>,
+}
 
-pub(crate) static mut MODULE_FACTORY: Lazy<HashMap<&'static str, Box<ModuleBuildFn>>> =
-    Lazy::new(HashMap::new);
+impl Factory {
+    pub fn get() -> &'static mut Self {
+        static mut FACTORY: Lazy<Factory> = Lazy::new(|| Factory {
+            builders: HashMap::new(),
+        });
 
-pub(crate) static mut MODULES: Lazy<HashMap<ModuleId, Box<dyn Module>>> = Lazy::new(HashMap::new);
+        unsafe { &mut FACTORY }
+    }
+
+    pub fn contains_name(&self, name: &str) -> bool {
+        self.builders.contains_key(name)
+    }
+}
+
+type ModuleBuildFn = Box<dyn Fn() -> Box<dyn Module>>;
+
+// todo: load dynamic libraries
 
 /// Register a module with its identifier and builder.
 ///
@@ -54,24 +70,20 @@ where
     T: Module + 'static,
     F: Fn() -> T + 'static,
 {
-    let f = move || -> Box<dyn Module> {
+    let f: ModuleBuildFn = Box::new(move || -> Box<dyn Module> {
         let m = f();
         Box::new(m)
-    };
+    });
 
-    if unsafe { MODULE_FACTORY.insert(id, Box::new(f)).is_some() } {
+    if Factory::get()
+        .builders
+        .insert(id, Box::new(f))
+        .is_some()
+    {
         println!("warning: Module '{}' has already been registered", id);
     }
 }
 
-pub fn build_module(name: &str) -> ModuleId {
-    let m = unsafe { MODULE_FACTORY.get(&name).unwrap()() };
-    let id = unsafe { MODULES.len() };
-    unsafe { MODULES.insert(id, m) };
-    id
-}
-
-#[inline(always)]
-pub fn get_module(id: ModuleId) -> Option<&'static mut dyn Module> {
-    unsafe { MODULES.get_mut(&id).map(|m| m.as_mut()) }
+pub(crate) fn build_module(name: &str) -> Box<dyn Module> {
+    Factory::get().builders.get(&name).unwrap()()
 }

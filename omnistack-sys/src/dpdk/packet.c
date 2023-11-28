@@ -17,7 +17,7 @@ struct rte_mempool *pktpool_create(const char *name) {
     if (!mempool) {
         // todo: set socket id
         mempool = rte_pktmbuf_pool_create(name, NUM_MBUFS, MBUF_CACHE_SIZE, 0,
-                                          RTE_MBUF_DEFAULT_DATAROOM, 0);
+                                          RTE_MBUF_DEFAULT_BUF_SIZE, 0);
     }
 
     return mempool;

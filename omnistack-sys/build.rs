@@ -1,5 +1,5 @@
 fn main() {
-    let libs = ["src/dpdk/packet.c"];
+    let libs = ["src/dpdk/packet.c", "src/dpdk/device.c"];
 
     for l in libs {
         println!("cargo:rerun-if-changed={l}");
@@ -16,12 +16,12 @@ fn main() {
 
     bindgen::builder()
         .header("src/dpdk/packet.c")
-        .allowlist_function("pktpool_create")
-        .allowlist_function("pktpool_alloc")
-        .allowlist_function("pktpool_dealloc")
+        .header("src/dpdk/device.c")
+        .allowlist_function("pktpool.*")
+        .allowlist_function("port_init")
         .layout_tests(false)
         .generate()
         .unwrap()
-        .write_to_file("src/dpdk/packet.rs")
+        .write_to_file("src/dpdk/bindings.rs")
         .unwrap();
 }
