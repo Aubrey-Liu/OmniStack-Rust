@@ -18,7 +18,7 @@ fn main() {
         .header("src/dpdk/packet.c")
         .header("src/dpdk/device.c")
         .allowlist_function("pktpool.*")
-        .allowlist_function("port_init")
+        .allowlist_function("dev.*")
         .layout_tests(false)
         .generate()
         .unwrap()

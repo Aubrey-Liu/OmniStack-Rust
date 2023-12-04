@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-omnistack-core = { version = "*", path = "../omnistack-core" }
+omnistack-core = { path = "../omnistack-core" }
+omnistack-sys = { path = "../omnistack-sys" }
 
 [features]

@@ -3,11 +3,12 @@
 
 #define RX_RING_SIZE 1024
 #define TX_RING_SIZE 1024
+#define BURST_SIZE 8
 
-int port_init(uint16_t port, struct rte_mempool *mbuf_pool)
+int dev_port_init(uint16_t port, uint16_t num_queues, struct rte_mempool *mbuf_pool)
 {
     struct rte_eth_conf port_conf;
-    const uint16_t rx_rings = 1, tx_rings = 1;
+    const uint16_t rx_rings = num_queues, tx_rings = num_queues;
     uint16_t nb_rxd = RX_RING_SIZE;
     uint16_t nb_txd = TX_RING_SIZE;
     int retval;
@@ -73,9 +74,9 @@ int port_init(uint16_t port, struct rte_mempool *mbuf_pool)
     if (retval != 0)
         return retval;
 
-    // printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
-    // 		   " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n",
-    // 		port, RTE_ETHER_ADDR_BYTES(&addr));
+    printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
+           " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n",
+           port, RTE_ETHER_ADDR_BYTES(&addr));
 
     /* Enable RX in promiscuous mode for the Ethernet device. */
     retval = rte_eth_promiscuous_enable(port);
@@ -84,4 +85,19 @@ int port_init(uint16_t port, struct rte_mempool *mbuf_pool)
         return retval;
 
     return 0;
+}
+
+int dev_send_packet(uint16_t port, uint16_t queue, struct rte_mbuf *tx_bufs[], uint16_t n)
+{
+    uint16_t nb_tx = rte_eth_tx_burst(port, queue, tx_bufs, n);
+
+    return nb_tx;
+}
+
+int dev_recv_packet(uint16_t port, uint16_t queue, struct rte_mbuf *rx_bufs[], uint16_t n)
+{
+    uint16_t nb_rx = rte_eth_rx_burst(port, queue,
+                                      rx_bufs, n);
+
+    return nb_rx;
 }

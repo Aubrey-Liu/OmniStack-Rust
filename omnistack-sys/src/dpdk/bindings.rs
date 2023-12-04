@@ -544,21 +544,35 @@ pub struct rte_mbuf_ext_shared_info {
     pub fcb_opaque: *mut ::std::os::raw::c_void,
     pub refcnt: u16,
 }
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct RawPacket {
-    pub m: *mut rte_mbuf,
-    pub data: *mut ::std::os::raw::c_void,
-}
 extern "C" {
     pub fn pktpool_create(name: *const ::std::os::raw::c_char) -> *mut rte_mempool;
 }
 extern "C" {
-    pub fn pktpool_alloc(mp: *mut rte_mempool) -> RawPacket;
+    pub fn pktpool_alloc(mp: *mut rte_mempool) -> *mut rte_mbuf;
 }
 extern "C" {
     pub fn pktpool_dealloc(m: *mut rte_mbuf);
 }
 extern "C" {
-    pub fn port_init(port: u16, mbuf_pool: *mut rte_mempool) -> ::std::os::raw::c_int;
+    pub fn dev_port_init(
+        port: u16,
+        num_queues: u16,
+        mbuf_pool: *mut rte_mempool,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn dev_send_packet(
+        port: u16,
+        queue: u16,
+        tx_bufs: *mut *mut rte_mbuf,
+        n: u16,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn dev_recv_packet(
+        port: u16,
+        queue: u16,
+        rx_bufs: *mut *mut rte_mbuf,
+        n: u16,
+    ) -> ::std::os::raw::c_int;
 }

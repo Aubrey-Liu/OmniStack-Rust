@@ -1,34 +1,23 @@
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::time::Instant;
 
 use once_cell::sync::Lazy;
-use thiserror::Error;
 
 use crate::engine::Context;
 use crate::packet::Packet;
+use crate::Result;
 
 pub type ModuleId = usize;
-pub type Result<T> = std::result::Result<T, Error>;
 
-// todo: design errors
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("failed to init dpdk")]
-    DpdkInitErr,
-
-    #[error("unknown errors")]
-    Unknown,
-}
-
-pub trait Module: Send {
-    fn init(&mut self) -> Result<()> {
+pub trait Module {
+    #[allow(unused_variables)]
+    fn init(&mut self, ctx: &Context) -> Result<()> {
         Ok(())
     }
 
     /// process a packet
     #[allow(unused_variables)]
-    fn process(&mut self, ctx: &Context, packet: *mut Packet) -> Result<()> {
+    fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         Ok(())
     }
 
@@ -39,7 +28,7 @@ pub trait Module: Send {
     }
 }
 
-pub struct Factory {
+pub(crate) struct Factory {
     builders: HashMap<&'static str, ModuleBuildFn>,
 }
 

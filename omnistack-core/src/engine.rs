@@ -1,15 +1,16 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::*;
-use std::mem::transmute;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
 use core_affinity::CoreId;
 use crossbeam::channel::{bounded, Receiver, TryRecvError};
 
-use crate::module_utils::*;
+use crate::error::Error;
+use crate::module::*;
 use crate::packet::{Packet, PacketPool};
+use crate::Result;
 
 pub type NodeId = usize;
 pub type TaskQueue = crossbeam::deque::Worker<Task>;
@@ -46,7 +47,9 @@ pub(crate) struct Node {
 unsafe impl Send for Node {}
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct Context {
+    pub core_id: u16,
     pub node: *const c_void,
     pub tq: *const c_void,
     pub pktpool: PacketPool,
@@ -54,11 +57,11 @@ pub struct Context {
 
 impl Context {
     #[no_mangle]
-    pub extern "C" fn push_task_downstream(&self, data: *mut Packet) {
+    pub extern "C" fn push_task_downstream(&self, data: &mut Packet) {
         let node: *const Node = self.node.cast();
-        let links = unsafe { &(&*node).out_links };
+        let links = unsafe { &(*node).out_links };
 
-        unsafe { (&mut *data).refcnt += links.len() - 1 };
+        data.refcnt += links.len() - 1;
 
         for link in links {
             self.push_task(Task {
@@ -71,7 +74,7 @@ impl Context {
     #[no_mangle]
     pub extern "C" fn push_task(&self, task: Task) {
         let tq: *const TaskQueue = self.tq.cast();
-        unsafe { (&*tq).push(task) };
+        unsafe { (*tq).push(task) };
     }
 
     #[no_mangle]
@@ -92,16 +95,22 @@ pub enum CtrlMsg {
 
 unsafe impl Send for CtrlMsg {}
 
+fn dpdk_eal_init() -> Result<()> {
+    let arg0 = CString::new("").unwrap();
+    let mut argv = [arg0.as_ptr()];
+    let ret = unsafe { omnistack_sys::dpdk::eal::rte_eal_init(1, argv.as_mut_ptr().cast()) };
+    if ret < 0 {
+        return Err(Error::DpdkInitErr);
+    }
+
+    Ok(())
+}
+
 impl Engine {
     const NUM_CPUS: usize = 1; // todo: remove hardcode
 
     pub fn run(config: &str) -> Result<()> {
-        let arg0 = CString::new("").unwrap();
-        let argv = [arg0.as_ptr()];
-        let ret = unsafe { omnistack_sys::dpdk::eal::rte_eal_init(1, transmute(argv)) };
-        if ret < 0 {
-            return Err(Error::DpdkInitErr);
-        }
+        dpdk_eal_init()?;
 
         let mut graphs = Vec::new();
         for _ in 0..Self::NUM_CPUS {
@@ -140,13 +149,12 @@ impl Engine {
 
             assert!(!node_ids.contains_key(&id), "duplicate node id `{}`", id);
             assert!(
-                Factory::get().contains_name(&name),
+                Factory::get().contains_name(name),
                 "module name `{}` doesn't exist",
                 name
             );
 
-            let mut new_node = Node::new(build_module(name));
-            new_node.module.init().unwrap();
+            let new_node = Node::new(build_module(name));
             let node_id = graph.len();
             node_ids.insert(id, node_id);
             graph.insert(node_id, new_node);
@@ -262,9 +270,15 @@ impl Worker {
     }
 
     pub fn run(&mut self) -> Result<()> {
+        for id in 0..self.nodes.len() {
+            let ctx = self.make_context(id);
+            self.nodes[id].module.init(&ctx)?;
+        }
+
         loop {
             while let Some(job) = self.find_job() {
-                self.process_with_ctx(job.node_id, job.data)?;
+                let pkt = unsafe { job.data.as_mut().unwrap() };
+                self.process_with_ctx(job.node_id, pkt)?;
             }
 
             match self.ctrl_ch.try_recv() {
@@ -292,7 +306,7 @@ impl Worker {
         })
     }
 
-    fn process_with_ctx(&mut self, node_id: NodeId, pkt: *mut Packet) -> Result<()> {
+    fn process_with_ctx(&mut self, node_id: NodeId, pkt: &mut Packet) -> Result<()> {
         let ctx = self.make_context(node_id);
         self.nodes[node_id].module.process(&ctx, pkt)
     }
@@ -304,6 +318,7 @@ impl Worker {
 
     fn make_context(&self, node_id: NodeId) -> Context {
         Context {
+            core_id: Self::CORE_ID.get() as _,
             node: &self.nodes[node_id] as *const _ as *const _,
             tq: &self.task_queue as *const _ as *const _,
             pktpool: PacketPool::get_or_create("mp"),

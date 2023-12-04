@@ -1,51 +1,36 @@
-/// Register a module with its identifier and builder.
-/// The identifier can be user-costomized, or by default, the type's name.
 #[macro_export]
-macro_rules! register_module {
-    ($ty:ty, $buildfn:path) => {
+macro_rules! register_module_to {
+    ($ty:ident, $builder:path, $register:path) => {
         $crate::paste! {
             #[allow(non_snake_case)]
             #[$crate::constructor(65535)]
             extern "C" fn [<__register_ $ty>]() {
-                $crate::module_utils::register(stringify!($ty), $buildfn);
+                $register(stringify!($ty), $builder);
             }
         }
     };
 }
 
-// #[macro_export]
-// macro_rules! module_cbindgen {
-//     ($ty:ty, $prefix:ident) => {
-//         mod ffi {
-//             extern "C" {
-//                 $crate::paste! {
-//                     #[allow(unused, improper_ctypes)]
-//                     #[no_mangle]
-//                     pub(crate) fn [<$prefix _init>](
-//                         module: *mut super::$ty,
-//                     ) -> ::std::ffi::c_int;
-//                 }
+/// Register a module with its identifier and builder.
+/// The identifier can be user-costomized, or by default, the type's name.
+#[macro_export]
+macro_rules! register_module {
+    ($ty:ident) => {
+        $crate::register_module_to!($ty, $ty::new, $crate::module::register);
+    };
 
-//                 $crate::paste! {
-//                     #[allow(unused, improper_ctypes)]
-//                     #[no_mangle]
-//                     pub(crate) fn [<$prefix _process>](
-//                         module: *mut super::$ty,
-//                         ctx: *const $crate::engine::Context,
-//                         packet: *mut $crate::packet::Packet,
-//                     ) -> ::std::ffi::c_int;
-//                 }
+    ($ty:ident, $builder:path) => {
+        $crate::register_module_to!($ty, $builder, $crate::module::register);
+    };
+}
 
-//                 $crate::paste! {
-//                     #[allow(unused, improper_ctypes)]
-//                     #[no_mangle]
-//                     pub(crate) fn [<$prefix _tick>](
-//                         module: *mut super::$ty,
-//                         ctx: *const $crate::engine::Context,
-//                         packet: *mut $crate::packet::Packet,
-//                     ) -> ::std::ffi::c_int;
-//                 }
-//             }
-//         }
-//     };
-// }
+#[macro_export]
+macro_rules! register_adapter {
+    ($ty:ident) => {
+        $crate::register_module_to!($ty, $ty::new, $crate::io_module::register);
+    };
+
+    ($ty:ident, $builder:path) => {
+        $crate::register_module_to!($ty, $builder, $crate::io_module::register);
+    };
+}
