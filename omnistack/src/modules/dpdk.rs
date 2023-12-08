@@ -1,6 +1,7 @@
-use omnistack_core::{prelude::*, register_adapter};
+use omnistack_core::prelude::*;
 use omnistack_sys::dpdk as sys;
 
+// todo: default value is 32 (3 is for debugging)
 const BURST_SIZE: usize = 3;
 
 #[repr(C)]
@@ -21,7 +22,7 @@ impl Dpdk {
 
 impl IoAdapter for Dpdk {
     fn init(&mut self, ctx: &Context, port: u16, num_queues: u16) -> Result<()> {
-        let ret = unsafe { sys::dev_port_init(port, num_queues, ctx.pktpool.mempool) };
+        let ret = unsafe { sys::dev_port_init(port, num_queues, ctx.pktpool.pktpool) };
 
         if ret == 0 {
             Ok(())
@@ -31,19 +32,21 @@ impl IoAdapter for Dpdk {
     }
 
     // todo: buffer and flush
-    fn send(&mut self, _ctx: &Context, packet: &mut Packet) -> Result<()> {
+    fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         // set everything for mbuf
-        packet.mbuf.inc_data_off(packet.data_offset());
+        packet.mbuf.inc_data_off(packet.offset);
         packet.mbuf.set_data_len(packet.len());
         packet.mbuf.set_pkt_len(packet.len() as _);
 
-        // todo: set the length of l2, l3, l4 headers
         packet.mbuf.set_l2_len(packet.l2_header.length);
         packet.mbuf.set_l3_len(packet.l3_header.length);
         packet.mbuf.set_l4_len(packet.l4_header.length);
 
         self.buffers[self.buf_idx] = packet.mbuf.inner();
         self.buf_idx += 1;
+
+        // packet's meta info is not needed anymore
+        ctx.meta_packet_dealloc(packet);
 
         // flush when buffers are full
         if self.buf_idx == BURST_SIZE {
@@ -58,13 +61,18 @@ impl IoAdapter for Dpdk {
         Ok(())
     }
 
-    fn recv(&mut self, _ctx: &Context) -> Result<&mut Packet> {
+    fn recv(&mut self, ctx: &Context) -> Result<&mut Packet> {
         let mut bufs = [std::ptr::null_mut(); 1];
 
         let rx = unsafe { sys::dev_recv_packet(0, 0, bufs.as_mut_ptr(), 1) };
 
         if rx > 0 {
-            Ok(Packet::from_mbuf(bufs[0]))
+            let pkt = ctx.meta_packet_alloc().unwrap();
+            pkt.init_from_mbuf(bufs[0]);
+            pkt.refcnt = 1;
+            pkt.offset = 0;
+
+            Ok(pkt)
         } else if rx == 0 {
             Err(Error::NoData)
         } else {

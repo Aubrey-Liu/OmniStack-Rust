@@ -2,14 +2,12 @@ use std::ffi::*;
 
 use omnistack_sys::dpdk as sys;
 
-use crate::headers::EthHeader;
-
 pub type PacketId = usize;
 
 pub const MTU: usize = 1500;
-// todo: ???
+// todo: Find better defaults
 pub const DEFAULT_OFFSET: usize = 140;
-pub const PACKET_BUF_SIZE: usize = MTU + std::mem::size_of::<EthHeader>();
+pub const PACKET_BUF_SIZE: usize = MTU + DEFAULT_OFFSET;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Header {
@@ -17,12 +15,18 @@ pub struct Header {
     pub offset: u8,
 }
 
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct Mbuf(*mut sys::rte_mbuf);
 
 impl Mbuf {
     pub fn inner(&self) -> *mut sys::rte_mbuf {
         self.0
+    }
+
+    pub fn data_addr(&self) -> *mut u8 {
+        let inner = self.as_mut();
+        unsafe { inner.buf_addr.add(inner.data_off as _).cast() }
     }
 
     pub fn inc_data_off(&self, n: u16) {
@@ -69,124 +73,131 @@ impl Mbuf {
     }
 }
 
+// stored in the `metapool` of PacketPool
 #[repr(C)]
 pub struct Packet {
-    pub refcnt: usize,
-
-    pub mbuf: Mbuf,
-
-    pub nic: u16,
-
     // start address of the un-parsed part
     pub offset: u16,
     pub length: u16,
 
+    pub nic: u16,
+
     pub l2_header: Header,
     pub l3_header: Header,
     pub l4_header: Header,
+    // all fields above is managed by modules
 
-    pub data: [u8; PACKET_BUF_SIZE],
+    // set by the allocator initially
+    pub refcnt: usize,
+    pub mbuf: Mbuf,
+    pub data: *mut u8,
 }
 
 impl Packet {
-    pub fn from_mbuf(mbuf: *mut sys::rte_mbuf) -> &'static mut Packet {
-        let mbuf = unsafe { &mut *mbuf };
-
-        let pkt = unsafe {
-            mbuf.buf_addr
-                .add(mbuf.data_off as _)
-                .cast::<Self>()
-                .as_mut()
-                .unwrap()
-        };
-
-        pkt.offset = DEFAULT_OFFSET as _;
-        pkt.refcnt = 1;
-        pkt.nic = 0;
-        pkt.mbuf = Mbuf(mbuf);
-        pkt.length = 1200; // todo
-
-        pkt
+    pub fn init_from_mbuf(&mut self, mbuf: *mut sys::rte_mbuf) {
+        self.mbuf = Mbuf(mbuf);
+        self.data = self.mbuf.data_addr();
     }
 
     pub fn len(&self) -> u16 {
         self.length
     }
 
-    pub fn data_offset(&self) -> u16 {
-        // ## mbuf ## headroom ## meta ## packet data
-        self.offset + Self::extra_size()
-    }
-
-    fn extra_size() -> u16 {
-        (std::mem::size_of::<Self>() - PACKET_BUF_SIZE) as _
-    }
-
-    pub fn get_l2_header<'a, T>(&mut self) -> &'a mut T
-    where
-        &'a mut T: From<&'a mut [u8]>,
+    pub fn parse<T>(&mut self) -> &'static mut T
     {
-        unsafe {
-            std::slice::from_raw_parts_mut(
-                self.data.as_mut_ptr().add(self.l2_header.offset as _),
-                self.l2_header.length as _,
-            )
-            .into()
-        }
+        unsafe { self.get_payload_at::<T>(self.offset as _) }
     }
 
-    pub fn get_l3_header<'a, T>(&mut self) -> &'a mut T
-    where
-        &'a mut T: From<&'a mut [u8]>,
+    pub fn get_l2_header<T>(&mut self) -> &'static mut T
     {
-        unsafe {
-            std::slice::from_raw_parts_mut(
-                self.data.as_mut_ptr().add(self.l3_header.offset as _),
-                self.l3_header.length as _,
-            )
-            .into()
-        }
+        unsafe { self.get_payload_at::<T>(self.l2_header.offset as _) }
     }
 
-    pub fn get_l4_header<'a, T>(&mut self) -> &'a mut T
-    where
-        &'a mut T: From<&'a mut [u8]>,
+    pub fn get_l3_header<T>(&mut self) -> &'static mut T
     {
-        unsafe {
-            std::slice::from_raw_parts_mut(
-                self.data.as_mut_ptr().add(self.l4_header.offset as _),
-                self.l4_header.length as _,
-            )
-            .into()
-        }
+        unsafe { self.get_payload_at::<T>(self.l3_header.offset as _) }
+    }
+
+    pub fn get_l4_header<T>(&mut self) -> &'static mut T
+    {
+        unsafe { self.get_payload_at::<T>(self.l4_header.offset as _) }
+    }
+
+    unsafe fn get_payload_at<T>(&mut self, offset: usize) -> &'static mut T {
+        &mut *self.data.add(offset).cast::<T>()
     }
 }
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct PacketPool {
-    pub mempool: *mut sys::rte_mempool,
+    pub metapool: *mut sys::rte_mempool,
+    pub pktpool: *mut sys::rte_mempool,
 }
 
-// todo: is lock necessary? faster mutex?
+const MEMPOOL_SIZE: usize = 4095;
+const MEMPOOL_CACHE_SIZE: usize = 250;
 
 impl PacketPool {
     pub fn get_or_create(name: &str) -> Self {
-        let name = CString::new(format!("omnistack-{name}")).unwrap();
+        let metapool_name = CString::new(format!("omnistack-meta-{name}")).unwrap();
+        let pktpool_name = CString::new(format!("omnistack-pkt-{name}")).unwrap();
 
         Self {
-            mempool: unsafe { sys::pktpool_create(name.as_ptr()) },
+            // todo: socket id
+            metapool: unsafe {
+                sys::mempool_create(
+                    metapool_name.as_ptr(),
+                    MEMPOOL_SIZE as _,
+                    std::mem::size_of::<Packet>() as _,
+                    MEMPOOL_CACHE_SIZE as _,
+                    0,
+                )
+            },
+            pktpool: unsafe {
+                sys::pktpool_create(
+                    pktpool_name.as_ptr(),
+                    MEMPOOL_SIZE as _,
+                    MEMPOOL_CACHE_SIZE as _,
+                    0,
+                )
+            },
         }
     }
 
-    pub fn allocate(&self) -> Option<&mut Packet> {
-        let mbuf = unsafe { sys::pktpool_alloc(self.mempool) };
+    pub fn allocate_meta(&self) -> Option<&'static mut Packet> {
+        let packet = unsafe { &mut *sys::mempool_get(self.metapool).cast::<Packet>() };
+        packet.refcnt = 1;
 
+        Some(packet)
+    }
+
+    pub fn allocate(&self) -> Option<&'static mut Packet> {
+        let mbuf = unsafe { sys::pktpool_alloc(self.pktpool) };
         if mbuf.is_null() {
             return None;
         }
 
-        Some(Packet::from_mbuf(mbuf))
+        let packet = unsafe { sys::mempool_get(self.metapool) };
+        if packet.is_null() {
+            unsafe { sys::pktpool_dealloc(mbuf) };
+            return None;
+        }
+
+        let packet = unsafe { &mut *packet.cast::<Packet>() };
+        packet.refcnt = 1;
+        packet.init_from_mbuf(mbuf);
+
+        Some(packet)
+    }
+
+    pub fn deallocate_meta(&self, packet: *mut Packet) {
+        let packet = unsafe { &mut *packet };
+
+        packet.refcnt -= 1;
+        if packet.refcnt == 0 {
+            unsafe { sys::mempool_put(self.metapool, packet as *mut _ as *mut _) };
+        }
     }
 
     pub fn deallocate(&self, packet: *mut Packet) {
@@ -194,6 +205,7 @@ impl PacketPool {
 
         packet.refcnt -= 1;
         if packet.refcnt == 0 {
+            unsafe { sys::mempool_put(self.metapool, packet as *mut _ as *mut _) };
             unsafe { sys::pktpool_dealloc(packet.mbuf.inner()) };
         }
     }

@@ -545,7 +545,27 @@ pub struct rte_mbuf_ext_shared_info {
     pub refcnt: u16,
 }
 extern "C" {
-    pub fn pktpool_create(name: *const ::std::os::raw::c_char) -> *mut rte_mempool;
+    pub fn mempool_create(
+        name: *const ::std::os::raw::c_char,
+        n: ::std::os::raw::c_uint,
+        elt_size: ::std::os::raw::c_uint,
+        cache_size: ::std::os::raw::c_uint,
+        socket_id: ::std::os::raw::c_int,
+    ) -> *mut rte_mempool;
+}
+extern "C" {
+    pub fn mempool_get(mp: *mut rte_mempool) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    pub fn mempool_put(mp: *mut rte_mempool, obj: *mut ::std::os::raw::c_void);
+}
+extern "C" {
+    pub fn pktpool_create(
+        name: *const ::std::os::raw::c_char,
+        n: ::std::os::raw::c_uint,
+        cache_size: ::std::os::raw::c_uint,
+        socket_id: ::std::os::raw::c_int,
+    ) -> *mut rte_mempool;
 }
 extern "C" {
     pub fn pktpool_alloc(mp: *mut rte_mempool) -> *mut rte_mbuf;

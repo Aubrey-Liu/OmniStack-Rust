@@ -77,14 +77,27 @@ impl Context {
         unsafe { (*tq).push(task) };
     }
 
+    /// allocate a packet with data buffer
     #[no_mangle]
-    pub extern "C" fn packet_alloc(&self) -> Option<&mut Packet> {
+    pub extern "C" fn packet_alloc(&self) -> Option<&'static mut Packet> {
         self.pktpool.allocate()
+    }
+
+    /// allocate a packet without data buffer
+    #[no_mangle]
+    pub extern "C" fn meta_packet_alloc(&self) -> Option<&'static mut Packet> {
+        self.pktpool.allocate_meta()
     }
 
     #[no_mangle]
     pub extern "C" fn packet_dealloc(&self, packet: *mut Packet) {
         self.pktpool.deallocate(packet)
+    }
+
+    /// allocate a packet without data buffer
+    #[no_mangle]
+    pub extern "C" fn meta_packet_dealloc(&self, packet: *mut Packet) {
+        self.pktpool.deallocate_meta(packet)
     }
 }
 
@@ -97,8 +110,11 @@ unsafe impl Send for CtrlMsg {}
 
 fn dpdk_eal_init() -> Result<()> {
     let arg0 = CString::new("").unwrap();
-    let mut argv = [arg0.as_ptr()];
-    let ret = unsafe { omnistack_sys::dpdk::eal::rte_eal_init(1, argv.as_mut_ptr().cast()) };
+    let arg1 = CString::new("--log-level=8").unwrap();
+    let mut argv = [arg0.as_ptr(), arg1.as_ptr()];
+    let ret = unsafe {
+        omnistack_sys::dpdk::eal::rte_eal_init(argv.len() as _, argv.as_mut_ptr().cast())
+    };
     if ret < 0 {
         return Err(Error::DpdkInitErr);
     }
