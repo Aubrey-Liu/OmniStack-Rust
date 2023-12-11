@@ -573,12 +573,21 @@ extern "C" {
 extern "C" {
     pub fn pktpool_dealloc(m: *mut rte_mbuf);
 }
+#[repr(C)]
+#[repr(align(2))]
+#[derive(Debug, Copy, Clone)]
+pub struct rte_ether_addr {
+    pub addr_bytes: [u8; 6usize],
+}
 extern "C" {
     pub fn dev_port_init(
         port: u16,
         num_queues: u16,
         mbuf_pool: *mut rte_mempool,
     ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn dev_macaddr_get(port: u16, addr: *mut rte_ether_addr) -> ::std::os::raw::c_int;
 }
 extern "C" {
     pub fn dev_send_packet(

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use once_cell::sync::Lazy;
@@ -7,13 +8,17 @@ use crate::engine::Context;
 use crate::module::Module;
 use crate::packet::Packet;
 use crate::register_module;
-
-// use omnistack_sys::dpdk as sys;
-
 use crate::Result;
+use crate::protocols::MacAddr;
+
+pub fn get_mac_addr(port_id: u16) -> Option<MacAddr> {
+    NIC_TO_MAC.lock().unwrap().get(&port_id).copied()
+}
+
+static NIC_TO_MAC: Lazy<Mutex<HashMap<u16, MacAddr>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub trait IoAdapter {
-    fn init(&mut self, ctx: &Context, port_id: u16, num_queues: u16) -> Result<()>;
+    fn init(&mut self, ctx: &Context, port_id: u16, num_queues: u16) -> Result<MacAddr>;
 
     fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()>;
 
@@ -32,27 +37,34 @@ impl IoNode {
     }
 }
 
+static INIT: std::sync::Once = std::sync::Once::new();
+
 impl Module for IoNode {
     fn init(&mut self, ctx: &Context) -> Result<()> {
         for f in Factory::get().builders.values() {
             self.adapters.push(f());
         }
-        // todo: collect mac addresses
-        self.adapters
-            .iter_mut()
-            .try_for_each(|io| io.init(ctx, 0, 1))?;
+
+        INIT.call_once(|| {
+            self.adapters.iter_mut().for_each(|io| {
+                let port = 0;
+                let mac = io.init(ctx, port, 1).unwrap();
+
+                NIC_TO_MAC.lock().unwrap().insert(port, mac);
+            });
+        });
 
         Ok(())
     }
 
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
-        self.adapters[packet.nic as usize].send(ctx, packet)
+        self.adapters[packet.port as usize].send(ctx, packet)
     }
 
     fn tick(&mut self, ctx: &Context, _now: Instant) -> Result<()> {
         self.adapters.iter_mut().enumerate().for_each(|(nic, io)| {
             if let Ok(pkt) = io.recv(ctx) {
-                pkt.nic = nic as _;
+                pkt.port = nic as _;
                 ctx.push_task_downstream(pkt);
             }
         });
@@ -63,6 +75,7 @@ impl Module for IoNode {
 
 register_module!(IoNode);
 
+#[derive(Default)]
 struct Factory {
     builders: HashMap<&'static str, AdapterBuildFn>,
 }

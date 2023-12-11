@@ -1,4 +1,4 @@
-use omnistack_core::prelude::*;
+use omnistack_core::{prelude::*, protocols::MacAddr};
 use omnistack_sys::dpdk as sys;
 
 // todo: default value is 32 (3 is for debugging)
@@ -21,13 +21,21 @@ impl Dpdk {
 }
 
 impl IoAdapter for Dpdk {
-    fn init(&mut self, ctx: &Context, port: u16, num_queues: u16) -> Result<()> {
+    // might be called multiple times!
+    fn init(&mut self, ctx: &Context, port: u16, num_queues: u16) -> Result<MacAddr> {
         let ret = unsafe { sys::dev_port_init(port, num_queues, ctx.pktpool.pktpool) };
 
-        if ret == 0 {
-            Ok(())
-        } else {
+        if ret != 0 {
+            return Err(Error::Unknown);
+        }
+
+        let mut mac_addr = sys::rte_ether_addr { addr_bytes: [0; 6] };
+        let ret = unsafe { sys::dev_macaddr_get(port, &mut mac_addr) };
+
+        if ret != 0 {
             Err(Error::Unknown)
+        } else {
+            Ok(MacAddr::from_bytes(mac_addr.addr_bytes))
         }
     }
 

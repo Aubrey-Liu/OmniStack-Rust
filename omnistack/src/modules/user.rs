@@ -18,16 +18,16 @@ impl Module for UserNode {
     }
 
     fn tick(&mut self, ctx: &Context, now: Instant) -> Result<()> {
-        if now.duration_since(self.last).as_millis() > 1 {
+        if now.duration_since(self.last).as_millis() > 1000 {
             let p = ctx.packet_alloc().unwrap();
 
             // pretend we received a packet from user
             p.offset = DEFAULT_OFFSET as _;
             p.refcnt = 1;
-            p.nic = 0;
-            p.length = 1200; // todo
+            p.port = 0;
+            p.set_len(1200);
 
-            // println!("UserNode received 1 packet from user");
+            println!("UserNode received 1 packet from user");
 
             ctx.push_task_downstream(p);
             self.last = now;

@@ -12,7 +12,7 @@ pub const PACKET_BUF_SIZE: usize = MTU + DEFAULT_OFFSET;
 #[derive(Debug, Clone, Copy)]
 pub struct Header {
     pub length: u8,
-    pub offset: u8,
+    pub offset: u16,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -78,9 +78,9 @@ impl Mbuf {
 pub struct Packet {
     // start address of the un-parsed part
     pub offset: u16,
-    pub length: u16,
+    length: u16,
 
-    pub nic: u16,
+    pub port: u16,
 
     pub l2_header: Header,
     pub l3_header: Header,
@@ -88,7 +88,7 @@ pub struct Packet {
     // all fields above is managed by modules
 
     // set by the allocator initially
-    pub refcnt: usize,
+    pub refcnt: usize, // todo: is it really necessary?
     pub mbuf: Mbuf,
     pub data: *mut u8,
 }
@@ -100,26 +100,28 @@ impl Packet {
     }
 
     pub fn len(&self) -> u16 {
-        self.length
+        // todo: make sure it is correct
+        self.length - self.offset
     }
 
-    pub fn parse<T>(&mut self) -> &'static mut T
-    {
+    /// Pls set the offset before the length
+    pub fn set_len(&mut self, len: u16) {
+        self.length = len + self.offset;
+    }
+
+    pub fn parse<T>(&mut self) -> &'static mut T {
         unsafe { self.get_payload_at::<T>(self.offset as _) }
     }
 
-    pub fn get_l2_header<T>(&mut self) -> &'static mut T
-    {
+    pub fn get_l2_header<T>(&mut self) -> &'static mut T {
         unsafe { self.get_payload_at::<T>(self.l2_header.offset as _) }
     }
 
-    pub fn get_l3_header<T>(&mut self) -> &'static mut T
-    {
+    pub fn get_l3_header<T>(&mut self) -> &'static mut T {
         unsafe { self.get_payload_at::<T>(self.l3_header.offset as _) }
     }
 
-    pub fn get_l4_header<T>(&mut self) -> &'static mut T
-    {
+    pub fn get_l4_header<T>(&mut self) -> &'static mut T {
         unsafe { self.get_payload_at::<T>(self.l4_header.offset as _) }
     }
 

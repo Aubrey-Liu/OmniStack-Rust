@@ -1,9 +1,21 @@
 #![allow(unused)]
 
+use std::net::Ipv4Addr;
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct MacAddr {
     raw: [u8; 6],
+}
+
+impl MacAddr {
+    pub const fn from_bytes(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
+        Self { raw: bytes }
+    }
+
+    pub const fn as_bytes(&self) -> [u8; 6] {
+        self.raw
+    }
 }
 
 #[repr(u16)]
@@ -17,21 +29,19 @@ pub enum EtherType {
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct EthHeader {
-    pub dst: [u8; 6],
-    pub src: [u8; 6],
+    pub dst: MacAddr,
+    pub src: MacAddr,
     pub ether_ty: EtherType,
 }
 
-impl From<&mut [u8]> for &mut EthHeader {
-    fn from(value: &mut [u8]) -> Self {
-        debug_assert!(value.len() == std::mem::size_of::<EthHeader>());
-
-        unsafe { std::mem::transmute(value.as_mut_ptr()) }
-    }
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
+pub enum Ipv4ProtoType {
+    TCP = 6,
+    UDP = 11,
 }
 
 // todo: design choices (1) mutable reference (2) pointer + dump method
-
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct Ipv4Header {
@@ -68,4 +78,39 @@ impl Ipv4Header {
 
         self.version_ihl |= (ihl << 4);
     }
+}
+
+pub struct Route {
+    ip_addr: u32,
+
+    pub cidr: u8,
+    cidr_mask: u32,
+
+    pub port: u16,
+}
+
+impl Route {
+    pub fn new(ip_addr: u32, cidr: u8, port: u16) -> Self {
+        assert!(cidr <= u32::BITS as u8);
+
+        Self {
+            ip_addr,
+            cidr,
+            cidr_mask: (1 << cidr) - 1,
+            port,
+        }
+    }
+
+    pub fn matches(&self, dst_ip_addr: u32) -> bool {
+        ((self.ip_addr ^ dst_ip_addr) & self.cidr_mask) == 0
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct UdpHeader {
+    pub src: u16,
+    pub dst: u16,
+    pub len: u16,
+    chksum: u16
 }

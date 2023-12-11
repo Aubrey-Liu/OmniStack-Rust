@@ -88,21 +88,16 @@ int dev_port_init(uint16_t port, uint16_t num_queues,
     /* >8 End of starting of ethernet port. */
     if (retval < 0) return retval;
 
-    /* Display the port MAC address. */
-    struct rte_ether_addr addr;
-    retval = rte_eth_macaddr_get(port, &addr);
-    if (retval != 0) return retval;
-
-    printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8 " %02" PRIx8
-           " %02" PRIx8 " %02" PRIx8 "\n",
-           port, RTE_ETHER_ADDR_BYTES(&addr));
-
     /* Enable RX in promiscuous mode for the Ethernet device. */
     retval = rte_eth_promiscuous_enable(port);
     /* End of setting RX port in promiscuous mode. */
     if (retval != 0) return retval;
 
     return 0;
+}
+
+int dev_macaddr_get(uint16_t port, struct rte_ether_addr *addr) {
+    return rte_eth_macaddr_get(port, addr);
 }
 
 int dev_send_packet(uint16_t port, uint16_t queue, struct rte_mbuf *tx_bufs[],

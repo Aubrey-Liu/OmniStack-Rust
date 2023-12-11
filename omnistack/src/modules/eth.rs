@@ -1,5 +1,6 @@
-use omnistack_core::protocols::{EthHeader, EtherType};
+use omnistack_core::io_module::get_mac_addr;
 use omnistack_core::prelude::*;
+use omnistack_core::protocols::{EthHeader, EtherType, MacAddr};
 
 struct EthSender;
 struct EthReceiver;
@@ -11,15 +12,15 @@ impl EthSender {
 }
 
 impl Module for EthSender {
-    // todo: nic to mac (maybe hardcode at first)
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         packet.l2_header.length = std::mem::size_of::<EthHeader>() as _;
         packet.offset -= packet.l2_header.length as u16;
         packet.l2_header.offset = packet.offset as _;
 
+        // todo: nic to mac
         let eth_header = packet.get_l2_header::<EthHeader>();
-        eth_header.dst = [0x3c, 0xfd, 0xfe, 0xbb, 0xc9, 0xc9];
-        eth_header.src = [0x3c, 0xfd, 0xfe, 0xbb, 0xca, 0x78];
+        eth_header.dst = MacAddr::from_bytes([0x3c, 0xfd, 0xfe, 0xbb, 0xc9, 0xc9]);
+        eth_header.src = get_mac_addr(packet.port).unwrap();
         eth_header.ether_ty = EtherType::Ipv4;
 
         ctx.push_task_downstream(packet);
@@ -37,7 +38,7 @@ impl EthReceiver {
 impl Module for EthReceiver {
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         packet.l2_header.length = std::mem::size_of::<EthHeader>() as _;
-        packet.l2_header.offset = packet.offset as u8;
+        packet.l2_header.offset = packet.offset;
         packet.offset += packet.l2_header.length as u16;
 
         ctx.push_task_downstream(packet);

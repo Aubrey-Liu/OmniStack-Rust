@@ -11,7 +11,20 @@ impl UdpSender {
 
 impl Module for UdpSender {
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
-        todo!()
+        packet.offset -= std::mem::size_of::<UdpHeader>() as u16;
+        packet.l4_header.length = std::mem::size_of::<UdpHeader>() as u8;
+        packet.l4_header.offset = packet.offset;
+
+        let udp_hdr = packet.get_l4_header::<UdpHeader>();
+        udp_hdr.src = 80_u16.to_be(); // todo
+        udp_hdr.dst = 81_u16.to_be();
+        udp_hdr.len = packet.len().to_be();
+
+        println!("udp len: {}", packet.len());
+
+        ctx.push_task_downstream(packet);
+
+        Ok(())
     }
 }
 
@@ -23,7 +36,13 @@ impl UdpReceiver {
 
 impl Module for UdpReceiver {
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
-        todo!()
+        packet.l4_header.length = std::mem::size_of::<UdpHeader>() as u8;
+        packet.l4_header.offset = packet.offset;
+        packet.offset += std::mem::size_of::<UdpHeader>() as u16;
+
+        ctx.push_task_downstream(packet);
+
+        Ok(())
     }
 }
 
