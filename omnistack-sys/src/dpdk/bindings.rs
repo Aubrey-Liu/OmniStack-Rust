@@ -605,3 +605,6 @@ extern "C" {
         n: u16,
     ) -> ::std::os::raw::c_int;
 }
+extern "C" {
+    pub fn node_of_cpu(cpu: ::std::os::raw::c_int) -> ::std::os::raw::c_int;
+}

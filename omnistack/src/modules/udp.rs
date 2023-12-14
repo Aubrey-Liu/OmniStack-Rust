@@ -20,8 +20,6 @@ impl Module for UdpSender {
         udp_hdr.dst = 81_u16.to_be();
         udp_hdr.len = packet.len().to_be();
 
-        println!("udp len: {}", packet.len());
-
         ctx.push_task_downstream(packet);
 
         Ok(())

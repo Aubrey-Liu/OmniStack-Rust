@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::*;
 use std::thread::JoinHandle;
@@ -37,6 +36,9 @@ struct Worker {
     task_queue: TaskQueue,
     stealers: Vec<TaskStealer>,
     ctrl_ch: Receiver<CtrlMsg>,
+
+    core_id: u16,
+    pktpool: PacketPool,
 }
 
 pub(crate) struct Node {
@@ -122,14 +124,16 @@ fn dpdk_eal_init() -> Result<()> {
     Ok(())
 }
 
-impl Engine {
-    const NUM_CPUS: usize = 1; // todo: remove hardcode
+// maybe allow user to configure this?
+// seems unreliable to let Rust detect available cores
+const CPUS: usize = 2;
 
+impl Engine {
     pub fn run(config: &str) -> Result<()> {
         dpdk_eal_init()?;
 
         let mut graphs = Vec::new();
-        for _ in 0..Self::NUM_CPUS {
+        for _ in 0..CPUS {
             graphs.push(Self::build_graph(config))
         }
 
@@ -223,9 +227,10 @@ impl Engine {
     fn run_workers(graphs: Vec<Vec<Node>>) -> Result<Vec<JoinHandle<()>>> {
         let mut threads = Vec::new();
         let mut ctrl_chs = Vec::new();
+        let cpus = graphs.len();
 
-        let task_queues: Vec<_> = (0..Self::NUM_CPUS).map(|_| TaskQueue::new_fifo()).collect();
-        let stealers: Vec<_> = (0..Self::NUM_CPUS)
+        let task_queues: Vec<_> = (0..cpus).map(|_| TaskQueue::new_fifo()).collect();
+        let stealers: Vec<_> = (0..cpus)
             .map(|id| {
                 task_queues
                     .iter()
@@ -235,13 +240,13 @@ impl Engine {
             })
             .collect();
 
-        for (((id, gp), tq), st) in (0..Self::NUM_CPUS)
+        for (((id, gp), tq), st) in (0..cpus)
             .zip(graphs)
             .zip(task_queues)
             .zip(stealers)
         {
             let (sd, rv) = bounded(1);
-            let mut worker = Worker::new(gp, tq, st, rv, id);
+            let mut worker = Worker::new(gp, tq, st, rv, id as _);
 
             threads.push(std::thread::spawn(move || {
                 core_affinity::set_for_current(CoreId { id });
@@ -264,24 +269,21 @@ impl Engine {
 }
 
 impl Worker {
-    thread_local! {
-        static CORE_ID: Cell<i32> = Cell::new(-1);
-    }
-
     pub fn new(
         nodes: Vec<Node>,
         task_queue: TaskQueue,
         stealers: Vec<TaskStealer>,
         ctrl_ch: Receiver<CtrlMsg>,
-        core_id: usize,
+        core_id: u16,
     ) -> Self {
-        Self::CORE_ID.set(core_id as i32);
-
         Self {
             nodes,
             task_queue,
             stealers,
             ctrl_ch,
+
+            core_id,
+            pktpool: PacketPool::get_or_create(core_id as _),
         }
     }
 
@@ -334,10 +336,10 @@ impl Worker {
 
     fn make_context(&self, node_id: NodeId) -> Context {
         Context {
-            core_id: Self::CORE_ID.get() as _,
+            core_id: self.core_id,
             node: &self.nodes[node_id] as *const _ as *const _,
             tq: &self.task_queue as *const _ as *const _,
-            pktpool: PacketPool::get_or_create("mp"),
+            pktpool: self.pktpool,
         }
     }
 }

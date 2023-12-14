@@ -133,54 +133,66 @@ impl Packet {
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct PacketPool {
-    pub metapool: *mut sys::rte_mempool,
-    pub pktpool: *mut sys::rte_mempool,
+    pub pktinfo: *mut sys::rte_mempool,
+    pub pktmbuf: *mut sys::rte_mempool,
 }
 
 const MEMPOOL_SIZE: usize = 4095;
 const MEMPOOL_CACHE_SIZE: usize = 250;
 
 impl PacketPool {
-    pub fn get_or_create(name: &str) -> Self {
-        let metapool_name = CString::new(format!("omnistack-meta-{name}")).unwrap();
-        let pktpool_name = CString::new(format!("omnistack-pkt-{name}")).unwrap();
+    pub const fn empty() -> Self {
+        Self {
+            pktinfo: std::ptr::null_mut(),
+            pktmbuf: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn get_or_create(cpu: i32) -> Self {
+        let socket_id = match unsafe { sys::node_of_cpu(cpu) } {
+            x @ 0.. => x,
+            _ => 0,
+        };
+
+        let pktinfo_pool_name = CString::new(format!("omnistack-pktinfo-{socket_id}")).unwrap();
+        let pktmbuf_pool_name = CString::new(format!("omnistack-pktmbuf-{socket_id}")).unwrap();
 
         Self {
             // todo: socket id
-            metapool: unsafe {
+            pktinfo: unsafe {
                 sys::mempool_create(
-                    metapool_name.as_ptr(),
+                    pktinfo_pool_name.as_ptr(),
                     MEMPOOL_SIZE as _,
                     std::mem::size_of::<Packet>() as _,
                     MEMPOOL_CACHE_SIZE as _,
-                    0,
+                    socket_id as _,
                 )
             },
-            pktpool: unsafe {
+            pktmbuf: unsafe {
                 sys::pktpool_create(
-                    pktpool_name.as_ptr(),
+                    pktmbuf_pool_name.as_ptr(),
                     MEMPOOL_SIZE as _,
                     MEMPOOL_CACHE_SIZE as _,
-                    0,
+                    socket_id as _,
                 )
             },
         }
     }
 
     pub fn allocate_meta(&self) -> Option<&'static mut Packet> {
-        let packet = unsafe { &mut *sys::mempool_get(self.metapool).cast::<Packet>() };
+        let packet = unsafe { &mut *sys::mempool_get(self.pktinfo).cast::<Packet>() };
         packet.refcnt = 1;
 
         Some(packet)
     }
 
     pub fn allocate(&self) -> Option<&'static mut Packet> {
-        let mbuf = unsafe { sys::pktpool_alloc(self.pktpool) };
+        let mbuf = unsafe { sys::pktpool_alloc(self.pktmbuf) };
         if mbuf.is_null() {
             return None;
         }
 
-        let packet = unsafe { sys::mempool_get(self.metapool) };
+        let packet = unsafe { sys::mempool_get(self.pktinfo) };
         if packet.is_null() {
             unsafe { sys::pktpool_dealloc(mbuf) };
             return None;
@@ -198,7 +210,7 @@ impl PacketPool {
 
         packet.refcnt -= 1;
         if packet.refcnt == 0 {
-            unsafe { sys::mempool_put(self.metapool, packet as *mut _ as *mut _) };
+            unsafe { sys::mempool_put(self.pktinfo, packet as *mut _ as *mut _) };
         }
     }
 
@@ -207,8 +219,10 @@ impl PacketPool {
 
         packet.refcnt -= 1;
         if packet.refcnt == 0 {
-            unsafe { sys::mempool_put(self.metapool, packet as *mut _ as *mut _) };
+            unsafe { sys::mempool_put(self.pktinfo, packet as *mut _ as *mut _) };
             unsafe { sys::pktpool_dealloc(packet.mbuf.inner()) };
         }
     }
 }
+
+unsafe impl Send for PacketPool {}

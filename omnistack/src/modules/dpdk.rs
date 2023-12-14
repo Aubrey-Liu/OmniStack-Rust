@@ -23,7 +23,7 @@ impl Dpdk {
 impl IoAdapter for Dpdk {
     // might be called multiple times!
     fn init(&mut self, ctx: &Context, port: u16, num_queues: u16) -> Result<MacAddr> {
-        let ret = unsafe { sys::dev_port_init(port, num_queues, ctx.pktpool.pktpool) };
+        let ret = unsafe { sys::dev_port_init(port, num_queues, ctx.pktpool.pktmbuf) };
 
         if ret != 0 {
             return Err(Error::Unknown);
