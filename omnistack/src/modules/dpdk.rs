@@ -80,6 +80,8 @@ impl IoAdapter for Dpdk {
             pkt.refcnt = 1;
             pkt.offset = 0;
 
+            log::debug!("Received {rx} packets from the remote");
+
             Ok(pkt)
         } else if rx == 0 {
             Err(Error::NoData)

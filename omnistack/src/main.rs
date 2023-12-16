@@ -2,9 +2,9 @@ mod modules;
 
 use omnistack_core::engine::Engine;
 
-// todo: use tracing and tracing-subscriber
-
 fn main() {
+    env_logger::init();
+
     let config = r#"{
         "nodes": [
             { "id": "user", "name": "UserNode" },
@@ -29,6 +29,5 @@ fn main() {
     }"#;
 
     Engine::run(config).expect("failed to boot engine");
-
     // todo: start the omnistack server only once (lock file?)
 }

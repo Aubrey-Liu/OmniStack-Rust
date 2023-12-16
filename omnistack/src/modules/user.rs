@@ -10,9 +10,7 @@ struct UserNode {
 impl Module for UserNode {
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         // pretend we have sent a packet to user
-
         ctx.packet_dealloc(packet);
-        println!("UserNode sent 1 packet to user");
 
         Ok(())
     }
@@ -27,7 +25,7 @@ impl Module for UserNode {
             p.port = 0;
             p.set_len(1200);
 
-            println!("UserNode received 1 packet from user");
+            log::debug!("UserNode received one packet");
 
             ctx.push_task_downstream(p);
             self.last = now;

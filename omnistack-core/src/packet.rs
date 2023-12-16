@@ -75,6 +75,7 @@ impl Mbuf {
 
 // stored in the `metapool` of PacketPool
 #[repr(C)]
+#[derive(Debug)]
 pub struct Packet {
     // start address of the un-parsed part
     pub offset: u16,
