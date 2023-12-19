@@ -1,21 +1,41 @@
 use omnistack_core::{prelude::*, protocols::MacAddr};
 use omnistack_sys::dpdk as sys;
 
-// todo: default value is 32 (3 is for debugging)
-const BURST_SIZE: usize = 3;
+const BURST_SIZE: usize = 32;
 
 #[repr(C)]
 #[derive(Debug)]
 pub struct Dpdk {
-    buffers: [*mut sys::rte_mbuf; BURST_SIZE],
-    buf_idx: usize,
+    tx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
+    tx_buf_items: usize,
+
+    rx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
+    rx_buf_items: usize,
 }
 
 impl Dpdk {
     fn new() -> Self {
         Self {
-            buffers: [std::ptr::null_mut(); BURST_SIZE],
-            buf_idx: 0,
+            tx_bufs: [std::ptr::null_mut(); BURST_SIZE],
+            tx_buf_items: 0,
+
+            rx_bufs: [std::ptr::null_mut(); BURST_SIZE],
+            rx_buf_items: 0,
+        }
+    }
+
+    fn recv_one(&mut self, ctx: &Context) -> Option<&'static mut Packet> {
+        if self.rx_buf_items > 0 {
+            let pkt = ctx.meta_packet_alloc().unwrap();
+            pkt.init_from_mbuf(self.tx_bufs[self.rx_buf_items - 1]);
+            pkt.refcnt = 1;
+            pkt.offset = 0;
+
+            self.rx_buf_items -= 1;
+
+            Some(pkt)
+        } else {
+            None
         }
     }
 }
@@ -32,7 +52,10 @@ impl IoAdapter for Dpdk {
         let mut mac_addr = sys::rte_ether_addr { addr_bytes: [0; 6] };
         let ret = unsafe { sys::dev_macaddr_get(port, &mut mac_addr) };
 
-        log::debug!("Port {port} MAC addr: {:?}", MacAddr::from_bytes(mac_addr.addr_bytes));
+        log::debug!(
+            "Port {port} MAC addr: {:?}",
+            MacAddr::from_bytes(mac_addr.addr_bytes)
+        );
 
         if ret != 0 {
             Err(Error::Unknown)
@@ -52,19 +75,19 @@ impl IoAdapter for Dpdk {
         packet.mbuf.set_l3_len(packet.l3_header.length);
         packet.mbuf.set_l4_len(packet.l4_header.length);
 
-        self.buffers[self.buf_idx] = packet.mbuf.inner();
-        self.buf_idx += 1;
+        self.tx_bufs[self.tx_buf_items] = packet.mbuf.inner();
+        self.tx_buf_items += 1;
 
         // packet's meta info is not needed anymore
         ctx.meta_packet_dealloc(packet);
 
         // flush when buffers are full
-        if self.buf_idx == BURST_SIZE {
-            while self.buf_idx > 0 {
+        if self.tx_buf_items == BURST_SIZE {
+            while self.tx_buf_items > 0 {
                 let nb_tx = unsafe {
-                    sys::dev_send_packet(0, 0, self.buffers.as_mut_ptr(), BURST_SIZE as _)
+                    sys::dev_send_packet(0, 0, self.tx_bufs.as_mut_ptr(), BURST_SIZE as _)
                 };
-                self.buf_idx -= nb_tx as usize;
+                self.tx_buf_items -= nb_tx as usize;
             }
         }
 
@@ -72,24 +95,21 @@ impl IoAdapter for Dpdk {
     }
 
     fn recv(&mut self, ctx: &Context) -> Result<&mut Packet> {
-        let mut bufs = [std::ptr::null_mut(); 1];
+        self.recv_one(ctx)
+            .or_else(|| {
+                let rx = unsafe {
+                    sys::dev_recv_packet(0, 0, self.rx_bufs.as_mut_ptr(), BURST_SIZE as _)
+                };
 
-        let rx = unsafe { sys::dev_recv_packet(0, 0, bufs.as_mut_ptr(), 1) };
+                if rx > 0 {
+                    log::debug!("Received {rx} packets from the remote");
 
-        if rx > 0 {
-            let pkt = ctx.meta_packet_alloc().unwrap();
-            pkt.init_from_mbuf(bufs[0]);
-            pkt.refcnt = 1;
-            pkt.offset = 0;
+                    self.rx_buf_items = rx as _;
+                }
 
-            log::debug!("Received {rx} packets from the remote");
-
-            Ok(pkt)
-        } else if rx == 0 {
-            Err(Error::NoData)
-        } else {
-            Err(Error::Unknown)
-        }
+                self.recv_one(ctx)
+            })
+            .ok_or(Error::NoData)
     }
 }
 
