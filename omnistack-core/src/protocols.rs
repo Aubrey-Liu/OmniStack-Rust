@@ -1,9 +1,9 @@
 #![allow(unused)]
 
-use std::net::Ipv4Addr;
+use std::{fmt::Debug, net::Ipv4Addr};
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct MacAddr {
     raw: [u8; 6],
 }
@@ -15,6 +15,15 @@ impl MacAddr {
 
     pub const fn as_bytes(&self) -> [u8; 6] {
         self.raw
+    }
+}
+
+impl Debug for MacAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "[{:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}]",
+            self.raw[0], self.raw[1], self.raw[2], self.raw[3], self.raw[4], self.raw[5]
+        ))
     }
 }
 
@@ -112,5 +121,5 @@ pub struct UdpHeader {
     pub src: u16,
     pub dst: u16,
     pub len: u16,
-    chksum: u16
+    chksum: u16,
 }

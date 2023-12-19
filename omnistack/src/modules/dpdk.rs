@@ -32,6 +32,8 @@ impl IoAdapter for Dpdk {
         let mut mac_addr = sys::rte_ether_addr { addr_bytes: [0; 6] };
         let ret = unsafe { sys::dev_macaddr_get(port, &mut mac_addr) };
 
+        log::debug!("Port {port} MAC addr: {:?}", MacAddr::from_bytes(mac_addr.addr_bytes));
+
         if ret != 0 {
             Err(Error::Unknown)
         } else {

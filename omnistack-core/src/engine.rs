@@ -126,7 +126,7 @@ fn dpdk_eal_init() -> Result<()> {
 
 // maybe allow user to configure this?
 // seems unreliable to let Rust detect available cores
-const CPUS: usize = 2;
+const CPUS: usize = 1;
 
 impl Engine {
     pub fn run(config: &str) -> Result<()> {
