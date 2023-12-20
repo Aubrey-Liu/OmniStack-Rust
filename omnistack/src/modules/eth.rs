@@ -25,6 +25,8 @@ impl Module for EthSender {
 
         ctx.push_task_downstream(packet);
 
+        log::debug!("Send L2 header {:?}", packet.get_l2_header::<EthHeader>());
+
         Ok(())
     }
 }
@@ -42,6 +44,8 @@ impl Module for EthReceiver {
         packet.offset += packet.l2_header.length as u16;
 
         ctx.push_task_downstream(packet);
+
+        log::debug!("Receive L2 header: {:?}", packet.get_l2_header::<EthHeader>());
 
         Ok(())
     }

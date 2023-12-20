@@ -49,7 +49,7 @@ impl Module for Ipv4Sender {
         ipv4_hdr.set_version(4);
         ipv4_hdr.set_ihl(packet.l3_header.length >> 2);
         ipv4_hdr.tot_len = packet.len().to_be();
-        ipv4_hdr.protocol = Ipv4ProtoType::UDP as u8; // todo: include tcp
+        ipv4_hdr.protocol = Ipv4ProtoType::UDP; // todo: include tcp
         ipv4_hdr.ttl = 255;
         ipv4_hdr.src = src_addr; // ip address is of big endian already
         ipv4_hdr.dst = dst_addr;
@@ -58,6 +58,8 @@ impl Module for Ipv4Sender {
         ipv4_hdr.frag_off = 0;
 
         ctx.push_task_downstream(packet);
+
+        log::debug!("Send L3 header {:?}", packet.get_l3_header::<Ipv4Header>());
 
         Ok(())
     }
@@ -80,6 +82,8 @@ impl Module for Ipv4Receiver {
         if ipv4.ihl() >= 5 && ipv4.ttl > 0 {
             ctx.push_task_downstream(packet);
         }
+
+        log::debug!("Receive L3 header: {:?}", packet.get_l3_header::<Ipv4Header>());
 
         Ok(())
     }

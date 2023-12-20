@@ -299,6 +299,7 @@ impl Worker {
                 self.process_with_ctx(job.node_id, pkt)?;
             }
 
+            // todo: use a global mutable variable
             match self.ctrl_ch.try_recv() {
                 Ok(msg) => match msg {
                     CtrlMsg::ShutDown => break,

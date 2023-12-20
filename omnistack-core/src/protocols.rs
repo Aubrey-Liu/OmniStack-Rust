@@ -60,7 +60,7 @@ pub struct Ipv4Header {
     pub id: u16,
     pub frag_off: u16,
     pub ttl: u8,
-    pub protocol: u8,
+    pub protocol: Ipv4ProtoType,
     pub check: u16,
     pub src: u32,
     pub dst: u32,

@@ -81,13 +81,15 @@ impl IoAdapter for Dpdk {
         // packet's meta info is not needed anymore
         ctx.meta_packet_dealloc(packet);
 
-        // flush when buffers are full
+        // flush when buffer fills up
         if self.tx_buf_items == BURST_SIZE {
             while self.tx_buf_items > 0 {
                 let nb_tx = unsafe {
                     sys::dev_send_packet(0, 0, self.tx_bufs.as_mut_ptr(), BURST_SIZE as _)
                 };
                 self.tx_buf_items -= nb_tx as usize;
+
+                log::debug!("Send {nb_tx} packets to the remote");
             }
         }
 
