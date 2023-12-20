@@ -25,13 +25,15 @@ impl Module for UserNode {
             p.port = 0;
             p.set_len(1200);
 
-            log::debug!("UserNode received one packet");
-
             ctx.push_task_downstream(p);
             self.last = now;
         }
 
         Ok(())
+    }
+
+    fn is_ticking(&self) -> bool {
+        true
     }
 }
 

@@ -59,8 +59,6 @@ impl Module for Ipv4Sender {
 
         ctx.push_task_downstream(packet);
 
-        log::debug!("Send L3 header {:?}", packet.get_l3_header::<Ipv4Header>());
-
         Ok(())
     }
 }
@@ -82,8 +80,6 @@ impl Module for Ipv4Receiver {
         if ipv4.ihl() >= 5 && ipv4.ttl > 0 {
             ctx.push_task_downstream(packet);
         }
-
-        log::debug!("Receive L3 header: {:?}", packet.get_l3_header::<Ipv4Header>());
 
         Ok(())
     }

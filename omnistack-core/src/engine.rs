@@ -33,6 +33,8 @@ unsafe impl Send for Task {}
 
 struct Worker {
     nodes: Vec<Node>,
+    ticking_nodes: Vec<NodeId>,
+
     task_queue: TaskQueue,
     stealers: Vec<TaskStealer>,
     ctrl_ch: Receiver<CtrlMsg>,
@@ -278,6 +280,8 @@ impl Worker {
     ) -> Self {
         Self {
             nodes,
+            ticking_nodes: Vec::new(),
+
             task_queue,
             stealers,
             ctrl_ch,
@@ -291,6 +295,10 @@ impl Worker {
         for id in 0..self.nodes.len() {
             let ctx = self.make_context(id);
             self.nodes[id].module.init(&ctx)?;
+
+            if self.nodes[id].module.is_ticking() {
+                self.ticking_nodes.push(id);
+            }
         }
 
         loop {
@@ -305,9 +313,7 @@ impl Worker {
                     CtrlMsg::ShutDown => break,
                 },
                 Err(TryRecvError::Empty) => {
-                    for node_id in 0..self.nodes.len() {
-                        self.tick_with_ctx(node_id)?;
-                    }
+                    self.ticks_all()?;
                 }
                 Err(TryRecvError::Disconnected) => break,
             }
@@ -330,9 +336,13 @@ impl Worker {
         self.nodes[node_id].module.process(&ctx, pkt)
     }
 
-    fn tick_with_ctx(&mut self, node_id: NodeId) -> Result<()> {
-        let ctx = self.make_context(node_id);
-        self.nodes[node_id].module.tick(&ctx, Instant::now())
+    fn ticks_all(&mut self) -> Result<()> {
+        for node_id in self.ticking_nodes.iter() {
+            let ctx = self.make_context(*node_id);
+            self.nodes[*node_id].module.tick(&ctx, Instant::now())?;
+        }
+
+        Ok(())
     }
 
     fn make_context(&self, node_id: NodeId) -> Context {

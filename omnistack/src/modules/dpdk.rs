@@ -52,7 +52,7 @@ impl IoAdapter for Dpdk {
         let mut mac_addr = sys::rte_ether_addr { addr_bytes: [0; 6] };
         let ret = unsafe { sys::dev_macaddr_get(port, &mut mac_addr) };
 
-        log::debug!(
+        log::info!(
             "Port {port} MAC addr: {:?}",
             MacAddr::from_bytes(mac_addr.addr_bytes)
         );
@@ -89,7 +89,7 @@ impl IoAdapter for Dpdk {
                 };
                 self.tx_buf_items -= nb_tx as usize;
 
-                log::debug!("Send {nb_tx} packets to the remote");
+                log::debug!("Sent {nb_tx} packets to the NIC");
             }
         }
 
@@ -104,7 +104,7 @@ impl IoAdapter for Dpdk {
                 };
 
                 if rx > 0 {
-                    log::debug!("Received {rx} packets from the remote");
+                    log::debug!("Received {rx} packets from the NIC");
 
                     self.rx_buf_items = rx as _;
                 }

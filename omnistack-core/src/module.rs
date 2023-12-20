@@ -26,6 +26,10 @@ pub trait Module {
     fn tick(&mut self, ctx: &Context, now: Instant) -> Result<()> {
         Ok(())
     }
+
+    fn is_ticking(&self) -> bool {
+        false
+    }
 }
 
 pub(crate) struct Factory {
@@ -64,11 +68,7 @@ where
         Box::new(m)
     });
 
-    if Factory::get()
-        .builders
-        .insert(id, Box::new(f))
-        .is_some()
-    {
+    if Factory::get().builders.insert(id, Box::new(f)).is_some() {
         println!("warning: Module '{}' has already been registered", id);
     }
 }

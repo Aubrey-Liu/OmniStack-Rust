@@ -7,9 +7,9 @@ use once_cell::sync::Lazy;
 use crate::engine::Context;
 use crate::module::Module;
 use crate::packet::Packet;
+use crate::protocols::MacAddr;
 use crate::register_module;
 use crate::Result;
-use crate::protocols::MacAddr;
 
 pub fn get_mac_addr(port_id: u16) -> Option<MacAddr> {
     NIC_TO_MAC.lock().unwrap().get(&port_id).copied()
@@ -70,6 +70,10 @@ impl Module for IoNode {
         });
 
         Ok(())
+    }
+
+    fn is_ticking(&self) -> bool {
+        true
     }
 }
 

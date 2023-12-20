@@ -20,8 +20,6 @@ impl Module for UdpSender {
         udp_hdr.dst = 81_u16.to_be();
         udp_hdr.len = packet.len().to_be();
 
-        log::debug!("Send L4 header {:?}", packet.get_l4_header::<UdpHeader>());
-
         ctx.push_task_downstream(packet);
 
         Ok(())
@@ -41,8 +39,6 @@ impl Module for UdpReceiver {
         packet.offset += std::mem::size_of::<UdpHeader>() as u16;
 
         ctx.push_task_downstream(packet);
-
-        log::debug!("Receive L4 header {:?}", packet.get_l4_header::<UdpHeader>());
 
         Ok(())
     }
