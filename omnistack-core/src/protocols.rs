@@ -30,9 +30,9 @@ impl Debug for MacAddr {
 #[repr(u16)]
 #[derive(Debug, Clone, Copy)]
 pub enum EtherType {
-    Ipv4 = 0x0800,
-    Arp = 0x0806,
-    Ipv6 = 0x86DD,
+    Ipv4 = 0x0800_u16.to_be(),
+    Arp = 0x0806_u16.to_be(),
+    Ipv6 = 0x86DD_u16.to_be(),
 }
 
 #[repr(C, packed)]
