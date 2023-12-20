@@ -27,7 +27,7 @@ impl Dpdk {
     fn recv_one(&mut self, ctx: &Context) -> Option<&'static mut Packet> {
         if self.rx_buf_items > 0 {
             let pkt = ctx.meta_packet_alloc().unwrap();
-            pkt.init_from_mbuf(self.tx_bufs[self.rx_buf_items - 1]);
+            pkt.init_from_mbuf(self.rx_bufs[self.rx_buf_items - 1]);
             pkt.refcnt = 1;
             pkt.offset = 0;
 
