@@ -17,7 +17,7 @@ impl Module for EthSender {
         packet.offset -= packet.l2_header.length as u16;
         packet.l2_header.offset = packet.offset as _;
 
-        // todo: nic to mac
+        // TODO: nic to mac
         let eth_header = packet.get_l2_header::<EthHeader>();
         eth_header.dst = MacAddr::from_bytes([0x3c, 0xfd, 0xfe, 0xbb, 0xc9, 0xc9]);
         eth_header.src = get_mac_addr(packet.port).unwrap();

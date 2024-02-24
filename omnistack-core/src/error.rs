@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-// todo: design errors
+// TODO: design errors
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("failed to init dpdk")]

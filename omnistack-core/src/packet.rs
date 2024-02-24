@@ -5,7 +5,7 @@ use omnistack_sys::dpdk as sys;
 pub type PacketId = usize;
 
 pub const MTU: usize = 1500;
-// todo: Find better defaults
+// TODO: Find better defaults
 pub const DEFAULT_OFFSET: usize = 140;
 pub const PACKET_BUF_SIZE: usize = MTU + DEFAULT_OFFSET;
 
@@ -89,7 +89,7 @@ pub struct Packet {
     // all fields above is managed by modules
 
     // set by the allocator initially
-    pub refcnt: usize, // todo: is it really necessary?
+    pub refcnt: usize, // TODO: is it really necessary?
     pub mbuf: Mbuf,
     pub data: *mut u8,
 }
@@ -101,7 +101,7 @@ impl Packet {
     }
 
     pub fn len(&self) -> u16 {
-        // todo: make sure it is correct
+        // TODO: make sure it is correct
         self.length - self.offset
     }
 
@@ -159,7 +159,7 @@ impl PacketPool {
         let pktmbuf_pool_name = CString::new(format!("omnistack-pktmbuf-{socket_id}")).unwrap();
 
         Self {
-            // todo: socket id
+            // TODO: socket id
             pktinfo: unsafe {
                 sys::mempool_create(
                     pktinfo_pool_name.as_ptr(),

@@ -27,7 +27,7 @@ pub trait Module {
         Ok(())
     }
 
-    fn is_ticking(&self) -> bool {
+    fn tickable(&self) -> bool {
         false
     }
 }
@@ -52,7 +52,7 @@ impl Factory {
 
 type ModuleBuildFn = Box<dyn Fn() -> Box<dyn Module>>;
 
-// todo: load dynamic libraries
+// TODO: load dynamic libraries
 
 /// Register a module with its identifier and builder.
 ///

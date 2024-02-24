@@ -64,7 +64,7 @@ impl IoAdapter for Dpdk {
         }
     }
 
-    // todo: buffer and flush
+    // TODO: buffer and flush
     fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         // set everything for mbuf
         packet.mbuf.inc_data_off(packet.offset);

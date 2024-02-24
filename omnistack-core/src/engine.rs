@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::ffi::*;
+use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
 use core_affinity::CoreId;
 use crossbeam::channel::{bounded, Receiver, TryRecvError};
+use once_cell::sync::Lazy;
 
 use crate::error::Error;
 use crate::module::*;
@@ -33,6 +35,7 @@ unsafe impl Send for Task {}
 
 struct Worker {
     nodes: Vec<Node>,
+    // TODO: put ticking nodes together to decrease overhead
     ticking_nodes: Vec<NodeId>,
 
     task_queue: TaskQueue,
@@ -45,7 +48,7 @@ struct Worker {
 
 pub(crate) struct Node {
     module: Box<dyn Module>,
-    out_links: Vec<Link>, // todo: smallvec?
+    out_links: Vec<Link>, // TODO: smallvec?
 }
 
 unsafe impl Send for Node {}
@@ -114,8 +117,8 @@ unsafe impl Send for CtrlMsg {}
 
 fn dpdk_eal_init() -> Result<()> {
     let arg0 = CString::new("").unwrap();
-    let arg1 = CString::new("--log-level=8").unwrap();
-    let mut argv = [arg0.as_ptr(), arg1.as_ptr()];
+    // let arg1 = CString::new("--log-level=8").unwrap();
+    let mut argv = [arg0.as_ptr()];
     let ret = unsafe {
         omnistack_sys::dpdk::eal::rte_eal_init(argv.len() as _, argv.as_mut_ptr().cast())
     };
@@ -130,33 +133,43 @@ fn dpdk_eal_init() -> Result<()> {
 // seems unreliable to let Rust detect available cores
 const CPUS: usize = 1;
 
-impl Engine {
-    pub fn run(config: &str) -> Result<()> {
-        dpdk_eal_init()?;
+pub struct Config {
+    graphs: HashMap<String, json::JsonValue>,
+}
 
-        let mut graphs = Vec::new();
-        for _ in 0..CPUS {
-            graphs.push(Self::build_graph(config))
-        }
+impl Config {
+    fn instance() -> &'static Mutex<Config> {
+        static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| {
+            Mutex::new(Config {
+                graphs: HashMap::new(),
+            })
+        });
 
-        let mut workers = Self::run_workers(graphs)?;
-
-        while let Some(t) = workers.pop() {
-            t.join().expect("error joining a thread");
-        }
-
-        Ok(())
+        &CONFIG
     }
 
-    fn build_graph(config: &str) -> Vec<Node> {
-        let config = json::parse(config).expect("config should be in json format");
-        let nodes = &config["nodes"];
-        let edges = &config["edges"];
+    pub fn insert_graph(graph: &str) {
+        let json = json::parse(graph).expect("bad json value");
+        let name = String::from(
+            json["name"]
+                .as_str()
+                .expect("key `name` not found in graph"),
+        );
+
+        let mut config = Self::instance().lock().unwrap();
+        config.graphs.insert(name, json);
+    }
+
+    fn get_graph(name: &str) -> Vec<Node> {
+        let config = Self::instance().lock().unwrap();
+        let graph = config.graphs.get(name).expect("Unknown graph name");
+        let nodes = &graph["nodes"];
+        let edges = &graph["edges"];
         let mut graph = Vec::new();
         let mut node_ids = HashMap::new();
 
-        assert!(!nodes.is_null(), "key `nodes` not found in config");
-        assert!(!edges.is_null(), "key `edges` not found in config");
+        assert!(!nodes.is_null(), "key `nodes` not found in graph");
+        assert!(!edges.is_null(), "key `edges` not found in graph");
 
         for node in nodes.members() {
             assert!(!node["id"].is_null(), "node doesn't have key `id`");
@@ -210,7 +223,6 @@ impl Engine {
             let src_id = node_ids.get(&src).copied().unwrap();
             let dst_id = node_ids.get(&dst).copied().unwrap();
 
-            // todo: support bi-directional links (be wary of cycles)
             let link = Link { to: dst_id };
 
             let src_node = graph.get_mut(src_id).unwrap();
@@ -224,6 +236,25 @@ impl Engine {
         }
 
         graph
+    }
+}
+
+impl Engine {
+    pub fn run(graph_name: &str) -> Result<()> {
+        dpdk_eal_init()?;
+
+        let mut graphs = Vec::new();
+        for _ in 0..CPUS {
+            graphs.push(Config::get_graph(graph_name));
+        }
+
+        let mut workers = Self::run_workers(graphs)?;
+
+        while let Some(t) = workers.pop() {
+            t.join().expect("error joining a thread");
+        }
+
+        Ok(())
     }
 
     fn run_workers(graphs: Vec<Vec<Node>>) -> Result<Vec<JoinHandle<()>>> {
@@ -242,17 +273,13 @@ impl Engine {
             })
             .collect();
 
-        for (((id, gp), tq), st) in (0..cpus)
-            .zip(graphs)
-            .zip(task_queues)
-            .zip(stealers)
-        {
+        for (((id, gp), tq), st) in (0..cpus).zip(graphs).zip(task_queues).zip(stealers) {
             let (sd, rv) = bounded(1);
             let mut worker = Worker::new(gp, tq, st, rv, id as _);
 
             threads.push(std::thread::spawn(move || {
                 core_affinity::set_for_current(CoreId { id });
-                worker.run().unwrap(); // todo: handle errors gracefully
+                worker.run().unwrap(); // TODO: handle errors gracefully
             }));
 
             ctrl_chs.push(sd);
@@ -296,7 +323,7 @@ impl Worker {
             let ctx = self.make_context(id);
             self.nodes[id].module.init(&ctx)?;
 
-            if self.nodes[id].module.is_ticking() {
+            if self.nodes[id].module.tickable() {
                 self.ticking_nodes.push(id);
             }
         }
@@ -307,7 +334,7 @@ impl Worker {
                 self.process_with_ctx(job.node_id, pkt)?;
             }
 
-            // todo: use a global mutable variable
+            // TODO: use a global mutable variable
             match self.ctrl_ch.try_recv() {
                 Ok(msg) => match msg {
                     CtrlMsg::ShutDown => break,

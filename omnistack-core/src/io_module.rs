@@ -72,7 +72,7 @@ impl Module for IoNode {
         Ok(())
     }
 
-    fn is_ticking(&self) -> bool {
+    fn tickable(&self) -> bool {
         true
     }
 }

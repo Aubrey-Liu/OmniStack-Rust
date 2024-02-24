@@ -16,7 +16,7 @@ impl Module for UdpSender {
         packet.l4_header.offset = packet.offset;
 
         let udp_hdr = packet.get_l4_header::<UdpHeader>();
-        udp_hdr.src = 80_u16.to_be(); // todo
+        udp_hdr.src = 80_u16.to_be(); // TODO
         udp_hdr.dst = 81_u16.to_be();
         udp_hdr.len = packet.len().to_be();
 

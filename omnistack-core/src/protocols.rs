@@ -50,7 +50,7 @@ pub enum Ipv4ProtoType {
     UDP = 11,
 }
 
-// todo: design choices (1) mutable reference (2) pointer + dump method
+// TODO: design choices (1) mutable reference (2) pointer + dump method
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct Ipv4Header {

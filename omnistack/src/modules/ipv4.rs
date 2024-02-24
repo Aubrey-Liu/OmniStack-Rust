@@ -12,7 +12,7 @@ impl Ipv4Sender {
     pub fn new() -> Self {
         let ip = u32::from_ne_bytes(Ipv4Addr::from_str("192.168.10.0").unwrap().octets());
 
-        // todo: read from the config
+        // TODO: read from the config
         Self {
             route_table: vec![Route::new(ip, 24, 0)],
         }
@@ -21,7 +21,7 @@ impl Ipv4Sender {
 
 impl Module for Ipv4Sender {
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
-        // todo: get them from the user
+        // TODO: get them from the user
         let src_addr = u32::from_ne_bytes(Ipv4Addr::from_str("192.168.10.1").unwrap().octets());
         let dst_addr = u32::from_ne_bytes(Ipv4Addr::from_str("192.168.10.2").unwrap().octets());
 
@@ -49,7 +49,7 @@ impl Module for Ipv4Sender {
         ipv4_hdr.set_version(4);
         ipv4_hdr.set_ihl(packet.l3_header.length >> 2);
         ipv4_hdr.tot_len = packet.len().to_be();
-        ipv4_hdr.protocol = Ipv4ProtoType::UDP; // todo: include tcp
+        ipv4_hdr.protocol = Ipv4ProtoType::UDP; // TODO: include tcp
         ipv4_hdr.ttl = 255;
         ipv4_hdr.src = src_addr; // ip address is of big endian already
         ipv4_hdr.dst = dst_addr;

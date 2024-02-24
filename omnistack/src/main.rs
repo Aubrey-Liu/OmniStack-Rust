@@ -1,11 +1,12 @@
 mod modules;
 
-use omnistack_core::engine::Engine;
+use omnistack_core::engine::{Config, Engine};
 
 fn main() {
     env_logger::init();
 
-    let config = r#"{
+    let graph = r#"{
+        "name": "UDP",
         "nodes": [
             { "id": "user", "name": "UserNode" },
             { "id": "eth_tx", "name": "EthSender" },
@@ -28,6 +29,7 @@ fn main() {
         ]
     }"#;
 
-    Engine::run(config).expect("failed to boot engine");
-    // todo: start the omnistack server only once (lock file?)
+    Config::insert_graph(graph);
+    Engine::run("UDP").expect("failed to boot engine");
+    // TODO: start the omnistack server only once (lock file?)
 }
