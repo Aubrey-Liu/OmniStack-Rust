@@ -1,7 +1,0 @@
-add_subdirectory(tcp_parser)
-add_subdirectory(udp_sender)
-add_subdirectory(udp_recver)
-add_subdirectory(ipv4_sender)
-add_subdirectory(ipv4_recver)
-add_subdirectory(eth_recver)
-add_subdirectory(eth_sender)

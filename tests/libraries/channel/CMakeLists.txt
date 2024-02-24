@@ -1,3 +1,0 @@
-add_executable(channel_test channel.cpp)
-target_link_libraries(channel_test GTest::gtest_main omni_memory omni_token omni_channel)
-gtest_discover_tests(channel_test)

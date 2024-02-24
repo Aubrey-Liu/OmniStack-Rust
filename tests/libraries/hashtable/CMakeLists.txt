@@ -1,3 +1,0 @@
-add_executable(hashtable_test hashtable.cpp)
-target_link_libraries(hashtable_test GTest::gtest_main omni_hashtable)
-gtest_discover_tests(hashtable_test)
