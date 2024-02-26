@@ -10,14 +10,16 @@ struct UserNode {
 impl Module for UserNode {
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         // pretend we have sent a packet to user
-        ctx.packet_dealloc(packet);
+        ctx.deallocate(packet);
 
         Ok(())
     }
 
     fn tick(&mut self, ctx: &Context, now: Instant) -> Result<()> {
         if now.duration_since(self.last).as_millis() > 1000 {
-            let p = ctx.packet_alloc().unwrap();
+            let p = ctx.allocate_pkt().unwrap();
+            let mbuf = ctx.allocate_mbuf().unwrap();
+            p.init_from_mbuf(omnistack_core::packet::Mbuf(mbuf));
 
             // pretend we received a packet from user
             p.offset = DEFAULT_OFFSET as _;

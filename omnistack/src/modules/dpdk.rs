@@ -6,6 +6,7 @@ const BURST_SIZE: usize = 32;
 #[repr(C)]
 #[derive(Debug)]
 pub struct Dpdk {
+    // Cache `BURST_SIZE` packets before sending a patch
     tx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
     tx_buf_items: usize,
 
@@ -26,8 +27,10 @@ impl Dpdk {
 
     fn recv_one(&mut self, ctx: &Context) -> Option<&'static mut Packet> {
         if self.rx_buf_items > 0 {
-            let pkt = ctx.meta_packet_alloc().unwrap();
-            pkt.init_from_mbuf(self.rx_bufs[self.rx_buf_items - 1]);
+            let pkt = ctx.allocate_pkt().unwrap();
+            pkt.init_from_mbuf(omnistack_core::packet::Mbuf(
+                self.rx_bufs[self.rx_buf_items - 1],
+            ));
             pkt.refcnt = 1;
             pkt.offset = 0;
 
@@ -67,19 +70,23 @@ impl IoAdapter for Dpdk {
     // TODO: buffer and flush
     fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         // set everything for mbuf
-        packet.mbuf.inc_data_off(packet.offset);
-        packet.mbuf.set_data_len(packet.len());
-        packet.mbuf.set_pkt_len(packet.len() as _);
+        //
+        // TODO: allocate mbuf as cache, as set these values
+        //
+        // packet.mbuf.inc_data_off(packet.offset);
+        // packet.mbuf.set_data_len(packet.len());
+        // packet.mbuf.set_pkt_len(packet.len() as _);
+        //
+        // packet.mbuf.set_l2_len(packet.l2_header.length);
+        // packet.mbuf.set_l3_len(packet.l3_header.length);
+        // packet.mbuf.set_l4_len(packet.l4_header.length);
 
-        packet.mbuf.set_l2_len(packet.l2_header.length);
-        packet.mbuf.set_l3_len(packet.l3_header.length);
-        packet.mbuf.set_l4_len(packet.l4_header.length);
-
-        self.tx_bufs[self.tx_buf_items] = packet.mbuf.inner();
-        self.tx_buf_items += 1;
+        // self.tx_bufs[self.tx_buf_items] = packet.mbuf.inner();
+        // self.tx_buf_items += 1;
 
         // packet's meta info is not needed anymore
-        ctx.meta_packet_dealloc(packet);
+        // NOTE: don't free mbuf
+        ctx.deallocate(packet);
 
         // flush when buffer fills up
         if self.tx_buf_items == BURST_SIZE {
@@ -97,8 +104,10 @@ impl IoAdapter for Dpdk {
     }
 
     fn recv(&mut self, ctx: &Context) -> Result<&mut Packet> {
+        // fetch from the recv buffer first
         self.recv_one(ctx)
             .or_else(|| {
+                // if buffer is empty, then fetch from the device
                 let rx = unsafe {
                     sys::dev_recv_packet(0, 0, self.rx_bufs.as_mut_ptr(), BURST_SIZE as _)
                 };

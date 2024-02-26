@@ -12,6 +12,7 @@ use crate::error::Error;
 use crate::module::*;
 use crate::packet::{Packet, PacketPool};
 use crate::Result;
+use omnistack_sys::dpdk as sys;
 
 pub type NodeId = usize;
 pub type TaskQueue = crossbeam::deque::Worker<Task>;
@@ -56,17 +57,15 @@ unsafe impl Send for Node {}
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Context {
-    pub core_id: u16,
-    pub node: *const c_void,
-    pub tq: *const c_void,
-    pub pktpool: PacketPool,
+    core_id: u16,
+    node: *const Node,
+    tq: *const TaskQueue,
+    pktpool: PacketPool,
 }
 
 impl Context {
-    #[no_mangle]
-    pub extern "C" fn push_task_downstream(&self, data: &mut Packet) {
-        let node: *const Node = self.node.cast();
-        let links = unsafe { &(*node).out_links };
+    pub fn push_task_downstream(&self, data: &mut Packet) {
+        let links = unsafe { &(*self.node).out_links };
 
         data.refcnt += links.len() - 1;
 
@@ -78,33 +77,22 @@ impl Context {
         }
     }
 
-    #[no_mangle]
-    pub extern "C" fn push_task(&self, task: Task) {
-        let tq: *const TaskQueue = self.tq.cast();
-        unsafe { (*tq).push(task) };
+    pub fn push_task(&self, task: Task) {
+        unsafe { (*self.tq).push(task) };
     }
 
     /// allocate a packet with data buffer
-    #[no_mangle]
-    pub extern "C" fn packet_alloc(&self) -> Option<&'static mut Packet> {
-        self.pktpool.allocate()
+    pub fn allocate_pkt(&self) -> Option<&'static mut Packet> {
+        self.pktpool.allocate_pkt()
     }
 
     /// allocate a packet without data buffer
-    #[no_mangle]
-    pub extern "C" fn meta_packet_alloc(&self) -> Option<&'static mut Packet> {
-        self.pktpool.allocate_meta()
+    pub fn allocate_mbuf(&self) -> Option<*mut sys::rte_mbuf> {
+        self.pktpool.allocate_mbuf()
     }
 
-    #[no_mangle]
-    pub extern "C" fn packet_dealloc(&self, packet: *mut Packet) {
-        self.pktpool.deallocate(packet)
-    }
-
-    /// allocate a packet without data buffer
-    #[no_mangle]
-    pub extern "C" fn meta_packet_dealloc(&self, packet: *mut Packet) {
-        self.pktpool.deallocate_meta(packet)
+    pub fn deallocate(&self, packet: *mut Packet) {
+        self.pktpool.deallocate_pkt(packet)
     }
 }
 
