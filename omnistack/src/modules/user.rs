@@ -16,18 +16,20 @@ impl Module for UserNode {
     }
 
     fn tick(&mut self, ctx: &Context, now: Instant) -> Result<()> {
-        if now.duration_since(self.last).as_millis() > 1000 {
-            let p = ctx.allocate_pkt().unwrap();
-            let mbuf = ctx.allocate_mbuf().unwrap();
-            p.init_from_mbuf(omnistack_core::packet::Mbuf(mbuf));
+        if now.duration_since(self.last).as_millis() > 50 {
+            let p = ctx.allocate().unwrap();
 
-            // pretend we received a packet from user
+            // pretend we have received a packet from user
+            p.buf[140..1340].fill(3);
             p.offset = DEFAULT_OFFSET as _;
+            p.data = p.buf.as_mut_ptr();
             p.refcnt = 1;
             p.port = 0;
             p.set_len(1200);
 
-            ctx.push_task_downstream(p);
+            log::debug!("Received 1 Packet (len: 1200) from User.");
+
+            ctx.dispatch_task(p);
             self.last = now;
         }
 

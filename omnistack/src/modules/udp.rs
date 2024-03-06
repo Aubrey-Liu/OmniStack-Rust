@@ -20,7 +20,7 @@ impl Module for UdpSender {
         udp_hdr.dst = 81_u16.to_be();
         udp_hdr.len = packet.len().to_be();
 
-        ctx.push_task_downstream(packet);
+        ctx.dispatch_task(packet);
 
         Ok(())
     }
@@ -38,7 +38,7 @@ impl Module for UdpReceiver {
         packet.l4_header.offset = packet.offset;
         packet.offset += std::mem::size_of::<UdpHeader>() as u16;
 
-        ctx.push_task_downstream(packet);
+        ctx.dispatch_task(packet);
 
         Ok(())
     }

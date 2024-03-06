@@ -57,7 +57,7 @@ impl Module for Ipv4Sender {
         ipv4_hdr.id = 0;
         ipv4_hdr.frag_off = 0;
 
-        ctx.push_task_downstream(packet);
+        ctx.dispatch_task(packet);
 
         Ok(())
     }
@@ -78,7 +78,7 @@ impl Module for Ipv4Receiver {
         packet.offset += packet.l3_header.length as u16;
 
         if ipv4.ihl() >= 5 && ipv4.ttl > 0 {
-            ctx.push_task_downstream(packet);
+            ctx.dispatch_task(packet);
         }
 
         Ok(())

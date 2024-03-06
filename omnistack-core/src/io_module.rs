@@ -18,14 +18,21 @@ pub fn get_mac_addr(port_id: u16) -> Option<MacAddr> {
 static NIC_TO_MAC: Lazy<Mutex<HashMap<u16, MacAddr>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub trait IoAdapter {
+    /// Should only be called ONCE.
     fn init(&mut self, ctx: &Context, port_id: u16, num_queues: u16) -> Result<MacAddr>;
 
     fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()>;
 
     fn recv(&mut self, ctx: &Context) -> Result<&mut Packet>;
+
+    #[allow(unused_variables)]
+    fn flush(&mut self, ctx: &Context) -> Result<()> {
+        Ok(())
+    }
 }
 
 struct IoNode {
+    // TODO: flush packets periodically
     adapters: Vec<Box<dyn IoAdapter>>,
 }
 
@@ -37,21 +44,17 @@ impl IoNode {
     }
 }
 
-static INIT: std::sync::Once = std::sync::Once::new();
-
 impl Module for IoNode {
     fn init(&mut self, ctx: &Context) -> Result<()> {
         for f in Factory::get().builders.values() {
             self.adapters.push(f());
         }
 
-        INIT.call_once(|| {
-            self.adapters.iter_mut().for_each(|io| {
-                let port = 0;
-                let mac = io.init(ctx, port, 1).unwrap();
+        self.adapters.iter_mut().for_each(|io| {
+            let port = 0;
+            let mac = io.init(ctx, port, 1).unwrap();
 
-                NIC_TO_MAC.lock().unwrap().insert(port, mac);
-            });
+            NIC_TO_MAC.lock().unwrap().insert(port, mac);
         });
 
         Ok(())
@@ -62,10 +65,9 @@ impl Module for IoNode {
     }
 
     fn tick(&mut self, ctx: &Context, _now: Instant) -> Result<()> {
-        self.adapters.iter_mut().enumerate().for_each(|(nic, io)| {
+        self.adapters.iter_mut().for_each(|io| {
             if let Ok(pkt) = io.recv(ctx) {
-                pkt.port = nic as _;
-                ctx.push_task_downstream(pkt);
+                ctx.dispatch_task(pkt);
             }
         });
 

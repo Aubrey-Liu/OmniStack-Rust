@@ -4,4 +4,10 @@
 #![allow(non_snake_case)]
 #![allow(improper_ctypes)]
 
-pub mod dpdk;
+pub mod sys {
+    pub use dpdk_sys::*;
+
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
+
+pub use sys::*;

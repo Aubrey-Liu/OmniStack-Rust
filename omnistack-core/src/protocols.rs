@@ -77,13 +77,13 @@ impl Ipv4Header {
     }
 
     pub fn set_version(&mut self, version: u8) {
-        debug_assert!(version <= (1 << 4 - 1));
+        debug_assert!(version <= ((1 << 4) - 1));
 
         self.version_ihl |= version;
     }
 
     pub fn set_ihl(&mut self, ihl: u8) {
-        debug_assert!(ihl <= (1 << 4 - 1));
+        debug_assert!(ihl <= ((1 << 4) - 1));
 
         self.version_ihl |= (ihl << 4);
     }

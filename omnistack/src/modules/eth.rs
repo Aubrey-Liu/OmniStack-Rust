@@ -23,7 +23,7 @@ impl Module for EthSender {
         eth_header.src = get_mac_addr(packet.port).unwrap();
         eth_header.ether_ty = EtherType::Ipv4;
 
-        ctx.push_task_downstream(packet);
+        ctx.dispatch_task(packet);
 
         Ok(())
     }
@@ -41,7 +41,7 @@ impl Module for EthReceiver {
         packet.l2_header.offset = packet.offset;
         packet.offset += packet.l2_header.length as u16;
 
-        ctx.push_task_downstream(packet);
+        ctx.dispatch_task(packet);
 
         Ok(())
     }

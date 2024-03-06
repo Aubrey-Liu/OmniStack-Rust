@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::*;
+use std::sync::atomic::AtomicU16;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -12,7 +14,6 @@ use crate::error::Error;
 use crate::module::*;
 use crate::packet::{Packet, PacketPool};
 use crate::Result;
-use omnistack_sys::dpdk as sys;
 
 pub type NodeId = usize;
 pub type TaskQueue = crossbeam::deque::Worker<Task>;
@@ -32,39 +33,47 @@ pub struct Task {
     pub node_id: NodeId,
 }
 
-unsafe impl Send for Task {}
-
 struct Worker {
+    // NOTE: Node is not cloneable
     nodes: Vec<Node>,
-    // TODO: put ticking nodes together to decrease overhead
+    // NOTE: put ticking nodes together to decrease overhead
     ticking_nodes: Vec<NodeId>,
 
     task_queue: TaskQueue,
+    // Steal tasks from other cores
     stealers: Vec<TaskStealer>,
     ctrl_ch: Receiver<CtrlMsg>,
 
+    id: u16,
     core_id: u16,
     pktpool: PacketPool,
 }
 
+// TODO: Prove it's safe to do so
+unsafe impl Send for Worker {}
+
 pub(crate) struct Node {
+    id: NodeId,
     module: Box<dyn Module>,
     out_links: Vec<Link>, // TODO: smallvec?
 }
 
-unsafe impl Send for Node {}
-
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Context {
-    core_id: u16,
+    pub core_id: u16,
+    pub graph_id: u16,
+    // TODO: use reference
     node: *const Node,
     tq: *const TaskQueue,
-    pktpool: PacketPool,
+    pktpool: *const PacketPool,
 }
 
+unsafe impl Send for Context {}
+
 impl Context {
-    pub fn push_task_downstream(&self, data: &mut Packet) {
+    // TODO: Hide this
+    pub fn dispatch_task(&self, data: &mut Packet) {
         let links = unsafe { &(*self.node).out_links };
 
         data.refcnt += links.len() - 1;
@@ -77,22 +86,18 @@ impl Context {
         }
     }
 
-    pub fn push_task(&self, task: Task) {
+    fn push_task(&self, task: Task) {
         unsafe { (*self.tq).push(task) };
     }
 
     /// allocate a packet with data buffer
-    pub fn allocate_pkt(&self) -> Option<&'static mut Packet> {
-        self.pktpool.allocate_pkt()
-    }
-
-    /// allocate a packet without data buffer
-    pub fn allocate_mbuf(&self) -> Option<*mut sys::rte_mbuf> {
-        self.pktpool.allocate_mbuf()
+    pub fn allocate(&self) -> Option<&'static mut Packet> {
+        unsafe { (*self.pktpool).allocate(self.graph_id).as_mut() }
     }
 
     pub fn deallocate(&self, packet: *mut Packet) {
-        self.pktpool.deallocate_pkt(packet)
+        // TODO: if a mbuf is attached, also deallocate
+        unsafe { (*self.pktpool).deallocate(packet, self.graph_id) }
     }
 }
 
@@ -105,11 +110,10 @@ unsafe impl Send for CtrlMsg {}
 
 fn dpdk_eal_init() -> Result<()> {
     let arg0 = CString::new("").unwrap();
-    // let arg1 = CString::new("--log-level=8").unwrap();
-    let mut argv = [arg0.as_ptr()];
-    let ret = unsafe {
-        omnistack_sys::dpdk::eal::rte_eal_init(argv.len() as _, argv.as_mut_ptr().cast())
-    };
+    let arg1 = CString::new("--log-level").unwrap();
+    let arg2 = CString::new("warning").unwrap();
+    let mut argv = [arg0.as_ptr(), arg1.as_ptr(), arg2.as_ptr()];
+    let ret = unsafe { omnistack_sys::rte_eal_init(argv.len() as _, argv.as_mut_ptr().cast()) };
     if ret < 0 {
         return Err(Error::DpdkInitErr);
     }
@@ -177,8 +181,8 @@ impl Config {
                 name
             );
 
-            let new_node = Node::new(build_module(name));
             let node_id = graph.len();
+            let new_node = Node::new(node_id, build_module(name));
             node_ids.insert(id, node_id);
             graph.insert(node_id, new_node);
         }
@@ -228,14 +232,11 @@ impl Config {
 }
 
 impl Engine {
+    // TODO: Read graph scheme from config file
     pub fn run(graph_name: &str) -> Result<()> {
         dpdk_eal_init()?;
 
-        let mut graphs = Vec::new();
-        for _ in 0..CPUS {
-            graphs.push(Config::get_graph(graph_name));
-        }
-
+        let graphs: Vec<Vec<Node>> = vec![Config::get_graph(graph_name)];
         let mut workers = Self::run_workers(graphs)?;
 
         while let Some(t) = workers.pop() {
@@ -248,25 +249,30 @@ impl Engine {
     fn run_workers(graphs: Vec<Vec<Node>>) -> Result<Vec<JoinHandle<()>>> {
         let mut threads = Vec::new();
         let mut ctrl_chs = Vec::new();
-        let cpus = graphs.len();
+        let len = graphs.len();
 
-        let task_queues: Vec<_> = (0..cpus).map(|_| TaskQueue::new_fifo()).collect();
-        let stealers: Vec<_> = (0..cpus)
-            .map(|id| {
-                task_queues
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(qid, tq)| if id == qid { None } else { Some(tq.stealer()) })
-                    .collect()
-            })
-            .collect();
+        let task_queues: Vec<_> = (0..len).map(|_| TaskQueue::new_fifo()).collect();
 
-        for (((id, gp), tq), st) in (0..cpus).zip(graphs).zip(task_queues).zip(stealers) {
+        // TODO: Can't steal from a different graph.
+        //
+        // let stealers: Vec<_> = (0..len)
+        //     .map(|id| {
+        //         task_queues
+        //             .iter()
+        //             .enumerate()
+        //             .filter_map(|(qid, tq)| if id == qid { None } else { Some(tq.stealer()) })
+        //             .collect()
+        //     })
+        //     .collect();
+
+        for (gp, tq) in graphs.into_iter().zip(task_queues) {
+            let cpu = 12;
             let (sd, rv) = bounded(1);
-            let mut worker = Worker::new(gp, tq, st, rv, id as _);
+            // TODO: id, stealer
+            let mut worker = Worker::new(gp, tq, vec![], rv, cpu);
 
             threads.push(std::thread::spawn(move || {
-                core_affinity::set_for_current(CoreId { id });
+                core_affinity::set_for_current(CoreId { id: cpu as _ });
                 worker.run().unwrap(); // TODO: handle errors gracefully
             }));
 
@@ -285,6 +291,8 @@ impl Engine {
     }
 }
 
+static WORKER_ID: AtomicU16 = AtomicU16::new(0);
+
 impl Worker {
     pub fn new(
         nodes: Vec<Node>,
@@ -301,17 +309,21 @@ impl Worker {
             stealers,
             ctrl_ch,
 
+            id: WORKER_ID.fetch_add(1, Relaxed),
             core_id,
             pktpool: PacketPool::get_or_create(core_id as _),
         }
     }
 
     pub fn run(&mut self) -> Result<()> {
-        for id in 0..self.nodes.len() {
-            let ctx = self.make_context(id);
-            self.nodes[id].module.init(&ctx)?;
+        let ctx: Vec<_> = (0..self.nodes.len())
+            .map(|idx| self.make_context(idx))
+            .collect();
 
-            if self.nodes[id].module.tickable() {
+        for (id, (node, ctx)) in self.nodes.iter_mut().zip(ctx.iter()).enumerate() {
+            node.module.init(ctx)?;
+
+            if node.module.tickable() {
                 self.ticking_nodes.push(id);
             }
         }
@@ -319,16 +331,20 @@ impl Worker {
         loop {
             while let Some(job) = self.find_job() {
                 let pkt = unsafe { job.data.as_mut().unwrap() };
-                self.process_with_ctx(job.node_id, pkt)?;
+                self.nodes[job.node_id]
+                    .module
+                    .process(&ctx[job.node_id], pkt)?;
             }
 
-            // TODO: use a global mutable variable
             match self.ctrl_ch.try_recv() {
                 Ok(msg) => match msg {
                     CtrlMsg::ShutDown => break,
                 },
                 Err(TryRecvError::Empty) => {
-                    self.ticks_all()?;
+                    for &node_id in self.ticking_nodes.iter() {
+                        let ctx = &ctx[node_id];
+                        self.nodes[node_id].module.tick(ctx, Instant::now())?;
+                    }
                 }
                 Err(TryRecvError::Disconnected) => break,
             }
@@ -338,41 +354,26 @@ impl Worker {
     }
 
     fn find_job(&self) -> Option<Task> {
-        self.task_queue.pop().or_else(|| {
-            self.stealers
-                .iter()
-                .map(|s| s.steal_batch_with_limit_and_pop(&self.task_queue, 8))
-                .find_map(|j| j.success())
-        })
-    }
-
-    fn process_with_ctx(&mut self, node_id: NodeId, pkt: &mut Packet) -> Result<()> {
-        let ctx = self.make_context(node_id);
-        self.nodes[node_id].module.process(&ctx, pkt)
-    }
-
-    fn ticks_all(&mut self) -> Result<()> {
-        for node_id in self.ticking_nodes.iter() {
-            let ctx = self.make_context(*node_id);
-            self.nodes[*node_id].module.tick(&ctx, Instant::now())?;
-        }
-
-        Ok(())
+        // TODO: maybe steal from other replica
+        self.task_queue.pop()
     }
 
     fn make_context(&self, node_id: NodeId) -> Context {
         Context {
             core_id: self.core_id,
-            node: &self.nodes[node_id] as *const _ as *const _,
-            tq: &self.task_queue as *const _ as *const _,
-            pktpool: self.pktpool,
+            graph_id: self.id,
+
+            node: &self.nodes[node_id] as *const _,
+            tq: &self.task_queue as *const _,
+            pktpool: &self.pktpool,
         }
     }
 }
 
 impl Node {
-    pub fn new(module: Box<dyn Module>) -> Self {
+    pub fn new(id: NodeId, module: Box<dyn Module>) -> Self {
         Self {
+            id,
             module,
             out_links: Vec::new(),
         }

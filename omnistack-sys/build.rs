@@ -1,30 +1,17 @@
+use std::{env::var, path::PathBuf};
+
 fn main() {
-    let libs = ["src/dpdk/packet.c", "src/dpdk/device.c", "src/dpdk/utils.c"];
-
-    for l in libs {
-        println!("cargo:rerun-if-changed={l}");
-    }
-
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/wrapper.h");
     println!("cargo:rustc-link-lib=numa");
-    pkg_config::probe_library("libdpdk").unwrap();
 
-    cc::Build::new()
-        .files(libs)
-        .include("src")
-        .flag_if_supported("-mssse3")
-        .compile("omnistack-sys-lib");
+    let out_dir = PathBuf::from(var("OUT_DIR").unwrap());
 
     bindgen::builder()
-        .header(libs[0])
-        .header(libs[1])
-        .header(libs[2])
-        .allowlist_file(libs[2])
-        .allowlist_function("pktpool.*")
-        .allowlist_function("mempool.*")
-        .allowlist_function("dev.*")
+        .header("src/wrapper.h")
         .layout_tests(false)
         .generate()
         .unwrap()
-        .write_to_file("src/dpdk/bindings.rs")
+        .write_to_file(out_dir.join("bindings.rs"))
         .unwrap();
 }

@@ -1,3 +1,6 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+#![allow(clippy::len_without_is_empty)]
+
 pub mod engine;
 pub mod error;
 pub mod io_module;
