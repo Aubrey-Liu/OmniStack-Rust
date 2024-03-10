@@ -1,6 +1,8 @@
 #![allow(unused)]
 
-use std::{fmt::Debug, net::Ipv4Addr};
+use thiserror::Error;
+
+use std::{convert::Infallible, fmt::Debug, str::FromStr, string::ParseError};
 
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
@@ -9,6 +11,10 @@ pub struct MacAddr {
 }
 
 impl MacAddr {
+    pub const fn invalid() -> Self {
+        Self::from_bytes([0; 6])
+    }
+
     pub const fn from_bytes(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
         Self { raw: bytes }
     }
@@ -21,9 +27,54 @@ impl MacAddr {
 impl Debug for MacAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
-            "[{:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}]",
+            "[{:#x}:{:#x}:{:#x}:{:#x}:{:#x}:{:#x}]",
             self.raw[0], self.raw[1], self.raw[2], self.raw[3], self.raw[4], self.raw[5]
         ))
+    }
+}
+
+#[derive(Debug)]
+pub struct Ipv4Addr {
+    octets: [u8; 4],
+}
+
+impl Ipv4Addr {
+    pub const fn new(octets: [u8; 4]) -> Self {
+        Self { octets }
+    }
+
+    pub fn to_bits(&self) -> u32 {
+        u32::from_be_bytes(self.octets)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ParseIpv4Error {
+    #[error("address is invalid")]
+    InvalidAddress,
+}
+
+impl FromStr for Ipv4Addr {
+    type Err = ParseIpv4Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut octets = s.split('.').map(|octet| octet.parse::<u8>());
+        let mut ipv4 = Self::new([0; 4]);
+        let mut idx = 0;
+
+        while let Some(Ok(octet)) = octets.next() {
+            ipv4.octets[idx] = octet;
+            idx += 1;
+            if idx > 4 {
+                return Err(ParseIpv4Error::InvalidAddress);
+            }
+        }
+
+        if idx < 4 {
+            return Err(ParseIpv4Error::InvalidAddress);
+        }
+
+        Ok(ipv4)
     }
 }
 
@@ -95,18 +146,18 @@ pub struct Route {
     pub cidr: u8,
     cidr_mask: u32,
 
-    pub port: u16,
+    pub nic: u16,
 }
 
 impl Route {
-    pub fn new(ip_addr: u32, cidr: u8, port: u16) -> Self {
+    pub fn new(ip_addr: u32, cidr: u8, nic: u16) -> Self {
         assert!(cidr <= u32::BITS as u8);
 
         Self {
             ip_addr,
             cidr,
             cidr_mask: (1 << cidr) - 1,
-            port,
+            nic,
         }
     }
 

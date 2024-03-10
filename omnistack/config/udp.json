@@ -1,0 +1,19 @@
+{
+    "type": "Graph",
+    "name": "UDP",
+    "modules": [
+        "IoNode", "EthSender", "EthReceiver",
+        "Ipv4Sender", "Ipv4Receiver", "UdpSender",
+        "UdpReceiver", "UserNode"
+    ], 
+    "links": [
+        ["UserNode", "UdpSender"],
+        ["UdpSender", "Ipv4Sender"],
+        ["Ipv4Sender", "EthSender"],
+        ["EthSender", "IoNode"],
+        ["IoNode", "EthReceiver"],
+        ["EthReceiver", "Ipv4Receiver"],
+        ["Ipv4Receiver", "UdpReceiver"],
+        ["UdpReceiver", "UserNode"]
+    ]
+}

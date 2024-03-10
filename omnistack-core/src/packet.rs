@@ -1,6 +1,7 @@
 use std::ffi::*;
 use std::marker::PhantomData;
 use std::ptr::null_mut;
+use std::sync::Mutex;
 
 use omnistack_sys as sys;
 
@@ -14,15 +15,22 @@ pub struct Header {
     pub offset: u16,
 }
 
+#[derive(Debug)]
+pub enum PktBufType {
+    Local,
+    Mbuf(*mut sys::rte_mbuf),
+}
+
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct Packet {
     // start address of the un-parsed part
     pub data: *mut u8,
+
     pub offset: u16,
     pub data_len: u16,
 
-    pub port: u16,
+    pub nic: u16,
 
     pub l2_header: Header,
     pub l3_header: Header,
@@ -31,6 +39,8 @@ pub struct Packet {
 
     // set by the allocator initially
     pub refcnt: usize, // TODO: is it really necessary?
+
+    pub buf_ty: PktBufType,
     pub buf: [u8; PACKET_BUF_SIZE],
 }
 
@@ -45,15 +55,11 @@ impl Packet {
     }
 
     pub fn len(&self) -> u16 {
-        log::debug!("len: {}", self.data_len - self.offset);
-
         self.data_len - self.offset
     }
 
-    // NOTE: Set offset before the length
+    // WARN: Set the offset before calling `set_len`
     pub fn set_len(&mut self, len: u16) {
-        log::debug!("set len: {}", len + self.offset);
-
         self.data_len = len + self.offset;
     }
 
@@ -120,6 +126,8 @@ impl PacketPool {
         let pkt_size = std::mem::size_of::<Packet>();
         let elt_size = (pkt_size + 64 - 1) / 64 * 64;
 
+        // TODO: Decide pool size based on how many cpus share this pool.
+
         Self {
             mp: MemoryPool::get_or_create(
                 "pktpool",
@@ -130,17 +138,29 @@ impl PacketPool {
         }
     }
 
-    pub fn allocate(&self, thread_id: u16) -> *mut Packet {
-        self.mp.get(thread_id)
+    pub fn allocate(&self, thread_id: u16) -> Option<&'static mut Packet> {
+        unsafe { self.mp.get(thread_id).as_mut() }
     }
 
     pub fn deallocate(&self, packet: *mut Packet, thread_id: u16) {
         let packet = unsafe { &mut *packet };
 
-        packet.refcnt -= 1;
-        if packet.refcnt == 0 {
+        if packet.refcnt == 1 {
             self.mp.put(packet, thread_id);
+
+            if let PktBufType::Mbuf(m) = packet.buf_ty {
+                unsafe { sys::rte_pktmbuf_free(m) };
+            }
+        } else if packet.refcnt == 0 {
+            // BUG: double free
+            log::error!("Packet Pool: double free");
         }
+
+        packet.refcnt = packet.refcnt.saturating_sub(0);
+    }
+
+    pub fn remains(&self) -> u32 {
+        self.mp.remains()
     }
 }
 
@@ -149,22 +169,28 @@ const MAX_THREADS: usize = 32;
 #[derive(Debug)]
 pub struct MemoryPool<T> {
     // Maybe useful if I want to write my own memory pool
-    elt_size: usize,
     n: usize,
+    elt_size: usize,
     socket_id: i32,
-    pool: *mut sys::rte_mempool,
+
+    name: String,
+
+    mp: *mut sys::rte_mempool,
     cache: [*mut sys::rte_mempool_cache; MAX_THREADS], // thread id -> cache
+
     phantom: PhantomData<T>,
 }
 
 impl<T> MemoryPool<T> {
     pub const fn empty() -> Self {
         Self {
-            elt_size: 0,
             n: 0,
+            elt_size: 0,
             socket_id: 0,
 
-            pool: std::ptr::null_mut(),
+            name: String::new(),
+
+            mp: std::ptr::null_mut(),
             cache: [std::ptr::null_mut(); MAX_THREADS],
             phantom: PhantomData,
         }
@@ -177,11 +203,13 @@ impl<T> MemoryPool<T> {
         let mut mp = Self::empty();
 
         // TODO: use rte_* functions instead of node_of_cpu?
-        let name = CString::new(format!("{name}-{socket_id}")).unwrap();
+        let name = CString::new(format!("{name}_{socket_id}")).unwrap();
 
-        mp.pool = unsafe { sys::rte_mempool_lookup(name.as_ptr()) };
-        if mp.pool.is_null() {
-            mp.pool = unsafe {
+        log::debug!("before creating mempool {:?}", name);
+
+        mp.mp = unsafe { sys::rte_mempool_lookup(name.as_ptr()) };
+        if mp.mp.is_null() {
+            mp.mp = unsafe {
                 sys::rte_mempool_create(
                     name.as_ptr(),
                     n as _,
@@ -198,7 +226,7 @@ impl<T> MemoryPool<T> {
             };
         }
 
-        if mp.pool.is_null() {
+        if mp.mp.is_null() {
             panic!("failed to create a memory pool.");
         }
 
@@ -214,6 +242,7 @@ impl<T> MemoryPool<T> {
         mp.elt_size = elt_size;
         mp.n = n;
         mp.socket_id = socket_id;
+        mp.name = name.into_string().unwrap();
 
         mp
     }
@@ -225,7 +254,7 @@ impl<T> MemoryPool<T> {
 
         let r = unsafe {
             sys::rte_mempool_generic_get(
-                self.pool,
+                self.mp,
                 objs.as_mut_ptr() as _,
                 1,
                 self.cache[thread_id as usize],
@@ -241,14 +270,26 @@ impl<T> MemoryPool<T> {
 
     pub fn put(&self, obj: *mut T, thread_id: u16) {
         let obj = &obj as *const _ as *const _;
-        unsafe { sys::rte_mempool_generic_put(self.pool, obj, 1, self.cache[thread_id as usize]) };
+        unsafe { sys::rte_mempool_generic_put(self.mp, obj, 1, self.cache[thread_id as usize]) };
+    }
+
+    pub fn remains(&self) -> u32 {
+        unsafe { sys::rte_mempool_avail_count(self.mp) }
     }
 }
 
+static DROP_GUARD: Mutex<()> = Mutex::new(());
+
 impl<T> Drop for MemoryPool<T> {
     fn drop(&mut self) {
-        log::debug!("Dropping MemoryPool");
+        let _guard = DROP_GUARD.lock().unwrap();
 
-        unsafe { sys::rte_mempool_free(self.pool) };
+        if unsafe { sys::rte_mempool_lookup(self.name.as_ptr().cast()).is_null() } {
+            log::debug!("MemoryPool {} was already dropped", self.name);
+            return;
+        }
+
+        log::debug!("MemoryPool {} was dropped", self.name);
+        unsafe { sys::rte_mempool_free(self.mp) };
     }
 }

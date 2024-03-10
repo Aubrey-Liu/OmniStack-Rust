@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-use omnistack_core::{packet::DEFAULT_OFFSET, prelude::*};
+use omnistack_core::module::ModuleCapa;
+use omnistack_core::packet::{PktBufType, DEFAULT_OFFSET};
+use omnistack_core::prelude::*;
 
 #[derive(Debug)]
 struct UserNode {
@@ -12,32 +14,38 @@ impl Module for UserNode {
         // pretend we have sent a packet to user
         ctx.deallocate(packet);
 
-        Ok(())
+        Err(ModuleError::Dropped)
     }
 
-    fn tick(&mut self, ctx: &Context, now: Instant) -> Result<()> {
-        if now.duration_since(self.last).as_millis() > 50 {
-            let p = ctx.allocate().unwrap();
+    fn poll(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
+        let now = Instant::now();
+        if true {
+            let pkt = ctx.allocate().unwrap();
 
             // pretend we have received a packet from user
-            p.buf[140..1340].fill(3);
-            p.offset = DEFAULT_OFFSET as _;
-            p.data = p.buf.as_mut_ptr();
-            p.refcnt = 1;
-            p.port = 0;
-            p.set_len(1200);
+            pkt.buf[140..1340].fill(3);
+            pkt.offset = DEFAULT_OFFSET as _;
+            pkt.data = pkt.buf.as_mut_ptr();
+            pkt.refcnt = 1;
+            pkt.nic = 0;
+            pkt.set_len(1200);
+            pkt.buf_ty = PktBufType::Local;
 
-            log::debug!("Received 1 Packet (len: 1200) from User.");
+            // log::debug!(
+            //     "Core[{}] - Received 1 Packet (len: 1200) from user",
+            //     ctx.cpu
+            // );
 
-            ctx.dispatch_task(p);
             self.last = now;
-        }
 
-        Ok(())
+            Ok(pkt)
+        } else {
+            Err(ModuleError::NoData)
+        }
     }
 
-    fn tickable(&self) -> bool {
-        true
+    fn capability(&self) -> ModuleCapa {
+        ModuleCapa::PROCESS | ModuleCapa::POLL
     }
 }
 

@@ -466,6 +466,7 @@ dependencies = [
 name = "omnistack-core"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.4.2",
  "core_affinity",
  "crossbeam",
  "ctrlc",

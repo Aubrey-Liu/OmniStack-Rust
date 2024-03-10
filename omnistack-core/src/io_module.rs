@@ -1,81 +1,137 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicU16;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Mutex;
-use std::time::Instant;
 
 use once_cell::sync::Lazy;
 
-use crate::engine::Context;
-use crate::module::Module;
+use crate::engine::{ConfigManager, Context};
+use crate::module::*;
 use crate::packet::Packet;
 use crate::protocols::MacAddr;
 use crate::register_module;
-use crate::Result;
 
-pub fn get_mac_addr(port_id: u16) -> Option<MacAddr> {
-    NIC_TO_MAC.lock().unwrap().get(&port_id).copied()
+pub fn get_mac_addr(nic: u16) -> MacAddr {
+    unsafe { NIC_TO_MAC[nic as usize] }
 }
 
-static NIC_TO_MAC: Lazy<Mutex<HashMap<u16, MacAddr>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+const MAX_NIC_NUM: usize = 16;
+
+// NOTE: mut is for performance, and it's not mutable to other modules
+static mut NIC_TO_MAC: Vec<MacAddr> = Vec::new();
+static NIC_TO_MAC_GUARD: Mutex<()> = Mutex::new(());
 
 pub trait IoAdapter {
     /// Should only be called ONCE.
-    fn init(&mut self, ctx: &Context, port_id: u16, num_queues: u16) -> Result<MacAddr>;
+    fn init(&mut self, ctx: &Context, port_id: u16, num_queues: u16, queue: u16)
+        -> Result<MacAddr>;
+
+    fn start(&self) -> Result<()> {
+        Ok(())
+    }
 
     fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()>;
 
-    fn recv(&mut self, ctx: &Context) -> Result<&mut Packet>;
+    fn recv(&mut self, ctx: &Context) -> Result<&'static mut Packet>;
 
-    #[allow(unused_variables)]
-    fn flush(&mut self, ctx: &Context) -> Result<()> {
+    fn flush(&mut self, _ctx: &Context) -> Result<()> {
         Ok(())
     }
+
+    fn stop(&self, _ctx: &Context) {}
 }
 
 struct IoNode {
     // TODO: flush packets periodically
     adapters: Vec<Box<dyn IoAdapter>>,
+    num_queues: u16,
 }
 
 impl IoNode {
     pub const fn new() -> Self {
         Self {
             adapters: Vec::new(),
+            num_queues: 0,
         }
     }
 }
 
+static QUEUE_ID: AtomicU16 = AtomicU16::new(0);
+static INIT_DONE_QUEUES: AtomicU16 = AtomicU16::new(0);
+
 impl Module for IoNode {
     fn init(&mut self, ctx: &Context) -> Result<()> {
-        for f in Factory::get().builders.values() {
-            self.adapters.push(f());
+        let mut config = ConfigManager::get().lock().unwrap();
+        let stack_config = config.get_stack_config_mut(ctx.stack_name).unwrap();
+        let num_queues = stack_config.graphs[ctx.graph_id].cpus.len() as u16;
+        let queue_id = QUEUE_ID.fetch_add(1, Relaxed);
+
+        self.num_queues = num_queues;
+
+        let guard = NIC_TO_MAC_GUARD.lock().unwrap();
+        unsafe {
+            if NIC_TO_MAC.is_empty() {
+                NIC_TO_MAC.resize(MAX_NIC_NUM, MacAddr::invalid());
+            }
+        }
+        drop(guard);
+
+        for (id, nic) in stack_config.nics.iter_mut().enumerate() {
+            let adapter_name = &nic.adapter_name;
+            let builder = Factory::get().builders.get(adapter_name.as_str()).unwrap();
+            let mut adapter = builder();
+
+            let mac = adapter.init(ctx, nic.port, num_queues, queue_id).unwrap();
+
+            unsafe {
+                NIC_TO_MAC[id] = mac;
+            }
+
+            self.adapters.push(adapter);
         }
 
-        self.adapters.iter_mut().for_each(|io| {
-            let port = 0;
-            let mac = io.init(ctx, port, 1).unwrap();
+        // WARNING: DON'T EVER FORGET THIS!
+        drop(config);
 
-            NIC_TO_MAC.lock().unwrap().insert(port, mac);
-        });
+        if INIT_DONE_QUEUES.load(Relaxed) + 1 == num_queues {
+            for adapter in &self.adapters {
+                adapter.start().unwrap();
+            }
+        }
+        INIT_DONE_QUEUES.fetch_add(1, Relaxed);
+
+        while INIT_DONE_QUEUES.load(Relaxed) != num_queues {
+            std::hint::spin_loop();
+        }
 
         Ok(())
     }
 
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
-        self.adapters[packet.port as usize].send(ctx, packet)
+        self.adapters[packet.nic as usize].send(ctx, packet)?;
+
+        Err(ModuleError::Dropped)
     }
 
-    fn tick(&mut self, ctx: &Context, _now: Instant) -> Result<()> {
-        self.adapters.iter_mut().for_each(|io| {
-            if let Ok(pkt) = io.recv(ctx) {
-                ctx.dispatch_task(pkt);
+    fn poll(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
+        for (nic, adapter) in self.adapters.iter_mut().enumerate() {
+            if let Ok(pkt) = adapter.recv(ctx) {
+                pkt.nic = nic as _;
+                return Ok(pkt);
             }
-        });
+        }
 
-        Ok(())
+        Err(ModuleError::NoData)
     }
 
-    fn tickable(&self) -> bool {
-        true
+    fn capability(&self) -> ModuleCapa {
+        ModuleCapa::PROCESS | ModuleCapa::POLL
+    }
+
+    fn destroy(&self, ctx: &Context) {
+        for adapter in &self.adapters {
+            adapter.stop(ctx);
+        }
     }
 }
 

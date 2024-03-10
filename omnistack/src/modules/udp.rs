@@ -10,7 +10,7 @@ impl UdpSender {
 }
 
 impl Module for UdpSender {
-    fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
+    fn process(&mut self, _ctx: &Context, packet: &mut Packet) -> Result<()> {
         packet.offset -= std::mem::size_of::<UdpHeader>() as u16;
         packet.l4_header.length = std::mem::size_of::<UdpHeader>() as u8;
         packet.l4_header.offset = packet.offset;
@@ -19,8 +19,6 @@ impl Module for UdpSender {
         udp_hdr.src = 80_u16.to_be(); // TODO
         udp_hdr.dst = 81_u16.to_be();
         udp_hdr.len = packet.len().to_be();
-
-        ctx.dispatch_task(packet);
 
         Ok(())
     }
@@ -33,12 +31,10 @@ impl UdpReceiver {
 }
 
 impl Module for UdpReceiver {
-    fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
+    fn process(&mut self, _ctx: &Context, packet: &mut Packet) -> Result<()> {
         packet.l4_header.length = std::mem::size_of::<UdpHeader>() as u8;
         packet.l4_header.offset = packet.offset;
         packet.offset += std::mem::size_of::<UdpHeader>() as u16;
-
-        ctx.dispatch_task(packet);
 
         Ok(())
     }

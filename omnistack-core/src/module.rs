@@ -1,35 +1,61 @@
 use std::collections::HashMap;
-use std::time::Instant;
 
+use bitflags::bitflags;
 use once_cell::sync::Lazy;
+use thiserror::Error;
 
 use crate::engine::Context;
 use crate::packet::Packet;
-use crate::Result;
 
 pub type ModuleId = usize;
 
+#[derive(Debug, Error)]
+pub enum ModuleError {
+    #[error("no incoming packets")]
+    NoData,
+
+    #[error("unknown destination address")]
+    InvalidDst,
+
+    // NOTE: Modules should take care of dropping packets
+    #[error("packet was dropped")]
+    Dropped,
+
+    #[error("out of memory")]
+    OutofMemory,
+
+    #[error("unknown reasons")]
+    Unknown,
+}
+
+bitflags! {
+    pub struct ModuleCapa: u32 {
+        const PROCESS = 0b_0001;
+        const POLL = 0b_0010;
+    }
+}
+
+pub type Result<T> = std::result::Result<T, ModuleError>;
+
 pub trait Module {
-    #[allow(unused_variables)]
-    fn init(&mut self, ctx: &Context) -> Result<()> {
+    fn init(&mut self, _ctx: &Context) -> Result<()> {
         Ok(())
     }
 
     /// process a packet
-    #[allow(unused_variables)]
-    fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
-        Ok(())
+    fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()>;
+
+    /// invoke the module periodically
+    fn poll(&mut self, _ctx: &Context) -> Result<&'static mut Packet> {
+        unimplemented!()
     }
 
-    /// do something periodically
-    #[allow(unused_variables)]
-    fn tick(&mut self, ctx: &Context, now: Instant) -> Result<()> {
-        Ok(())
+    fn capability(&self) -> ModuleCapa {
+        ModuleCapa::PROCESS
     }
 
-    fn tickable(&self) -> bool {
-        false
-    }
+    // NOTE: The order of `Drop` can cause problems, so we can only destroy manually.
+    fn destroy(&self, _ctx: &Context) {}
 }
 
 pub(crate) struct Factory {
@@ -43,10 +69,6 @@ impl Factory {
         });
 
         unsafe { &mut FACTORY }
-    }
-
-    pub fn contains_name(&self, name: &str) -> bool {
-        self.builders.contains_key(name)
     }
 }
 

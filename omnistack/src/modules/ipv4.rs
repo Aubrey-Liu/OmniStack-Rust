@@ -20,26 +20,26 @@ impl Ipv4Sender {
 }
 
 impl Module for Ipv4Sender {
-    fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
+    fn process(&mut self, _ctx: &Context, packet: &mut Packet) -> Result<()> {
         // TODO: get them from the user
         let src_addr = u32::from_ne_bytes(Ipv4Addr::from_str("192.168.10.1").unwrap().octets());
         let dst_addr = u32::from_ne_bytes(Ipv4Addr::from_str("192.168.10.2").unwrap().octets());
 
         let mut max_cidr = 0;
-        let mut dst_port = None;
+        let mut dst_nic = None;
 
         self.route_table.iter().for_each(|route| {
             if route.matches(dst_addr) && route.cidr > max_cidr {
                 max_cidr = route.cidr;
-                dst_port = Some(route.port);
+                dst_nic = Some(route.nic);
             }
         });
 
-        if dst_port.is_none() {
-            return Err(Error::InvalidDest);
+        if dst_nic.is_none() {
+            return Err(ModuleError::Dropped);
         }
 
-        packet.port = dst_port.unwrap();
+        packet.nic = dst_nic.unwrap();
 
         packet.offset -= std::mem::size_of::<Ipv4Header>() as u16;
         packet.l3_header.length = std::mem::size_of::<Ipv4Header>() as u8;
@@ -57,8 +57,6 @@ impl Module for Ipv4Sender {
         ipv4_hdr.id = 0;
         ipv4_hdr.frag_off = 0;
 
-        ctx.dispatch_task(packet);
-
         Ok(())
     }
 }
@@ -70,7 +68,7 @@ impl Ipv4Receiver {
 }
 
 impl Module for Ipv4Receiver {
-    fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
+    fn process(&mut self, _ctx: &Context, packet: &mut Packet) -> Result<()> {
         let ipv4 = packet.parse::<Ipv4Header>();
         packet.l3_header.offset = packet.offset as _;
         packet.l3_header.length = ipv4.ihl() << 2;
@@ -78,7 +76,8 @@ impl Module for Ipv4Receiver {
         packet.offset += packet.l3_header.length as u16;
 
         if ipv4.ihl() >= 5 && ipv4.ttl > 0 {
-            ctx.dispatch_task(packet);
+            // TODO: Another way to drop packet
+            log::debug!("Ipv4Receiver: packet dropped");
         }
 
         Ok(())
