@@ -2,13 +2,18 @@ mod modules;
 
 use std::path::Path;
 
-use omnistack_core::engine::{ConfigManager, Engine};
+use omnistack_core::config::ConfigManager;
+use omnistack_core::engine::Engine;
 
 fn main() {
     env_logger::init();
 
-    let config_dir = Path::new("omnistack/config");
-    ConfigManager::load_file(&config_dir.join("udp.json"));
-    ConfigManager::load_file(&config_dir.join("udp-multicore-stack.json"));
-    Engine::run("UDP").expect("failed to boot engine");
+    // TODO: make it less likely to dead lock
+    {
+        let config_dir = Path::new("config");
+        let mut config_manager = ConfigManager::get().lock().unwrap();
+        config_manager.load_dir(config_dir);
+    }
+
+    Engine::run("UDP").unwrap();
 }

@@ -1,25 +1,26 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU16;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 
-use crate::engine::{ConfigManager, Context};
-use crate::module::*;
-use crate::packet::Packet;
-use crate::protocols::MacAddr;
-use crate::register_module;
+use omnistack_core::config::ConfigManager;
+use omnistack_core::engine::Context;
+use omnistack_core::module::*;
+use omnistack_core::packet::Packet;
+use omnistack_core::protocols::MacAddr;
+use omnistack_core::register_module;
+use smallvec::SmallVec;
 
-pub fn get_mac_addr(nic: u16) -> MacAddr {
+const MAX_NIC: usize = 16;
+
+#[inline]
+pub fn nic_to_mac(nic: u16) -> MacAddr {
     unsafe { NIC_TO_MAC[nic as usize] }
 }
 
-const MAX_NIC_NUM: usize = 16;
-
 // NOTE: mut is for performance, and it's not mutable to other modules
 static mut NIC_TO_MAC: Vec<MacAddr> = Vec::new();
-static NIC_TO_MAC_GUARD: Mutex<()> = Mutex::new(());
 
 pub trait IoAdapter {
     /// Should only be called ONCE.
@@ -41,17 +42,27 @@ pub trait IoAdapter {
     fn stop(&self, _ctx: &Context) {}
 }
 
+const NUM_ADAPTER_MAX: usize = 16;
+
 struct IoNode {
-    // TODO: flush packets periodically
-    adapters: Vec<Box<dyn IoAdapter>>,
-    num_queues: u16,
+    flush_queue: [u8; NUM_ADAPTER_MAX],
+    flush_queue_idx: usize,
+
+    flush_flags: [bool; NUM_ADAPTER_MAX],
+
+    adapters: SmallVec<[Box<dyn IoAdapter>; NUM_ADAPTER_MAX]>,
 }
 
 impl IoNode {
-    pub const fn new() -> Self {
+    #[allow(invalid_value)]
+    pub fn new() -> Self {
         Self {
-            adapters: Vec::new(),
-            num_queues: 0,
+            flush_queue: [0; NUM_ADAPTER_MAX],
+            flush_queue_idx: 0,
+
+            flush_flags: [false; NUM_ADAPTER_MAX],
+
+            adapters: SmallVec::new(),
         }
     }
 }
@@ -61,26 +72,24 @@ static INIT_DONE_QUEUES: AtomicU16 = AtomicU16::new(0);
 
 impl Module for IoNode {
     fn init(&mut self, ctx: &Context) -> Result<()> {
-        let mut config = ConfigManager::get().lock().unwrap();
-        let stack_config = config.get_stack_config_mut(ctx.stack_name).unwrap();
-        let num_queues = stack_config.graphs[ctx.graph_id].cpus.len() as u16;
+        // this lock guarantees the following steps are not concurrent
+        let config = ConfigManager::get().lock().unwrap();
+        let stack_config = config.get_stack_config(ctx.stack_name).unwrap();
+        let num_queues = stack_config.graphs[ctx.graph_id as usize].cpus.len() as u16;
         let queue_id = QUEUE_ID.fetch_add(1, Relaxed);
 
-        self.num_queues = num_queues;
-
-        let guard = NIC_TO_MAC_GUARD.lock().unwrap();
         unsafe {
             if NIC_TO_MAC.is_empty() {
-                NIC_TO_MAC.resize(MAX_NIC_NUM, MacAddr::invalid());
+                NIC_TO_MAC.resize(MAX_NIC, MacAddr::invalid());
             }
         }
-        drop(guard);
 
-        for (id, nic) in stack_config.nics.iter_mut().enumerate() {
+        for (id, nic) in stack_config.nics.iter().enumerate() {
             let adapter_name = &nic.adapter_name;
             let builder = Factory::get().builders.get(adapter_name.as_str()).unwrap();
             let mut adapter = builder();
 
+            // TODO: Return Recv Queue
             let mac = adapter.init(ctx, nic.port, num_queues, queue_id).unwrap();
 
             unsafe {
@@ -93,13 +102,15 @@ impl Module for IoNode {
         // WARNING: DON'T EVER FORGET THIS!
         drop(config);
 
+        // start adapter after all initialization are done
         if INIT_DONE_QUEUES.load(Relaxed) + 1 == num_queues {
             for adapter in &self.adapters {
-                adapter.start().unwrap();
+                adapter.start()?;
             }
         }
         INIT_DONE_QUEUES.fetch_add(1, Relaxed);
 
+        // wait until every queue is initialized
         while INIT_DONE_QUEUES.load(Relaxed) != num_queues {
             std::hint::spin_loop();
         }
@@ -108,16 +119,39 @@ impl Module for IoNode {
     }
 
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
-        self.adapters[packet.nic as usize].send(ctx, packet)?;
+        let nic = packet.nic as usize;
+        self.adapters[nic].send(ctx, packet)?;
 
-        Err(ModuleError::Dropped)
+        if !self.flush_flags[nic] {
+            self.flush_flags[nic] = true;
+            self.flush_queue[self.flush_queue_idx] = nic as u8;
+            self.flush_queue_idx += 1;
+        }
+
+        Err(ModuleError::Done)
     }
 
     fn poll(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
-        for (nic, adapter) in self.adapters.iter_mut().enumerate() {
-            if let Ok(pkt) = adapter.recv(ctx) {
-                pkt.nic = nic as _;
-                return Ok(pkt);
+        while self.flush_queue_idx != 0 {
+            self.flush_queue_idx -= 1;
+
+            let nic_to_flush = self.flush_queue[self.flush_queue_idx];
+            self.adapters[nic_to_flush as usize].flush(ctx)?;
+            self.flush_flags[nic_to_flush as usize] = false;
+        }
+
+        // TODO: flush
+        #[cfg(feature = "recv")]
+        {
+            for (nic, adapter) in self.adapters.iter_mut().enumerate() {
+                match adapter.recv(ctx) {
+                    Ok(pkt) => {
+                        pkt.nic = nic as _;
+                        return Ok(pkt);
+                    }
+                    Err(ModuleError::NoData) => continue,
+                    e @ Err(_) => return e,
+                }
             }
         }
 
@@ -128,8 +162,9 @@ impl Module for IoNode {
         ModuleCapa::PROCESS | ModuleCapa::POLL
     }
 
-    fn destroy(&self, ctx: &Context) {
-        for adapter in &self.adapters {
+    fn destroy(&mut self, ctx: &Context) {
+        for adapter in &mut self.adapters {
+            let _ = adapter.flush(ctx);
             adapter.stop(ctx);
         }
     }

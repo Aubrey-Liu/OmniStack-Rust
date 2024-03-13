@@ -18,8 +18,8 @@ pub enum ModuleError {
     InvalidDst,
 
     // NOTE: Modules should take care of dropping packets
-    #[error("packet was dropped")]
-    Dropped,
+    #[error("process is done")]
+    Done,
 
     #[error("out of memory")]
     OutofMemory,
@@ -47,23 +47,22 @@ pub trait Module {
 
     /// invoke the module periodically
     fn poll(&mut self, _ctx: &Context) -> Result<&'static mut Packet> {
-        unimplemented!()
+        Err(ModuleError::NoData)
     }
 
     fn capability(&self) -> ModuleCapa {
         ModuleCapa::PROCESS
     }
 
-    // NOTE: The order of `Drop` can cause problems, so we can only destroy manually.
-    fn destroy(&self, _ctx: &Context) {}
+    fn destroy(&mut self, _ctx: &Context) {}
 }
 
-pub(crate) struct Factory {
+struct Factory {
     builders: HashMap<&'static str, ModuleBuildFn>,
 }
 
 impl Factory {
-    pub fn get() -> &'static mut Self {
+    fn get() -> &'static mut Self {
         static mut FACTORY: Lazy<Factory> = Lazy::new(|| Factory {
             builders: HashMap::new(),
         });
@@ -90,8 +89,10 @@ where
         Box::new(m)
     });
 
+    // It's the very beginning of execution, so log::* is not viable
+    // and `panic` also can't be used here.
     if Factory::get().builders.insert(id, Box::new(f)).is_some() {
-        println!("warning: Module '{}' has already been registered", id);
+        println!("warning: module '{}' has already been registered", id);
     }
 }
 

@@ -1,5 +1,6 @@
 use std::ffi::{c_void, CString};
 use std::mem::size_of;
+use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use omnistack_core::packet::PktBufType;
@@ -8,49 +9,52 @@ use omnistack_core::prelude::*;
 use omnistack_sys as sys;
 use omnistack_sys::constants::*;
 
-const fn align(x: usize, n: usize) -> usize {
-    assert!(n.is_power_of_two());
-    (x + n - 1) / n * n
-}
+use crate::modules::io::IoAdapter;
 
-const RX_RING_SIZE: u16 = 1024;
-const TX_RING_SIZE: u16 = 1024;
+const RX_RING_SIZE: u16 = 2048;
+const TX_RING_SIZE: u16 = 2048;
 
 const BURST_SIZE: usize = 64;
-const CACHE_SIZE: usize = 256;
-const PKTMBUF_SIZE: usize = 8192;
-const MBUF_SIZE: usize = align(
-    packet::MTU + size_of::<EthHeader>() + sys::RTE_PKTMBUF_HEADROOM as usize,
-    64,
-);
+const PKTMBUF_CACHE_SIZE: u32 = RTE_MEMPOOL_CACHE_MAX_SIZE;
+const PKTMBUF_SIZE: u32 = 65536 - 1;
+const MBUF_SIZE: usize =
+    (packet::MTU as usize + size_of::<EthHeader>() + sys::RTE_PKTMBUF_HEADROOM as usize + 64 - 1)
+        / 64
+        * 64;
+const MAX_FRAME_SIZE: usize = packet::MTU as usize + size_of::<EthHeader>();
 
 // NOTE: mut is only for signature, it's fine
-static mut RSS_KEY: [u8; 40] = [
+static mut DEFAULT_RSS_KEY: [u8; 40] = [
     0xd1, 0x81, 0xc6, 0x2c, 0xf7, 0xf4, 0xdb, 0x5b, 0x19, 0x83, 0xa2, 0xfc, 0x94, 0x3e, 0x1a, 0xdb,
     0xd9, 0x38, 0x9e, 0x6b, 0xd1, 0x03, 0x9c, 0x2c, 0xa7, 0x44, 0x99, 0xad, 0x59, 0x3d, 0x56, 0xd9,
     0xf3, 0x25, 0x3c, 0x06, 0x2a, 0xdc, 0x1f, 0xfc,
 ];
 
-// TODO: Split dpdk into rx and tx queues
 #[repr(C)]
 #[derive(Debug)]
 pub struct Dpdk {
-    // Cache `BURST_SIZE` packets before sending a patch
-    tx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
-    tx_buf_items: usize,
-
-    rx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
-    rx_idx: usize,
-    rx_buf_items: usize,
-
     rx_desc: u16,
     tx_desc: u16,
 
-    mempool: *mut sys::rte_mempool,
-    mempool_cache: *mut sys::rte_mempool_cache,
-
     port: u16,
     queue: u16,
+
+    mempool: *mut sys::rte_mempool,
+
+    tx_idx: usize,
+
+    tx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
+    rx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
+
+    /* --- stats --- */
+    #[cfg(feature = "perf")]
+    total_sent: u64,
+    #[cfg(feature = "perf")]
+    total_byte_sent: u64,
+    #[cfg(feature = "perf")]
+    total_recv: u64,
+    #[cfg(feature = "perf")]
+    total_byte_recv: u64,
 }
 
 impl Dpdk {
@@ -82,10 +86,21 @@ impl Dpdk {
         if ret != 0 {
             panic!("failed to set descriptor numbers");
         }
+        log::debug!(
+            "[Port {}] rx queue: {} desc, tx queue: {} desc",
+            port,
+            self.rx_desc,
+            self.tx_desc
+        );
 
         let ret = unsafe { sys::rte_eth_dev_configure(port, num_queues, num_queues, &conf) };
         if ret != 0 {
             panic!("failed to configurate device");
+        }
+
+        let ret = unsafe { sys::rte_flow_flush(port, null_mut()) };
+        if ret != 0 {
+            panic!("failed to flush flow");
         }
 
         INIT_DONE_FLAG.store(true, Ordering::Relaxed);
@@ -98,7 +113,7 @@ impl Dpdk {
         let rxmode = &mut conf.rxmode;
         rxmode.mq_mode = sys::rte_eth_rx_mq_mode_RTE_ETH_MQ_RX_RSS;
         rxmode.mtu = packet::MTU as _;
-        rxmode.max_lro_pkt_size = (packet::MTU + size_of::<EthHeader>()) as _;
+        rxmode.max_lro_pkt_size = MAX_FRAME_SIZE as _;
         rxmode.offloads = RTE_ETH_RX_OFFLOAD_RSS_HASH | RTE_ETH_RX_OFFLOAD_CHECKSUM;
 
         let txmode = &mut conf.txmode;
@@ -112,15 +127,14 @@ impl Dpdk {
 
         let rx_adv_conf = &mut conf.rx_adv_conf;
         rx_adv_conf.rss_conf = sys::rte_eth_rss_conf {
-            // NOTE: it's just for C signiture, not really mutable
-            rss_key: unsafe { RSS_KEY.as_mut_ptr() },
-            rss_key_len: unsafe { RSS_KEY.len() } as _,
-            rss_hf: // RTE_ETH_RSS_IPV4 |
-                RTE_ETH_RSS_FRAG_IPV4
+            rss_key: unsafe { DEFAULT_RSS_KEY.as_mut_ptr() },
+            rss_key_len: unsafe { DEFAULT_RSS_KEY.len() as _ },
+            // TODO:
+            rss_hf: RTE_ETH_RSS_FRAG_IPV4
                 | RTE_ETH_RSS_NONFRAG_IPV4_TCP
-                | RTE_ETH_RSS_NONFRAG_IPV4_UDP
-                // | RTE_ETH_RSS_TCP
-                // | RTE_ETH_RSS_UDP,
+                | RTE_ETH_RSS_NONFRAG_IPV4_UDP, // | RTE_ETH_RSS_IPV4
+                                                // | RTE_ETH_RSS_TCP
+                                                // | RTE_ETH_RSS_UDP,
         };
 
         conf
@@ -133,11 +147,9 @@ impl Dpdk {
             panic!("failed to get port info");
         }
 
-        let mut conf = Self::default_port_conf();
-        conf.rxmode.offloads &= dev_info.rx_offload_capa;
-
+        let conf = Self::default_port_conf();
         let mut rx_conf = dev_info.default_rxconf;
-        rx_conf.offloads = conf.rxmode.offloads;
+        rx_conf.offloads = conf.rxmode.offloads & dev_info.rx_offload_capa;
 
         rx_conf
     }
@@ -149,29 +161,16 @@ impl Dpdk {
             panic!("failed to get port info");
         }
 
-        let mut conf = Self::default_port_conf();
-        conf.txmode.offloads &= dev_info.tx_offload_capa;
-
+        let conf = Self::default_port_conf();
         let mut tx_conf = dev_info.default_txconf;
-        tx_conf.offloads = conf.txmode.offloads;
+        tx_conf.offloads = conf.txmode.offloads & dev_info.tx_offload_capa;
 
         tx_conf
     }
 }
 
-// TODO: is this approach safe?
-#[repr(C)]
-struct FreeObject<'a> {
-    pktpool: &'a PacketPool,
-    thread_id: u16,
-    packet: *mut Packet,
-}
-
-// Is this dangerous?
-unsafe extern "C" fn free_packet(_addr: *mut c_void, obj: *mut c_void) {
-    let obj = &*obj.cast::<FreeObject>();
-
-    obj.pktpool.deallocate(obj.packet, obj.thread_id)
+unsafe extern "C" fn packet_free_callback(_addr: *mut c_void, pkt: *mut c_void) {
+    PacketPool::deallocate(pkt.cast());
 }
 
 static INIT_GUARD: std::sync::Once = std::sync::Once::new();
@@ -181,27 +180,26 @@ impl IoAdapter for Dpdk {
     // might be called multiple times!
     fn init(&mut self, ctx: &Context, port: u16, num_queues: u16, queue: u16) -> Result<MacAddr> {
         self.port = port;
-        self.queue = ctx.worker_id;
-
-        log::debug!("Dpdk init() enters");
+        self.queue = queue;
 
         let socket_id = unsafe { sys::numa_node_of_cpu(ctx.cpu as _) };
-        let name = CString::new(format!("omni_driver_pool_{}_{}", port, ctx.worker_id)).unwrap();
+        let name = CString::new(format!("omni_driver_pool_{}_{}", port, ctx.thread_id)).unwrap();
 
         assert_eq!(unsafe { sys::rte_eth_dev_socket_id(port) }, socket_id);
 
         self.mempool = unsafe {
             sys::rte_pktmbuf_pool_create(
                 name.as_ptr(),
-                PKTMBUF_SIZE as _,
-                0,
+                PKTMBUF_SIZE,
+                PKTMBUF_CACHE_SIZE,
                 0,
                 MBUF_SIZE as _,
                 socket_id as _,
             )
         };
-        self.mempool_cache =
-            unsafe { sys::rte_mempool_cache_create(CACHE_SIZE as _, socket_id as _) };
+        if self.mempool.is_null() {
+            panic!("failed to create pktmbuf");
+        }
 
         INIT_GUARD.call_once(|| {
             self.port_init(port, num_queues).unwrap();
@@ -238,11 +236,10 @@ impl IoAdapter for Dpdk {
         log::debug!("tx queue {} of port {} is ready", queue, port);
 
         let ret = unsafe {
-            sys::rte_mempool_generic_get(
+            sys::rte_pktmbuf_alloc_bulk(
                 self.mempool,
                 self.tx_bufs.as_mut_ptr().cast(),
                 BURST_SIZE as _,
-                self.mempool_cache,
             )
         };
         if ret != 0 {
@@ -277,176 +274,130 @@ impl IoAdapter for Dpdk {
         Ok(())
     }
 
-    // TODO: buffer and flush
     fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
-        let mbuf = unsafe { self.tx_bufs[self.tx_buf_items].as_mut().unwrap() };
-        let shared_info: &mut sys::rte_mbuf_ext_shared_info = unsafe {
-            mbuf.buf_addr
-                .add(mbuf.data_off as _)
-                .cast::<sys::rte_mbuf_ext_shared_info>()
-                .as_mut()
-                .unwrap()
-        };
+        let mbuf = unsafe { self.tx_bufs[self.tx_idx].as_mut().unwrap() };
+        self.tx_idx += 1;
 
-        let mut fcb_opaque = FreeObject {
-            pktpool: ctx.pktpool,
-            thread_id: ctx.worker_id,
-            packet,
-        };
+        let pkt_len = packet.len();
 
-        shared_info.free_cb = Some(free_packet);
-        shared_info.fcb_opaque = (&mut fcb_opaque) as *mut _ as *mut _;
+        let shared_info: &mut sys::rte_mbuf_ext_shared_info =
+            unsafe { &mut *mbuf.buf_addr.add(mbuf.data_off as _).cast() };
+        shared_info.free_cb = Some(packet_free_callback);
+        shared_info.fcb_opaque = packet as *mut _ as *mut _;
         unsafe { sys::rte_mbuf_ext_refcnt_set(shared_info, 1) };
 
-        // TODO: is this slow?
-        let iova = unsafe { sys::rte_mem_virt2iova(packet as *mut _ as *const _) };
+        let data = packet.data().cast();
+        let iova = packet.iova() as u64;
 
-        unsafe {
-            sys::rte_pktmbuf_attach_extbuf(
-                mbuf,
-                packet.data.wrapping_add(packet.offset as _).cast(),
-                iova + packet.data_offset_from_base() as u64,
-                packet.len(),
-                shared_info,
-            )
-        };
+        unsafe { sys::rte_pktmbuf_attach_extbuf(mbuf, data, iova, pkt_len, shared_info) };
 
-        mbuf.pkt_len = packet.len() as _;
-        mbuf.data_len = packet.len();
+        // TODO: verify this at the user node
+        debug_assert!(pkt_len <= MAX_FRAME_SIZE as _, "packet too large");
+
+        mbuf.pkt_len = pkt_len as _;
+        mbuf.data_len = pkt_len;
         mbuf.nb_segs = 1;
-        mbuf.next = std::ptr::null_mut();
+        mbuf.next = null_mut();
 
+        // TODO: deal with non-UDP packets
         let headers = unsafe { &mut mbuf.__bindgen_anon_3.__bindgen_anon_1 };
         headers.set_l2_len(packet.l2_header.length as _);
         headers.set_l3_len(packet.l3_header.length as _);
-        headers.set_l4_len(packet.l4_header.length as _);
 
-        self.tx_buf_items += 1;
-        if self.tx_buf_items == BURST_SIZE {
+        mbuf.ol_flags |= RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_UDP_CKSUM;
+        let ipv4h = packet.get_l3_header::<sys::rte_ipv4_hdr>();
+        let udph = packet.get_l4_header::<UdpHeader>();
+        udph.chksum = unsafe { sys::rte_ipv4_phdr_cksum(ipv4h as *const _, mbuf.ol_flags) };
+
+        #[cfg(feature = "perf")]
+        {
+            self.total_byte_sent += packet.len() as u64;
+            self.total_sent += 1;
+        }
+
+        if self.tx_idx == BURST_SIZE {
             self.flush(ctx)?;
         }
 
         Ok(())
     }
 
-    fn flush(&mut self, ctx: &Context) -> Result<()> {
-        while self.tx_buf_items > 0 {
-            let nb_tx = unsafe {
-                sys::rte_eth_tx_burst(
-                    self.port,
-                    self.queue,
-                    self.tx_bufs.as_mut_ptr(),
-                    self.tx_buf_items as _,
-                )
-            };
-            self.tx_buf_items -= nb_tx as usize;
+    fn flush(&mut self, _ctx: &Context) -> Result<()> {
+        let mut pkts = self.tx_bufs.as_mut_ptr();
+        let sent = self.tx_idx;
 
-            // log::debug!(
-            //     "[CPU {}] flush {} packets to port {}",
-            //     ctx.cpu,
-            //     nb_tx,
-            //     self.port
-            // );
+        while self.tx_idx > 0 {
+            let nb_tx =
+                unsafe { sys::rte_eth_tx_burst(self.port, self.queue, pkts, self.tx_idx as _) };
+            pkts = unsafe { pkts.add(nb_tx as usize) };
+            self.tx_idx -= nb_tx as usize;
         }
 
-        let ret = unsafe {
-            sys::rte_mempool_generic_get(
-                self.mempool,
-                self.tx_bufs.as_mut_ptr().cast(),
-                BURST_SIZE as _,
-                self.mempool_cache,
-            )
-        };
-
-        // log::debug!(
-        //     "[CPU {}] PktPool: {}, MbufPool: {}",
-        //     ctx.cpu,
-        //     ctx.pktpool.remains(),
-        //     unsafe { sys::rte_mempool_avail_count(self.mempool) }
-        // );
-
-        if ret != 0 {
-            return Err(ModuleError::OutofMemory);
+        if sent != 0 {
+            let ret = unsafe {
+                sys::rte_pktmbuf_alloc_bulk(
+                    self.mempool,
+                    self.tx_bufs.as_mut_ptr().cast(),
+                    sent as _,
+                )
+            };
+            if ret != 0 {
+                return Err(ModuleError::OutofMemory);
+            }
         }
 
         Ok(())
     }
 
     fn recv(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
-        // let mut stats: sys::rte_eth_stats = unsafe { std::mem::zeroed() };
-        // let mut stats: sys::rte_eth_stats = unsafe { std::mem::zeroed() };
-        // unsafe { sys::rte_eth_stats_get(self.port, &mut stats) };
+        let rx_items = unsafe {
+            sys::rte_eth_rx_burst(
+                self.port,
+                self.queue,
+                self.rx_bufs.as_mut_ptr().cast(),
+                BURST_SIZE as _,
+            )
+        } as _;
 
-        // printf("  Packets Received: %"PRIu64"\n", stats.q[queue_id].rx_packets);
-        // printf("  Packets Dropped: %"PRIu64"\n", stats.q[queue_id].rx_drop);
-        //
-        // log::debug!(
-        //     "out: {}, in: {}, error: {}",
-        //     stats.opackets,
-        //     stats.ipackets,
-        //     stats.ierrors,
-        // );
-
-        // unsafe { sys::rte_eth_stats_get(self.port, &mut stats) };
-
-        //     assert!( sys::rte_eth_dev_rx_queue_start(port_id, rx_queue_id) )
-        // printf(" - RX queue current state: %s\n", rte_eth_dev_rx_queue_state(port_id, queue_id) ? "Active" : "Inactive");
-        // printf(" - RX queue packets received: %" PRIu64 " packets\n", stats.q_ipackets[queue_id]);
-        // printf(" - RX queue packets dropped by NIC: %" PRIu64 " packets\n", stats.q_errors[queue_id]);
-        // printf(" - RX queue mbuf allocation failures: %" PRIu64 " times\n", stats.rx_nombuf);
-
-        if self.rx_buf_items == self.rx_idx {
-            let rx = unsafe {
-                sys::rte_eth_rx_burst(
-                    self.port,
-                    self.queue,
-                    self.rx_bufs.as_mut_ptr().cast(),
-                    BURST_SIZE as _,
-                )
-            } as _;
-
-            if rx == 0 {
-                return Err(ModuleError::NoData);
-            }
-
-            self.rx_buf_items = rx;
-            self.rx_idx = 0;
-
-            log::debug!("Received {} packets from port {}", rx, self.port);
+        if rx_items == 0 {
+            return Err(ModuleError::NoData);
         }
 
-        let pkt = ctx.allocate().unwrap();
-        let mbuf = self.rx_bufs[self.rx_idx];
-        pkt.init_from_mbuf(mbuf);
-        pkt.refcnt = 1;
-        pkt.buf_ty = PktBufType::Mbuf(mbuf);
+        let mut ret = null_mut();
+        for i in (0..rx_items).rev() {
+            let pkt = ctx.allocate().unwrap(); // TODO: allocate many
+            let mbuf = self.rx_bufs[i];
 
-        // TODO: prefetch data
-        self.rx_idx += 1;
+            #[cfg(feature = "perf")]
+            {
+                self.total_recv += 1;
+                self.total_byte_recv += unsafe { (*mbuf).pkt_len } as u64;
+            }
 
-        Ok(pkt)
+            pkt.refcnt = 1;
+            pkt.buf_ty = PktBufType::Mbuf(mbuf);
+            pkt.data = unsafe { (*mbuf).buf_addr.cast() };
+            pkt.offset = unsafe { (*mbuf).data_off };
+            unsafe { pkt.set_len((*mbuf).pkt_len as _) };
+            pkt.next = ret;
+            ret = pkt;
+        }
+
+        let ret = unsafe { &mut *ret };
+        Ok(ret)
+    }
+
+    #[cfg(feature = "perf")]
+    fn stop(&self, ctx: &Context) {
+        log::info!(
+            "[CPU {}] sent {} pkts ({}B) received {} pkts ({}B)",
+            ctx.cpu,
+            self.total_sent,
+            self.total_byte_sent,
+            self.total_recv,
+            self.total_byte_recv,
+        )
     }
 }
 
-/*
-*void print_receive_queue_status(uint16_t port_id, uint16_t queue_id) {
-    struct rte_eth_dev_info dev_info;
-    struct rte_eth_stats stats;
-
-    // Get device information
-    rte_eth_dev_info_get(port_id, &dev_info);
-
-    // Get receive queue statistics
-    rte_eth_stats_get(port_id, &stats);
-
-    // Display receive queue status
-    printf("Receive Queue Status (Port %u, Queue %u):\n", port_id, queue_id);
-    printf(" - Maximum RX packet length: %" PRIu32 " bytes\n", dev_info.rx_desc_lim.max_rx_pkt_len);
-    printf(" - RX burst size (max): %" PRIu16 " packets\n", dev_info.rx_desc_lim.nb_max);
-    printf(" - RX queue current state: %s\n", rte_eth_dev_rx_queue_state(port_id, queue_id) ? "Active" : "Inactive");
-    printf(" - RX queue packets received: %" PRIu64 " packets\n", stats.q_ipackets[queue_id]);
-    printf(" - RX queue packets dropped by NIC: %" PRIu64 " packets\n", stats.q_errors[queue_id]);
-    printf(" - RX queue mbuf allocation failures: %" PRIu64 " times\n", stats.rx_nombuf);
-}
-* */
-register_adapter!(Dpdk);
+register_module_to!(Dpdk, Dpdk::new, crate::modules::io::register);

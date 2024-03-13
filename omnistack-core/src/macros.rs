@@ -23,14 +23,3 @@ macro_rules! register_module {
         $crate::register_module_to!($ty, $builder, $crate::module::register);
     };
 }
-
-#[macro_export]
-macro_rules! register_adapter {
-    ($ty:ident) => {
-        $crate::register_module_to!($ty, $ty::new, $crate::io_module::register);
-    };
-
-    ($ty:ident, $builder:path) => {
-        $crate::register_module_to!($ty, $builder, $crate::io_module::register);
-    };
-}

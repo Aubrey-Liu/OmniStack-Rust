@@ -1,356 +1,93 @@
 use std::ffi::*;
-use std::path::Path;
-use std::sync::atomic::AtomicU16;
+use std::ptr::null_mut;
+use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use core_affinity::CoreId;
-use crossbeam::channel::{bounded, Receiver, TryRecvError};
-use json::JsonValue;
+use smallvec::SmallVec;
 
+use crate::config::{ConfigManager, GraphConfig};
 use crate::module::*;
 use crate::packet::{Packet, PacketPool};
-use crate::protocols::*;
 use omnistack_sys as sys;
 
-pub type NodeId = usize;
-pub type TaskQueue = crossbeam::deque::Worker<Task>;
-pub type TaskStealer = crossbeam::deque::Stealer<Task>;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Link {
-    to: NodeId,
-}
-
-pub struct Engine;
-
-#[repr(C)]
+#[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
-pub struct Task {
-    pub data: *mut Packet,
-    pub node_id: NodeId,
-}
+pub struct NodeId(usize);
 
-unsafe impl Send for Task {}
-
-struct Worker {
-    // NOTE: Node is not cloneable
-    nodes: Vec<Node>,
-    // NOTE: put ticking nodes together to decrease overhead
-    nodes_to_poll: Vec<NodeId>,
-
-    task_queue: TaskQueue,
-
-    // Steal tasks from other cores
-    // stealers: Vec<TaskStealer>,
-    ctrl_ch: Receiver<CtrlMsg>,
-
-    stack_name: String,
-    graph_id: usize,
-
-    id: u16,
-    cpu: u16,
-    pktpool: PacketPool,
-}
-
-// TODO: Prove it's safe to do so
-unsafe impl Send for Worker {}
-
-#[allow(dead_code)]
-pub(crate) struct Node {
-    id: NodeId,
-    module: Box<dyn Module>,
-    out_links: Vec<Link>, // TODO: smallvec?
-}
+const INVALID_NODEID: NodeId = NodeId(usize::MAX);
 
 #[repr(C)]
 #[derive(Debug, Clone)]
+pub struct Task {
+    pub node_id: NodeId,
+    pub data: *mut Packet,
+}
+
+impl Default for Task {
+    fn default() -> Self {
+        Self {
+            node_id: INVALID_NODEID,
+            data: null_mut(),
+        }
+    }
+}
+
+struct Worker {
+    id: u32,
+    cpu: u32,
+    graph_id: u32,
+
+    pktpool: PacketPool,
+    stack_name: String,
+
+    nodes: SmallVec<[Node; 16]>,
+    task_queue: [Task; Self::TASK_QUEUE_SIZE],
+}
+
+struct Node {
+    // id: NodeId,
+    module: Box<dyn Module>,
+    links_to: SmallVec<[NodeId; 4]>,
+}
+
+#[repr(C)]
+#[derive(Debug)]
 pub struct Context<'a> {
-    pub cpu: u16,
-    pub worker_id: u16,
-    pub stack_name: &'a str,
-    pub graph_id: usize,
-    // TODO: use reference
     pub pktpool: &'a PacketPool,
+    pub cpu: u32,
+    pub thread_id: u32,
+    pub graph_id: u32,
+
+    pub stack_name: &'a str,
 }
 
 impl Context<'_> {
-    /// allocate a packet with data buffer
+    #[inline(always)]
     pub fn allocate(&self) -> Option<&'static mut Packet> {
-        self.pktpool.allocate(self.worker_id)
-    }
-
-    pub fn deallocate(&self, packet: *mut Packet) {
-        // TODO: if a mbuf is attached, also deallocate
-        self.pktpool.deallocate(packet, self.worker_id)
-    }
-}
-
-#[derive(Debug)]
-pub enum CtrlMsg {
-    ShutDown,
-}
-
-pub struct ConfigManager {
-    graph_configs: Vec<GraphConfig>,
-    stack_configs: Vec<StackConfig>,
-}
-
-impl ConfigManager {
-    pub fn load_file(path: &Path) {
-        let mut cm = Self::get().lock().unwrap();
-        let config = std::fs::read_to_string(path).unwrap();
-        let config = json::parse(config.as_str()).unwrap();
-
-        let config_type = json_require_str(&config, "type");
-        match config_type {
-            "Graph" => {
-                let graph_config = GraphConfig::from(&config);
-
-                if cm.get_graph_config(&graph_config.name).is_some() {
-                    log::error!("Duplicate graph name: {}, skipping ..", graph_config.name);
-                    return;
-                }
-
-                log::debug!("Loaded graph: {}", graph_config.name);
-                cm.graph_configs.push(graph_config);
-            }
-            "Stack" => {
-                let stack_config = StackConfig::from(&config);
-
-                if cm.get_stack_config(&stack_config.name).is_some() {
-                    log::error!("Duplicate stack name: {}, skipping ..", stack_config.name);
-                    return;
-                }
-
-                log::debug!("loaded stack: {}", stack_config.name);
-                cm.stack_configs.push(stack_config);
-            }
-            _ => panic!("invalid config type"),
-        }
-    }
-
-    pub fn get_graph_config_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut GraphConfig> {
-        self.graph_configs.iter_mut().find(|g| g.name == name)
-    }
-
-    pub fn get_stack_config_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut StackConfig> {
-        self.stack_configs.iter_mut().find(|g| g.name == name)
-    }
-
-    pub fn get_graph_config<'a>(&'a self, name: &str) -> Option<&'a GraphConfig> {
-        self.graph_configs.iter().find(|g| g.name == name)
-    }
-
-    pub fn get_stack_config<'a>(&'a self, name: &str) -> Option<&'a StackConfig> {
-        self.stack_configs.iter().find(|g| g.name == name)
-    }
-}
-
-pub struct GraphConfig {
-    pub name: String,
-    pub modules: Vec<String>,
-    pub links: Vec<(String, String)>,
-}
-
-impl From<&JsonValue> for GraphConfig {
-    fn from(value: &JsonValue) -> Self {
-        let name = json_require_str(value, "name").to_string();
-        let modules: Vec<_> = json_require_value(value, "modules")
-            .members()
-            .map(|m| json_assert_str(m).to_string())
-            .collect();
-        let links: Vec<_> = json_require_value(value, "links")
-            .members()
-            .map(|l| {
-                (
-                    json_assert_str(&l[0]).to_string(),
-                    json_assert_str(&l[1]).to_string(),
-                )
-            })
-            .collect();
-
-        Self {
-            name,
-            modules,
-            links,
-        }
-    }
-}
-
-pub struct StackConfig {
-    pub name: String,
-    pub nics: Vec<NicConfig>,
-    pub arps: Vec<ArpEntry>,
-    pub routes: Vec<Route>,
-    pub graphs: Vec<GraphEntry>,
-}
-
-impl From<&JsonValue> for StackConfig {
-    fn from(value: &JsonValue) -> Self {
-        let name = json_require_str(value, "name").to_string();
-
-        let nics = json_require_value(value, "nics");
-        let nics: Vec<_> = nics.members().map(NicConfig::from).collect();
-
-        let arps = json_require_value(value, "arps");
-        let arps: Vec<_> = arps.members().map(ArpEntry::from).collect();
-
-        let routes = json_require_value(value, "routes");
-        let routes: Vec<_> = routes.members().map(Route::from).collect();
-
-        let graphs = json_require_value(value, "graphs");
-        let graphs: Vec<_> = graphs.members().map(GraphEntry::from).collect();
-
-        Self {
-            name,
-            nics,
-            arps,
-            routes,
-            graphs,
-        }
-    }
-}
-
-pub struct GraphEntry {
-    pub name: String,
-    pub cpus: Vec<u32>,
-}
-
-impl From<&JsonValue> for GraphEntry {
-    fn from(value: &JsonValue) -> Self {
-        Self {
-            name: json_require_str(value, "name").to_string(),
-            cpus: json_require_value(value, "cpus")
-                .members()
-                .map(json_assert_number)
-                .collect(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct NicConfig {
-    pub adapter_name: String,
-    pub port: u16,
-    pub ipv4: Ipv4Addr,
-    pub netmask: Ipv4Addr,
-}
-
-impl From<&JsonValue> for NicConfig {
-    fn from(value: &JsonValue) -> Self {
-        Self {
-            adapter_name: json_require_str(value, "adapter_name").to_string(),
-            port: json_require_number(value, "port") as _,
-            ipv4: json_require_str(value, "ipv4").parse::<Ipv4Addr>().unwrap(),
-            netmask: json_require_str(value, "netmask")
-                .parse::<Ipv4Addr>()
-                .unwrap(),
-        }
-    }
-}
-
-pub struct ArpEntry {
-    pub ipv4: Ipv4Addr,
-    pub mac: MacAddr,
-}
-
-impl From<&JsonValue> for ArpEntry {
-    fn from(value: &JsonValue) -> Self {
-        let mac: Vec<_> = json_require_str(value, "mac")
-            .split(':')
-            .map(|s| u8::from_str_radix(s, 16).unwrap())
-            .collect();
-        let mac = MacAddr::from_bytes(mac.try_into().unwrap());
-
-        Self {
-            ipv4: json_require_str(value, "ipv4").parse::<Ipv4Addr>().unwrap(),
-            mac,
-        }
-    }
-}
-
-impl From<&JsonValue> for Route {
-    fn from(value: &JsonValue) -> Self {
-        Self::new(
-            json_require_str(value, "ipv4")
-                .parse::<Ipv4Addr>()
-                .unwrap()
-                .to_bits(),
-            json_require_number(value, "cidr") as _,
-            json_require_number(value, "nic") as _,
-        )
-    }
-}
-
-fn json_require_value<'a>(value: &'a JsonValue, key: &str) -> &'a JsonValue {
-    if value[key].is_null() {
-        panic!("required field `{}` is missing", key);
-    }
-    &value[key]
-}
-
-fn json_require_number(value: &JsonValue, key: &str) -> u32 {
-    let value = json_require_value(value, key);
-    if !value.is_number() {
-        panic!("required field `{}` is not a number", key);
-    }
-    value.as_u32().unwrap()
-}
-
-fn json_assert_number(value: &JsonValue) -> u32 {
-    if !value.is_number() {
-        panic!("expect json value {:?} to be a number", value);
-    }
-
-    value.as_u32().unwrap()
-}
-
-fn json_assert_str(value: &JsonValue) -> &str {
-    if !value.is_string() {
-        panic!("expect json value {:?} to be a string", value);
-    }
-
-    value.as_str().unwrap()
-}
-
-fn json_require_str<'a>(value: &'a JsonValue, key: &str) -> &'a str {
-    let value = json_require_value(value, key);
-    if !value.is_string() {
-        panic!("required field `{}` is not a string", key);
-    }
-    value.as_str().unwrap()
-}
-
-impl ConfigManager {
-    pub fn get() -> &'static Mutex<ConfigManager> {
-        static CONFIG: Mutex<ConfigManager> = Mutex::new(ConfigManager {
-            graph_configs: Vec::new(),
-            stack_configs: Vec::new(),
-        });
-
-        &CONFIG
+        self.pktpool.allocate()
     }
 }
 
 struct Graph {
-    pub id: usize, // Graph's id in the "stack config"
-    pub nodes: Vec<Node>,
+    pub id: u32, // Graph's id in the "stack config"
     pub cpu: u32,
+    pub nodes: Vec<Node>,
 }
 
+// TODO: Build Graph inside worker thread can avoid this
 unsafe impl Send for Graph {}
 
 impl Graph {
-    pub fn new(id: usize, config: &GraphConfig, cpu: u32) -> Self {
+    pub fn new(id: u32, config: &GraphConfig, cpu: u32) -> Self {
         let modules = &config.modules;
 
         let mut nodes = Vec::new();
 
         for (id, module) in config.modules.iter().enumerate() {
-            let new_node = Node::new(id, build_module(module));
+            let new_node = Node::new(NodeId(id), build_module(module));
             nodes.insert(id, new_node);
         }
 
@@ -368,16 +105,23 @@ impl Graph {
                 .map(|(id, _)| id)
                 .unwrap();
 
-            nodes[src_idx].out_links.push(Link { to: dst_idx });
+            nodes[src_idx].links_to.push(NodeId(dst_idx));
         }
 
         Graph { id, nodes, cpu }
     }
 }
 
+static THREAD_ID: AtomicU32 = AtomicU32::new(0);
+
+// only the main thread would write this flag, so it's safe
+static mut STOP_FLAG: bool = false;
+
+pub struct Engine;
+
 impl Engine {
-    // TODO: Read graph scheme from config file
     pub fn run(stack_name: &str) -> Result<()> {
+        // TODO: use less lcore?
         let arg0 = CString::new("").unwrap();
         let arg1 = CString::new("--log-level").unwrap();
         let arg2 = CString::new("debug").unwrap();
@@ -393,7 +137,7 @@ impl Engine {
         for (id, g) in graph_entries.iter().enumerate() {
             let config = config.get_graph_config(&g.name).unwrap();
             for &cpu in &g.cpus {
-                graphs.push(Graph::new(id, config, cpu));
+                graphs.push(Graph::new(id as _, config, cpu));
             }
         }
         drop(config);
@@ -408,74 +152,63 @@ impl Engine {
 
     fn run_workers(graphs: Vec<Graph>, stack_name: &str) -> Result<Vec<JoinHandle<()>>> {
         let mut threads = Vec::new();
-        let num_graphs = graphs.len();
 
-        let (sd, rv) = bounded(num_graphs); // Channel for ctrl-c signals
         for g in graphs {
-            let rv = rv.clone();
-            let tq = TaskQueue::new_fifo();
             let stack_name = stack_name.to_string();
 
             // TODO: give thread a name
             threads.push(std::thread::spawn(move || {
                 core_affinity::set_for_current(CoreId { id: g.cpu as _ });
 
-                let mut worker = Worker::new(stack_name, g, tq, rv);
-                log::debug!("starting worker {} on core {}", worker.id, worker.cpu);
+                unsafe { sys::rte_thread_register() };
+
+                let id = THREAD_ID.fetch_add(1, Relaxed);
+                let mut worker = Box::new(Worker::new(id, stack_name, g));
+
+                log::debug!("worker {} runs on core {}", worker.id, worker.cpu);
 
                 worker.run();
             }));
 
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(Duration::from_millis(1));
         }
 
-        ctrlc::set_handler(move || {
-            for _ in 0..num_graphs {
-                sd.send(CtrlMsg::ShutDown)
-                    .expect("cannot send the shutdown CtrlMsg");
-            }
-        })
-        .expect("error when setting ctrl-c handler");
+        ctrlc::set_handler(move || unsafe { STOP_FLAG = true })
+            .expect("error when setting ctrl-c handler");
 
         Ok(threads)
     }
 }
 
-static WORKER_ID: AtomicU16 = AtomicU16::new(0);
-
 impl Worker {
-    pub fn new(
-        stack_name: String,
-        graph: Graph,
-        task_queue: TaskQueue,
-        ctrl_ch: Receiver<CtrlMsg>,
-    ) -> Self {
-        Self {
-            nodes: graph.nodes,
-            nodes_to_poll: Vec::new(),
+    const TASK_QUEUE_SIZE: usize = 2048;
 
-            task_queue,
-            ctrl_ch,
+    pub fn new(id: u32, stack_name: String, graph: Graph) -> Self {
+        let socket_id = unsafe { sys::numa_node_of_cpu(graph.cpu as _) };
+
+        Self {
+            id,
+            cpu: graph.cpu as _,
+            graph_id: graph.id,
+            pktpool: PacketPool::get_or_create(socket_id),
 
             stack_name,
-            graph_id: graph.id,
 
-            id: WORKER_ID.fetch_add(1, Relaxed),
-            cpu: graph.cpu as _,
-            pktpool: PacketPool::get_or_create(graph.cpu as _),
+            nodes: graph.nodes.into(),
+            task_queue: std::array::from_fn(|_| Task::default()),
         }
     }
 
     pub fn run(&mut self) {
         let ctx = Context {
-            cpu: self.cpu,
-            worker_id: self.id,
-
-            stack_name: &self.stack_name,
-            graph_id: self.graph_id,
-
             pktpool: &self.pktpool,
+            cpu: self.cpu,
+            thread_id: self.id,
+            graph_id: self.graph_id,
+            stack_name: &self.stack_name,
         };
+
+        let mut nodes_to_poll: SmallVec<[NodeId; 4]> = SmallVec::new();
 
         for (id, node) in self.nodes.iter_mut().enumerate() {
             node.module.init(&ctx).unwrap();
@@ -483,79 +216,68 @@ impl Worker {
             let capa = node.module.capability();
             assert!(capa.contains(ModuleCapa::PROCESS));
             if capa.contains(ModuleCapa::POLL) {
-                self.nodes_to_poll.push(id);
+                nodes_to_poll.push(NodeId(id));
             }
         }
 
-        let mut num_polls = 0;
+        let mut index = 0;
 
-        loop {
-            while let Some(task) = self.next_task() {
-                let node_id = task.node_id;
-                let pkt = unsafe { task.data.as_mut().unwrap() };
-                let node = &mut self.nodes[node_id];
+        while unsafe { !STOP_FLAG } {
+            for &node_id in &nodes_to_poll {
+                let node = &mut self.nodes[node_id.0];
 
-                match node.module.process(&ctx, pkt) {
-                    Ok(_) => {
-                        for link in &node.out_links {
-                            // Is the task queue inefficient?
-                            self.task_queue.push(Task {
-                                data: pkt,
-                                node_id: link.to,
-                            })
-                        }
-                    }
-                    Err(ModuleError::Dropped) => {}
-                    e @ Err(_) => e.unwrap(),
-                }
-            }
+                match node.module.poll(&ctx) {
+                    Ok(pkt) => {
+                        for &node_id in &node.links_to {
+                            let mut pkt = pkt as *mut Packet;
 
-            match self.ctrl_ch.try_recv() {
-                Ok(msg) => match msg {
-                    CtrlMsg::ShutDown => {
-                        log::debug!("polled {} times", num_polls);
+                            while !pkt.is_null() {
+                                self.task_queue[index] = Task { data: pkt, node_id };
+                                index += 1;
 
-                        for node in &self.nodes {
-                            node.module.destroy(&ctx);
-                        }
-
-                        break;
-                    }
-                },
-                Err(TryRecvError::Empty) => {
-                    num_polls += 1;
-
-                    for &node_id in &self.nodes_to_poll {
-                        let node = &mut self.nodes[node_id];
-
-                        if let Ok(pkt) = node.module.poll(&ctx) {
-                            for link in &node.out_links {
-                                // Is the task queue inefficient?
-                                self.task_queue.push(Task {
-                                    data: pkt,
-                                    node_id: link.to,
-                                })
+                                pkt = unsafe { (*pkt).next };
                             }
                         }
                     }
+                    Err(ModuleError::NoData) => continue,
+                    e @ Err(_) => {
+                        let _ = e.unwrap();
+                    }
                 }
-                Err(TryRecvError::Disconnected) => break,
+            }
+
+            while index > 0 {
+                index -= 1;
+
+                let task = &self.task_queue[index];
+                let pkt = unsafe { &mut *task.data };
+                let node = &mut self.nodes[task.node_id.0];
+
+                match node.module.process(&ctx, pkt) {
+                    Ok(()) => {
+                        for &node_id in &node.links_to {
+                            self.task_queue[index] = Task { data: pkt, node_id };
+                            index += 1;
+                        }
+                    }
+                    Err(ModuleError::Done) => continue,
+                    e @ Err(_) => e.unwrap(),
+                }
             }
         }
-    }
 
-    fn next_task(&self) -> Option<Task> {
-        // TODO: maybe steal from other replica
-        self.task_queue.pop()
+        for node in &mut self.nodes {
+            node.module.destroy(&ctx);
+        }
     }
 }
 
 impl Node {
-    pub fn new(id: NodeId, module: Box<dyn Module>) -> Self {
+    pub fn new(_id: NodeId, module: Box<dyn Module>) -> Self {
         Self {
-            id,
+            // id,
             module,
-            out_links: Vec::new(),
+            links_to: SmallVec::new(),
         }
     }
 }

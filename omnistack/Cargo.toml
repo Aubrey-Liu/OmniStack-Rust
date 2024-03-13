@@ -6,7 +6,12 @@ edition = "2021"
 [dependencies]
 log = "0.4.20"
 env_logger = "0.11.2"
+once_cell = "1.19.0"
+smallvec = "1.13.1"
 omnistack-core = { path = "../omnistack-core" }
 omnistack-sys = { path = "../omnistack-sys" }
 
 [features]
+send = []
+recv = []
+perf = []

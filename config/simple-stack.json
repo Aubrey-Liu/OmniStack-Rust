@@ -1,6 +1,6 @@
 {
     "type": "Stack",
-    "name": "UDP",
+    "name": "SIMPLE",
     "nics": [
         {
             "adapter_name": "Dpdk",
@@ -24,8 +24,8 @@
     ],
     "graphs": [
         {
-            "cpus": [12, 13, 14],
-            "name": "UDP"
+            "cpus": [12],
+            "name": "SIMPLE"
         }
     ]
 }

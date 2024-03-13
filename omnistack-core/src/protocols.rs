@@ -1,8 +1,6 @@
-#![allow(unused)]
-
 use thiserror::Error;
 
-use std::{convert::Infallible, fmt::Debug, str::FromStr, string::ParseError};
+use std::{fmt::Debug, str::FromStr};
 
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
@@ -11,14 +9,17 @@ pub struct MacAddr {
 }
 
 impl MacAddr {
+    #[inline]
     pub const fn invalid() -> Self {
         Self::from_bytes([0; 6])
     }
 
+    #[inline]
     pub const fn from_bytes(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
         Self { raw: bytes }
     }
 
+    #[inline]
     pub const fn as_bytes(&self) -> [u8; 6] {
         self.raw
     }
@@ -43,6 +44,12 @@ impl Ipv4Addr {
         Self { octets }
     }
 
+    #[inline]
+    pub fn octets(&self) -> [u8; 4] {
+        self.octets
+    }
+
+    #[inline]
     pub fn to_bits(&self) -> u32 {
         u32::from_be_bytes(self.octets)
     }
@@ -119,24 +126,28 @@ pub struct Ipv4Header {
 }
 
 impl Ipv4Header {
+    #[inline]
     pub fn version(&self) -> u8 {
         self.version_ihl & 0xf
     }
 
+    #[inline]
     pub fn ihl(&self) -> u8 {
         self.version_ihl & 0xf0
     }
 
+    #[inline]
     pub fn set_version(&mut self, version: u8) {
         debug_assert!(version <= ((1 << 4) - 1));
 
         self.version_ihl |= version;
     }
 
+    #[inline]
     pub fn set_ihl(&mut self, ihl: u8) {
         debug_assert!(ihl <= ((1 << 4) - 1));
 
-        self.version_ihl |= (ihl << 4);
+        self.version_ihl |= ihl << 4;
     }
 }
 
@@ -161,6 +172,7 @@ impl Route {
         }
     }
 
+    #[inline]
     pub fn matches(&self, dst_ip_addr: u32) -> bool {
         ((self.ip_addr ^ dst_ip_addr) & self.cidr_mask) == 0
     }
@@ -172,5 +184,5 @@ pub struct UdpHeader {
     pub src: u16,
     pub dst: u16,
     pub len: u16,
-    chksum: u16,
+    pub chksum: u16,
 }
