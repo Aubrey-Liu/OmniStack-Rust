@@ -128,11 +128,15 @@ impl Module for IoNode {
 
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         let nic = packet.nic as usize;
-        self.adapters[nic].send(ctx, packet)?;
+        unsafe {
+            self.adapters.get_unchecked_mut(nic).send(ctx, packet)?;
+        }
 
-        if !self.flush_flags[nic] {
-            self.flush_flags[nic] = true;
-            self.flush_queue[self.flush_queue_idx] = nic as u8;
+        if unsafe { !*self.flush_flags.get_unchecked(nic) } {
+            unsafe {
+                *self.flush_flags.get_unchecked_mut(nic) = true;
+                *self.flush_queue.get_unchecked_mut(self.flush_queue_idx) = nic as u8;
+            }
             self.flush_queue_idx += 1;
         }
 
@@ -144,8 +148,12 @@ impl Module for IoNode {
             self.flush_queue_idx -= 1;
 
             let nic_to_flush = self.flush_queue[self.flush_queue_idx];
-            self.adapters[nic_to_flush as usize].flush(ctx)?;
-            self.flush_flags[nic_to_flush as usize] = false;
+            unsafe {
+                self.adapters
+                    .get_unchecked_mut(nic_to_flush as usize)
+                    .flush(ctx)?;
+                *self.flush_flags.get_unchecked_mut(nic_to_flush as usize) = false;
+            };
         }
 
         // TODO: flush

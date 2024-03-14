@@ -217,7 +217,7 @@ impl Worker {
 
         while unsafe { !STOP_FLAG } {
             for &node_id in &nodes_to_poll {
-                let node = &mut self.nodes[node_id.0];
+                let node = unsafe { self.nodes.get_unchecked_mut(node_id.0) };
 
                 match node.module.poll(&ctx) {
                     Ok(pkt) => {
@@ -225,7 +225,10 @@ impl Worker {
                             let mut pkt = pkt as *mut Packet;
 
                             while !pkt.is_null() {
-                                self.task_queue[index] = Task { data: pkt, node_id };
+                                unsafe {
+                                    *self.task_queue.get_unchecked_mut(index) =
+                                        Task { data: pkt, node_id };
+                                }
                                 index += 1;
 
                                 pkt = unsafe { (*pkt).next };
@@ -242,14 +245,17 @@ impl Worker {
             while index > 0 {
                 index -= 1;
 
-                let task = &self.task_queue[index];
+                let task = unsafe { self.task_queue.get_unchecked(index) };
                 let pkt = unsafe { &mut *task.data };
-                let node = &mut self.nodes[task.node_id.0];
+                let node = unsafe { self.nodes.get_unchecked_mut(task.node_id.0) };
 
                 match node.module.process(&ctx, pkt) {
                     Ok(()) => {
                         for &node_id in &node.links_to {
-                            self.task_queue[index] = Task { data: pkt, node_id };
+                            unsafe {
+                                *self.task_queue.get_unchecked_mut(index) =
+                                    Task { data: pkt, node_id };
+                            }
                             index += 1;
                         }
                     }

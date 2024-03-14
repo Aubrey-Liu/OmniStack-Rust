@@ -6,8 +6,9 @@ resolver = "2"
 inherits = "release"
 debug = true
 
-[profile.release]
+[profile.opt]
+inherits = "release"
 opt-level = 3
-lto = "thin"
+codegen-units = 1
+lto = true
 panic = "abort"
-# codegen-units = 1

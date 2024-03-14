@@ -284,7 +284,7 @@ impl IoAdapter for Dpdk {
     }
 
     fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
-        let mbuf = unsafe { self.tx_bufs[self.tx_idx].as_mut().unwrap() };
+        let mbuf = unsafe { &mut **self.tx_bufs.get_unchecked(self.tx_idx) };
         self.tx_idx += 1;
 
         let shared_info: &mut sys::rte_mbuf_ext_shared_info =
@@ -397,7 +397,7 @@ impl IoAdapter for Dpdk {
                 Some(pkt) => pkt,
                 None => return Err(ModuleError::OutofMemory),
             };
-            let mbuf = self.rx_bufs[i];
+            let mbuf = unsafe { *self.rx_bufs.get_unchecked(i) };
 
             #[cfg(feature = "perf")]
             {
