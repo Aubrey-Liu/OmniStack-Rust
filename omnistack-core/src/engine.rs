@@ -64,13 +64,6 @@ pub struct Context<'a> {
     pub stack_name: &'a str,
 }
 
-impl Context<'_> {
-    #[inline(always)]
-    pub fn allocate(&self) -> Option<&'static mut Packet> {
-        self.pktpool.allocate()
-    }
-}
-
 struct Graph {
     pub id: u32, // Graph's id in the "stack config"
     pub cpu: u32,

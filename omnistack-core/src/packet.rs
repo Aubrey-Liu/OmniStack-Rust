@@ -39,7 +39,8 @@ pub struct Packet {
 
     pub buf_ty: PktBufType,
 
-    pub refcnt: usize,
+    pub refcnt: u32,
+    pub flow_hash: u32,
 
     padding: [u8; 8],
 
@@ -73,6 +74,7 @@ impl Packet {
             next: null_mut(),
             buf_ty: PktBufType::Local,
             refcnt: 1,
+            flow_hash: 0,
 
             padding: [0; 8],
 
@@ -123,9 +125,9 @@ impl Packet {
 
     // TODO: if buf type is dpdk, can't do this
     #[inline(always)]
-    pub fn iova(&self) -> usize {
-        MemoryPool::virt2iova(self as *const _ as *const _)
-            + (self.data() as usize - self as *const _ as usize)
+    pub fn iova(&mut self) -> u64 {
+        MemoryPool::virt2iova(self as *mut _ as *mut _)
+            + (self.data() as u64 - self as *const _ as u64)
     }
 }
 
@@ -140,7 +142,7 @@ impl PacketPool {
     const PERCORE_CACHE_SIZE: u32 = sys::RTE_MEMPOOL_CACHE_MAX_SIZE;
 
     pub fn get_or_create(socket_id: i32) -> Self {
-        debug_assert_eq!(Packet::BUF_OFFSET, 64);
+        assert_eq!(Packet::BUF_OFFSET, 64);
 
         let pkt_size = std::mem::size_of::<Packet>();
         let elt_size = (pkt_size + 64 - 1) / 64 * 64;
@@ -160,6 +162,11 @@ impl PacketPool {
     #[inline(always)]
     pub fn allocate(&self) -> Option<&'static mut Packet> {
         unsafe { self.mp.allocate().cast::<Packet>().as_mut() }
+    }
+
+    #[inline(always)]
+    pub fn allocate_many(&self, n: u32, pkts: &mut [*mut Packet]) -> i32 {
+        self.mp.allocate_many(n, pkts.as_mut_ptr().cast())
     }
 
     #[inline(always)]

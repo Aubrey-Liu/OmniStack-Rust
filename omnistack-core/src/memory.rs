@@ -1,5 +1,4 @@
-use std::ffi::{c_void, CString};
-use std::mem::size_of;
+use std::ffi::CString;
 use std::ptr::null_mut;
 use std::sync::Mutex;
 
@@ -12,23 +11,23 @@ pub struct MemoryPool {
     pub(crate) name: String,
 }
 
-struct Header {
-    mp: *mut sys::rte_mempool,
-    iova: usize,
-}
+// struct Header {
+//     mp: *mut sys::rte_mempool,
+//     iova: usize,
+// }
+//
+// unsafe extern "C" fn obj_header_init(
+//     mp: *mut sys::rte_mempool,
+//     _opaque: *mut c_void,
+//     obj: *mut c_void,
+//     _obj_idx: u32,
+// ) {
+//     let header = &mut *obj.cast::<Header>();
+//     header.mp = mp;
+//     header.iova = sys::rte_mempool_virt2iova(obj) as usize + HEADER_ROOM_SIZE;
+// }
 
-unsafe extern "C" fn obj_header_init(
-    mp: *mut sys::rte_mempool,
-    _opaque: *mut c_void,
-    obj: *mut c_void,
-    _obj_idx: u32,
-) {
-    let header = &mut *obj.cast::<Header>();
-    header.mp = mp;
-    header.iova = sys::rte_mempool_virt2iova(obj) as usize + HEADER_ROOM_SIZE;
-}
-
-const HEADER_ROOM_SIZE: usize = (size_of::<Header>() + 64 - 1) / 64 * 64;
+// const HEADER_ROOM_SIZE: usize = (size_of::<Header>() + 64 - 1) / 64 * 64;
 
 impl MemoryPool {
     pub const fn new() -> Self {
@@ -56,12 +55,12 @@ impl MemoryPool {
                 sys::rte_mempool_create(
                     c_name.as_ptr(),
                     n,
-                    elt_size + HEADER_ROOM_SIZE as u32,
+                    elt_size,
                     cache_size,
                     0,
                     None,
                     null_mut(),
-                    Some(obj_header_init), // TODO: give every item an initial value
+                    None,
                     null_mut(),
                     socket_id,
                     0,
@@ -85,23 +84,28 @@ impl MemoryPool {
 
     #[inline(always)]
     pub fn allocate(&self) -> *mut u8 {
-        let mut obj: [*mut c_void; 1] = [null_mut()];
+        let mut obj: [*mut u8; 1] = [null_mut()];
 
-        let _r = unsafe { sys::rte_mempool_get(self.mp, obj.as_mut_ptr()) };
+        let _r = unsafe { sys::rte_mempool_get(self.mp, obj.as_mut_ptr().cast()) };
 
-        let data: *mut u8 = unsafe { obj[0].add(HEADER_ROOM_SIZE).cast() };
-        data
+        obj[0]
+    }
+
+    // TODO: return result?
+    #[inline(always)]
+    pub fn allocate_many(&self, n: u32, objs: *mut *mut u8) -> i32 {
+        unsafe { sys::rte_mempool_get_bulk(self.mp, objs.cast(), n) }
     }
 
     #[inline(always)]
     pub fn deallocate(obj: *mut u8) {
-        let header = unsafe { obj.sub(HEADER_ROOM_SIZE).cast::<Header>().as_mut().unwrap() };
-        unsafe { sys::rte_mempool_put(header.mp, header as *mut _ as *mut _) };
+        let header = unsafe { &*sys::rte_mempool_get_header(obj.cast()) };
+        unsafe { sys::rte_mempool_put(header.mp, obj.cast()) };
     }
 
     #[inline(always)]
-    pub fn virt2iova(obj: *const u8) -> usize {
-        let header = unsafe { &*obj.sub(HEADER_ROOM_SIZE).cast::<Header>() };
+    pub fn virt2iova(obj: *mut u8) -> u64 {
+        let header = unsafe { &*sys::rte_mempool_get_header(obj.cast()) };
         header.iova
     }
 }

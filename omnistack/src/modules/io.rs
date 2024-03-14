@@ -14,7 +14,7 @@ use smallvec::SmallVec;
 
 const MAX_NIC: usize = 16;
 
-#[inline]
+#[inline(always)]
 pub fn nic_to_mac(nic: u16) -> MacAddr {
     unsafe { NIC_TO_MAC[nic as usize] }
 }
@@ -24,8 +24,14 @@ static mut NIC_TO_MAC: Vec<MacAddr> = Vec::new();
 
 pub trait IoAdapter {
     /// Should only be called ONCE.
-    fn init(&mut self, ctx: &Context, port_id: u16, num_queues: u16, queue: u16)
-        -> Result<MacAddr>;
+    fn init(
+        &mut self,
+        ctx: &Context,
+        nic: u16,
+        port_id: u16,
+        num_queues: u16,
+        queue: u16,
+    ) -> Result<MacAddr>;
 
     fn start(&self) -> Result<()> {
         Ok(())
@@ -90,7 +96,9 @@ impl Module for IoNode {
             let mut adapter = builder();
 
             // TODO: Return Recv Queue
-            let mac = adapter.init(ctx, nic.port, num_queues, queue_id).unwrap();
+            let mac = adapter
+                .init(ctx, id as _, nic.port, num_queues, queue_id)
+                .unwrap();
 
             unsafe {
                 NIC_TO_MAC[id] = mac;
@@ -143,12 +151,9 @@ impl Module for IoNode {
         // TODO: flush
         #[cfg(feature = "recv")]
         {
-            for (nic, adapter) in self.adapters.iter_mut().enumerate() {
+            for adapter in &mut self.adapters {
                 match adapter.recv(ctx) {
-                    Ok(pkt) => {
-                        pkt.nic = nic as _;
-                        return Ok(pkt);
-                    }
+                    p @ Ok(_) => return p,
                     Err(ModuleError::NoData) => continue,
                     e @ Err(_) => return e,
                 }

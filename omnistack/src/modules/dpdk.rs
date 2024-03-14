@@ -36,6 +36,7 @@ pub struct Dpdk {
     rx_desc: u16,
     tx_desc: u16,
 
+    nic: u16,
     port: u16,
     queue: u16,
 
@@ -178,7 +179,15 @@ static INIT_DONE_FLAG: AtomicBool = AtomicBool::new(false);
 
 impl IoAdapter for Dpdk {
     // might be called multiple times!
-    fn init(&mut self, ctx: &Context, port: u16, num_queues: u16, queue: u16) -> Result<MacAddr> {
+    fn init(
+        &mut self,
+        ctx: &Context,
+        nic: u16,
+        port: u16,
+        num_queues: u16,
+        queue: u16,
+    ) -> Result<MacAddr> {
+        self.nic = nic;
         self.port = port;
         self.queue = queue;
 
@@ -278,16 +287,15 @@ impl IoAdapter for Dpdk {
         let mbuf = unsafe { self.tx_bufs[self.tx_idx].as_mut().unwrap() };
         self.tx_idx += 1;
 
-        let pkt_len = packet.len();
-
         let shared_info: &mut sys::rte_mbuf_ext_shared_info =
             unsafe { &mut *mbuf.buf_addr.add(mbuf.data_off as _).cast() };
         shared_info.free_cb = Some(packet_free_callback);
         shared_info.fcb_opaque = packet as *mut _ as *mut _;
         unsafe { sys::rte_mbuf_ext_refcnt_set(shared_info, 1) };
 
+        let pkt_len = packet.len();
         let data = packet.data().cast();
-        let iova = packet.iova() as u64;
+        let iova = packet.iova();
 
         unsafe { sys::rte_pktmbuf_attach_extbuf(mbuf, data, iova, pkt_len, shared_info) };
 
@@ -299,15 +307,35 @@ impl IoAdapter for Dpdk {
         mbuf.nb_segs = 1;
         mbuf.next = null_mut();
 
-        // TODO: deal with non-UDP packets
         let headers = unsafe { &mut mbuf.__bindgen_anon_3.__bindgen_anon_1 };
         headers.set_l2_len(packet.l2_header.length as _);
         headers.set_l3_len(packet.l3_header.length as _);
 
-        mbuf.ol_flags |= RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_UDP_CKSUM;
-        let ipv4h = packet.get_l3_header::<sys::rte_ipv4_hdr>();
-        let udph = packet.get_l4_header::<UdpHeader>();
-        udph.chksum = unsafe { sys::rte_ipv4_phdr_cksum(ipv4h as *const _, mbuf.ol_flags) };
+        let ethh = packet.get_l2_header::<EthHeader>();
+        match ethh.ether_ty {
+            EtherType::Ipv4 => {
+                mbuf.ol_flags |= RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_IPV4;
+
+                let ipv4h = packet.get_l3_header::<Ipv4Header>();
+                ipv4h.cksum = 0;
+
+                match ipv4h.protocol {
+                    Ipv4ProtoType::UDP => {
+                        mbuf.ol_flags |= RTE_MBUF_F_TX_UDP_CKSUM;
+                        let udph = packet.get_l4_header::<UdpHeader>();
+                        udph.chksum = unsafe {
+                            sys::rte_ipv4_phdr_cksum(ipv4h as *mut _ as *const _, mbuf.ol_flags)
+                        };
+                    }
+                    _ => {
+                        unimplemented!("unsupported l4 type")
+                    }
+                }
+            }
+            _ => {
+                unimplemented!("unsupported l3 type")
+            }
+        }
 
         #[cfg(feature = "perf")]
         {
@@ -365,7 +393,10 @@ impl IoAdapter for Dpdk {
 
         let mut ret = null_mut();
         for i in (0..rx_items).rev() {
-            let pkt = ctx.allocate().unwrap(); // TODO: allocate many
+            let pkt = match ctx.pktpool.allocate() {
+                Some(pkt) => pkt,
+                None => return Err(ModuleError::OutofMemory),
+            };
             let mbuf = self.rx_bufs[i];
 
             #[cfg(feature = "perf")]
@@ -374,11 +405,13 @@ impl IoAdapter for Dpdk {
                 self.total_byte_recv += unsafe { (*mbuf).pkt_len } as u64;
             }
 
-            pkt.refcnt = 1;
-            pkt.buf_ty = PktBufType::Mbuf(mbuf);
-            pkt.data = unsafe { (*mbuf).buf_addr.cast() };
+            pkt.nic = self.nic;
             pkt.offset = unsafe { (*mbuf).data_off };
             unsafe { pkt.set_len((*mbuf).pkt_len as _) };
+            pkt.refcnt = 1;
+            pkt.flow_hash = unsafe { (*mbuf).__bindgen_anon_2.hash.rss };
+            pkt.buf_ty = PktBufType::Mbuf(mbuf);
+            pkt.data = unsafe { (*mbuf).buf_addr.cast() };
             pkt.next = ret;
             ret = pkt;
         }
