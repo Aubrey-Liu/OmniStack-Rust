@@ -1,13 +1,14 @@
 use std::ffi::CString;
+use std::mem::size_of;
 use std::ptr::null_mut;
 use std::sync::Mutex;
 
-use omnistack_sys as sys;
+use dpdk_sys as sys;
 
 #[derive(Debug)]
 pub struct MemoryPool {
     pub(crate) mp: *mut sys::rte_mempool,
-    pub(crate) socket_id: i32,
+    pub(crate) socket_id: u32,
     pub(crate) name: String,
 }
 
@@ -44,7 +45,7 @@ impl MemoryPool {
         n: u32,
         elt_size: u32,
         cache_size: u32,
-        socket_id: i32,
+        socket_id: u32,
     ) -> Self {
         let mut pool = Self::new();
 
@@ -62,7 +63,7 @@ impl MemoryPool {
                     null_mut(),
                     None,
                     null_mut(),
-                    socket_id,
+                    socket_id as _,
                     0,
                 )
             };
@@ -98,14 +99,23 @@ impl MemoryPool {
     }
 
     #[inline(always)]
-    pub fn deallocate(obj: *mut u8) {
-        let header = unsafe { &*sys::rte_mempool_get_header(obj.cast()) };
+    pub(crate) fn deallocate(obj: *mut u8) {
+        let header = unsafe {
+            &*obj
+                .sub(size_of::<sys::rte_mempool_objhdr>())
+                .cast::<sys::rte_mempool_objhdr>()
+        };
         unsafe { sys::rte_mempool_put(header.mp, obj.cast()) };
     }
 
     #[inline(always)]
     pub fn virt2iova(obj: *mut u8) -> u64 {
-        let header = unsafe { &*sys::rte_mempool_get_header(obj.cast()) };
+        // NOTE: don't know why, but it's faster than `rte_mempool_virt2iova`
+        let header = unsafe {
+            &*obj
+                .sub(size_of::<sys::rte_mempool_objhdr>())
+                .cast::<sys::rte_mempool_objhdr>()
+        };
         header.iova
     }
 }

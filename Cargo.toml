@@ -1,14 +1,7 @@
 [workspace]
-members = ["omnistack", "omnistack-core", "omnistack-sys"]
+members = ["omnistack", "omnistack-core", "rust-dpdk-sys"]
 resolver = "2"
 
 [profile.perf]
 inherits = "release"
 debug = true
-
-[profile.opt]
-inherits = "release"
-opt-level = 3
-codegen-units = 1
-lto = true
-panic = "abort"

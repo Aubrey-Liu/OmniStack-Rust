@@ -1,13 +1,16 @@
+#![allow(unused)]
+
 use std::ffi::{c_void, CString};
 use std::mem::size_of;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use omnistack_core::packet::PktBufType;
 use omnistack_core::prelude::*;
 
-use omnistack_sys as sys;
-use omnistack_sys::constants::*;
+use dpdk_sys as sys;
+use dpdk_sys::constants::*;
 
 use crate::modules::io::IoAdapter;
 
@@ -31,8 +34,13 @@ static mut DEFAULT_RSS_KEY: [u8; 40] = [
 ];
 
 #[repr(C)]
-#[derive(Debug)]
 pub struct Dpdk {
+    tx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
+    rx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
+
+    tx_idx: usize,
+    mempool: *mut sys::rte_mempool,
+
     rx_desc: u16,
     tx_desc: u16,
 
@@ -40,22 +48,17 @@ pub struct Dpdk {
     port: u16,
     queue: u16,
 
-    mempool: *mut sys::rte_mempool,
+    #[cfg(feature = "perf")]
+    stats: Stats,
+}
 
-    tx_idx: usize,
-
-    tx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
-    rx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
-
-    /* --- stats --- */
-    #[cfg(feature = "perf")]
-    total_sent: u64,
-    #[cfg(feature = "perf")]
-    total_byte_sent: u64,
-    #[cfg(feature = "perf")]
-    total_recv: u64,
-    #[cfg(feature = "perf")]
-    total_byte_recv: u64,
+#[cfg(feature = "perf")]
+struct Stats {
+    sent_pkts: u64,
+    sent_bytes: u64,
+    recv_pkts: u64,
+    recv_bytes: u64,
+    begin: Instant,
 }
 
 impl Dpdk {
@@ -105,6 +108,11 @@ impl Dpdk {
         }
 
         INIT_DONE_FLAG.store(true, Ordering::Relaxed);
+
+        #[cfg(feature = "perf")]
+        {
+            self.stats.begin = Instant::now();
+        }
 
         Ok(())
     }
@@ -191,10 +199,11 @@ impl IoAdapter for Dpdk {
         self.port = port;
         self.queue = queue;
 
-        let socket_id = unsafe { sys::numa_node_of_cpu(ctx.cpu as _) };
+        let socket_id = unsafe { sys::rte_socket_id() };
         let name = CString::new(format!("omni_driver_pool_{}_{}", port, ctx.thread_id)).unwrap();
 
-        assert_eq!(unsafe { sys::rte_eth_dev_socket_id(port) }, socket_id);
+        let dev_socket_id = unsafe { sys::rte_eth_dev_socket_id(port) as u32 };
+        assert_eq!(dev_socket_id, socket_id);
 
         self.mempool = unsafe {
             sys::rte_pktmbuf_pool_create(
@@ -291,7 +300,9 @@ impl IoAdapter for Dpdk {
             unsafe { &mut *mbuf.buf_addr.add(mbuf.data_off as _).cast() };
         shared_info.free_cb = Some(packet_free_callback);
         shared_info.fcb_opaque = packet as *mut _ as *mut _;
-        unsafe { sys::rte_mbuf_ext_refcnt_set(shared_info, 1) };
+        // it's not shared, so no need to use atomic operations
+        shared_info.refcnt = 1;
+        // unsafe { sys::rte_mbuf_ext_refcnt_set(shared_info, 1) };
 
         let pkt_len = packet.len();
         let data = packet.data().cast();
@@ -339,8 +350,8 @@ impl IoAdapter for Dpdk {
 
         #[cfg(feature = "perf")]
         {
-            self.total_byte_sent += packet.len() as u64;
-            self.total_sent += 1;
+            self.stats.sent_pkts += 1;
+            self.stats.sent_bytes += packet.len() as u64;
         }
 
         if self.tx_idx == BURST_SIZE {
@@ -351,27 +362,25 @@ impl IoAdapter for Dpdk {
     }
 
     fn flush(&mut self, _ctx: &Context) -> Result<()> {
+        if self.tx_idx == 0 {
+            return Ok(());
+        }
+
         let mut pkts = self.tx_bufs.as_mut_ptr();
         let sent = self.tx_idx;
 
-        while self.tx_idx > 0 {
+        while self.tx_idx != 0 {
             let nb_tx =
                 unsafe { sys::rte_eth_tx_burst(self.port, self.queue, pkts, self.tx_idx as _) };
             pkts = unsafe { pkts.add(nb_tx as usize) };
             self.tx_idx -= nb_tx as usize;
         }
 
-        if sent != 0 {
-            let ret = unsafe {
-                sys::rte_pktmbuf_alloc_bulk(
-                    self.mempool,
-                    self.tx_bufs.as_mut_ptr().cast(),
-                    sent as _,
-                )
-            };
-            if ret != 0 {
-                return Err(ModuleError::OutofMemory);
-            }
+        let ret = unsafe {
+            sys::rte_pktmbuf_alloc_bulk(self.mempool, self.tx_bufs.as_mut_ptr().cast(), sent as _)
+        };
+        if ret != 0 {
+            return Err(ModuleError::OutofMemory);
         }
 
         Ok(())
@@ -385,25 +394,21 @@ impl IoAdapter for Dpdk {
                 self.rx_bufs.as_mut_ptr().cast(),
                 BURST_SIZE as _,
             )
-        } as _;
-
+        };
         if rx_items == 0 {
             return Err(ModuleError::NoData);
         }
 
         let mut ret = null_mut();
-        for i in (0..rx_items).rev() {
+        let mut i = rx_items as usize;
+        while i != 0 {
+            i -= 1;
+
             let pkt = match ctx.pktpool.allocate() {
                 Some(pkt) => pkt,
                 None => return Err(ModuleError::OutofMemory),
             };
             let mbuf = unsafe { *self.rx_bufs.get_unchecked(i) };
-
-            #[cfg(feature = "perf")]
-            {
-                self.total_recv += 1;
-                self.total_byte_recv += unsafe { (*mbuf).pkt_len } as u64;
-            }
 
             pkt.nic = self.nic;
             pkt.offset = unsafe { (*mbuf).data_off };
@@ -414,22 +419,40 @@ impl IoAdapter for Dpdk {
             pkt.data = unsafe { (*mbuf).buf_addr.cast() };
             pkt.next = ret;
             ret = pkt;
+
+            #[cfg(feature = "perf")]
+            {
+                self.stats.recv_pkts += 1;
+                self.stats.recv_bytes += unsafe { (*mbuf).pkt_len } as u64;
+            }
         }
 
-        let ret = unsafe { &mut *ret };
-        Ok(ret)
+        Ok(unsafe { &mut *ret })
     }
 
-    #[cfg(feature = "perf")]
     fn stop(&self, ctx: &Context) {
-        log::info!(
-            "[CPU {}] sent {} pkts ({}B) received {} pkts ({}B)",
-            ctx.cpu,
-            self.total_sent,
-            self.total_byte_sent,
-            self.total_recv,
-            self.total_byte_recv,
-        )
+        #[cfg(feature = "perf")]
+        {
+            let elapsed = self.stats.begin.elapsed().as_secs_f64();
+
+            #[cfg(not(feature = "rxonly"))]
+            {
+                let pps = self.stats.sent_pkts as f64 / elapsed;
+                let bps = self.stats.sent_bytes as f64 * 8_f64 / elapsed;
+                let gbps = bps / 1_000_000_f64;
+
+                log::info!("[CPU {}] Tx {:.1}pps, {:.1}Mbps", ctx.cpu, pps, gbps);
+            }
+
+            #[cfg(not(feature = "txonly"))]
+            {
+                let pps = self.stats.recv_pkts as f64 / elapsed;
+                let bps = self.stats.recv_bytes as f64 * 8_f64 / elapsed;
+                let gbps = bps / 1_000_000_f64;
+
+                log::info!("[CPU {}] Rx {:.1}pps, {:.1}Mbps", ctx.cpu, pps, gbps);
+            }
+        }
     }
 }
 

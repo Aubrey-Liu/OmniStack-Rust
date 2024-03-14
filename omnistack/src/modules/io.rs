@@ -10,7 +10,6 @@ use omnistack_core::module::*;
 use omnistack_core::packet::Packet;
 use omnistack_core::protocols::MacAddr;
 use omnistack_core::register_module;
-use smallvec::SmallVec;
 
 const MAX_NIC: usize = 16;
 
@@ -24,6 +23,7 @@ static mut NIC_TO_MAC: Vec<MacAddr> = Vec::new();
 
 pub trait IoAdapter {
     /// Should only be called ONCE.
+    #[allow(unused)]
     fn init(
         &mut self,
         ctx: &Context,
@@ -31,32 +31,45 @@ pub trait IoAdapter {
         port_id: u16,
         num_queues: u16,
         queue: u16,
-    ) -> Result<MacAddr>;
+    ) -> Result<MacAddr> {
+        Ok(MacAddr::invalid())
+    }
 
     fn start(&self) -> Result<()> {
         Ok(())
     }
 
-    fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()>;
-
-    fn recv(&mut self, ctx: &Context) -> Result<&'static mut Packet>;
-
-    fn flush(&mut self, _ctx: &Context) -> Result<()> {
+    #[allow(unused)]
+    fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         Ok(())
     }
 
-    fn stop(&self, _ctx: &Context) {}
+    #[allow(unused)]
+    fn recv(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
+        Err(ModuleError::NoData)
+    }
+
+    #[allow(unused)]
+    fn flush(&mut self, ctx: &Context) -> Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused)]
+    fn stop(&self, ctx: &Context) {}
 }
+
+struct InvalidAdapter {}
+impl IoAdapter for InvalidAdapter {}
 
 const NUM_ADAPTER_MAX: usize = 16;
 
 struct IoNode {
     flush_queue: [u8; NUM_ADAPTER_MAX],
     flush_queue_idx: usize,
-
     flush_flags: [bool; NUM_ADAPTER_MAX],
 
-    adapters: SmallVec<[Box<dyn IoAdapter>; NUM_ADAPTER_MAX]>,
+    num_adapters: usize,
+    adapters: [Box<dyn IoAdapter>; NUM_ADAPTER_MAX],
 }
 
 impl IoNode {
@@ -68,7 +81,8 @@ impl IoNode {
 
             flush_flags: [false; NUM_ADAPTER_MAX],
 
-            adapters: SmallVec::new(),
+            num_adapters: 0,
+            adapters: std::array::from_fn(|_| Box::new(InvalidAdapter {}) as _),
         }
     }
 }
@@ -104,7 +118,8 @@ impl Module for IoNode {
                 NIC_TO_MAC[id] = mac;
             }
 
-            self.adapters.push(adapter);
+            self.adapters[self.num_adapters] = adapter;
+            self.num_adapters += 1;
         }
 
         // WARNING: DON'T EVER FORGET THIS!
@@ -112,8 +127,8 @@ impl Module for IoNode {
 
         // start adapter after all initialization are done
         if INIT_DONE_QUEUES.load(Relaxed) + 1 == num_queues {
-            for adapter in &self.adapters {
-                adapter.start()?;
+            for i in 0..self.num_adapters {
+                unsafe { self.adapters.get_unchecked_mut(i).start()? };
             }
         }
         INIT_DONE_QUEUES.fetch_add(1, Relaxed);
@@ -147,7 +162,7 @@ impl Module for IoNode {
         while self.flush_queue_idx != 0 {
             self.flush_queue_idx -= 1;
 
-            let nic_to_flush = self.flush_queue[self.flush_queue_idx];
+            let nic_to_flush = unsafe { *self.flush_queue.get_unchecked(self.flush_queue_idx) };
             unsafe {
                 self.adapters
                     .get_unchecked_mut(nic_to_flush as usize)
@@ -156,14 +171,12 @@ impl Module for IoNode {
             };
         }
 
-        // TODO: flush
-        #[cfg(feature = "recv")]
+        #[cfg(not(feature = "txonly"))]
         {
-            for adapter in &mut self.adapters {
-                match adapter.recv(ctx) {
-                    p @ Ok(_) => return p,
+            for i in 0..self.num_adapters {
+                match unsafe { self.adapters.get_unchecked_mut(i).recv(ctx) } {
                     Err(ModuleError::NoData) => continue,
-                    e @ Err(_) => return e,
+                    r => return r,
                 }
             }
         }
@@ -176,7 +189,8 @@ impl Module for IoNode {
     }
 
     fn destroy(&mut self, ctx: &Context) {
-        for adapter in &mut self.adapters {
+        for i in 0..self.num_adapters {
+            let adapter = unsafe { self.adapters.get_unchecked_mut(i) };
             let _ = adapter.flush(ctx);
             adapter.stop(ctx);
         }

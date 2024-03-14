@@ -1,6 +1,6 @@
 use std::ptr::{addr_of, null_mut};
 
-use omnistack_sys as sys;
+use dpdk_sys as sys;
 
 use crate::memory::MemoryPool;
 
@@ -23,7 +23,6 @@ pub enum PktBufType {
 }
 
 #[repr(C)]
-#[derive(Debug)]
 pub struct Packet {
     pub data_len: u16,
 
@@ -42,7 +41,7 @@ pub struct Packet {
     pub refcnt: u32,
     pub flow_hash: u32,
 
-    padding: [u8; 8],
+    _padding: [u8; 8],
 
     pub buf: [u8; PACKET_BUF_SIZE as usize],
 }
@@ -76,7 +75,7 @@ impl Packet {
             refcnt: 1,
             flow_hash: 0,
 
-            padding: [0; 8],
+            _padding: [0; 8],
 
             buf: [0; PACKET_BUF_SIZE as usize],
         }
@@ -141,7 +140,7 @@ impl PacketPool {
     const PACKET_POOL_SIZE: u32 = (1 << 16) - 1;
     const PERCORE_CACHE_SIZE: u32 = sys::RTE_MEMPOOL_CACHE_MAX_SIZE;
 
-    pub fn get_or_create(socket_id: i32) -> Self {
+    pub fn get_or_create(socket_id: u32) -> Self {
         assert_eq!(Packet::BUF_OFFSET, 64);
 
         let pkt_size = std::mem::size_of::<Packet>();

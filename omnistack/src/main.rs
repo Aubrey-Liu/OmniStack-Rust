@@ -17,3 +17,6 @@ fn main() {
 
     Engine::run("UDP").unwrap();
 }
+
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;

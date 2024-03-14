@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::ptr::null_mut;
 
 use omnistack_core::module::ModuleCapa;
@@ -18,7 +19,6 @@ impl Module for UserNode {
         Err(ModuleError::Done)
     }
 
-    #[cfg(feature = "send")]
     fn poll(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
         let ret = ctx
             .pktpool
@@ -28,8 +28,8 @@ impl Module for UserNode {
         }
 
         let mut ret = null_mut();
-        for i in (0..BATCH_SIZE).rev() {
-            let pkt = unsafe { &mut **self.rx_queue.get_unchecked(i) };
+        for &pkt in self.rx_queue.iter().rev() {
+            let pkt = unsafe { &mut *pkt };
             // let size = 1500 - 28;
             let size = 64 - 28;
 
@@ -46,6 +46,7 @@ impl Module for UserNode {
         Ok(unsafe { &mut *ret })
     }
 
+    #[cfg(not(feature = "rxonly"))]
     fn capability(&self) -> ModuleCapa {
         ModuleCapa::PROCESS | ModuleCapa::POLL
     }

@@ -6,12 +6,12 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use core_affinity::CoreId;
+use dpdk_sys as sys;
 use smallvec::SmallVec;
 
 use crate::config::{ConfigManager, GraphConfig};
 use crate::module::*;
 use crate::packet::{Packet, PacketPool};
-use omnistack_sys as sys;
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
@@ -35,21 +35,25 @@ impl Default for Task {
     }
 }
 
+#[repr(C)]
 struct Worker {
+    task_queue: [Task; Self::TASK_QUEUE_SIZE],
+
+    nodes: SmallVec<[Node; 16]>,
+    nodes_to_poll: SmallVec<[NodeId; 4]>,
+
     id: u32,
     cpu: u32,
     graph_id: u32,
-
     pktpool: PacketPool,
-    stack_name: String,
 
-    nodes: SmallVec<[Node; 16]>,
-    task_queue: [Task; Self::TASK_QUEUE_SIZE],
+    stack_name: String,
 }
 
 struct Node {
     // id: NodeId,
     module: Box<dyn Module>,
+    // TODO: use a forward mask
     links_to: SmallVec<[NodeId; 4]>,
 }
 
@@ -80,7 +84,7 @@ impl Graph {
         let mut nodes = Vec::new();
 
         for (id, module) in config.modules.iter().enumerate() {
-            let new_node = Node::new(NodeId(id), build_module(module));
+            let new_node = Node::from_module(build_module(module));
             nodes.insert(id, new_node);
         }
 
@@ -124,6 +128,7 @@ impl Engine {
             panic!("rte_eal_init failed");
         }
 
+        // TODO: subgraph on different cores?
         let mut graphs = Vec::new();
         let config = ConfigManager::get().lock().unwrap();
         let graph_entries = &config.get_stack_config(stack_name).unwrap().graphs;
@@ -177,7 +182,7 @@ impl Worker {
     const TASK_QUEUE_SIZE: usize = 2048;
 
     pub fn new(id: u32, stack_name: String, graph: Graph) -> Self {
-        let socket_id = unsafe { sys::numa_node_of_cpu(graph.cpu as _) };
+        let socket_id = unsafe { sys::rte_socket_id() };
 
         Self {
             id,
@@ -188,6 +193,8 @@ impl Worker {
             stack_name,
 
             nodes: graph.nodes.into(),
+            nodes_to_poll: SmallVec::new(),
+
             task_queue: std::array::from_fn(|_| Task::default()),
         }
     }
@@ -201,22 +208,20 @@ impl Worker {
             stack_name: &self.stack_name,
         };
 
-        let mut nodes_to_poll: SmallVec<[NodeId; 4]> = SmallVec::new();
-
         for (id, node) in self.nodes.iter_mut().enumerate() {
             node.module.init(&ctx).unwrap();
 
             let capa = node.module.capability();
             assert!(capa.contains(ModuleCapa::PROCESS));
             if capa.contains(ModuleCapa::POLL) {
-                nodes_to_poll.push(NodeId(id));
+                self.nodes_to_poll.push(NodeId(id));
             }
         }
 
         let mut index = 0;
 
         while unsafe { !STOP_FLAG } {
-            for &node_id in &nodes_to_poll {
+            for &node_id in &self.nodes_to_poll {
                 let node = unsafe { self.nodes.get_unchecked_mut(node_id.0) };
 
                 match node.module.poll(&ctx) {
@@ -242,7 +247,7 @@ impl Worker {
                 }
             }
 
-            while index > 0 {
+            while index != 0 {
                 index -= 1;
 
                 let task = unsafe { self.task_queue.get_unchecked(index) };
@@ -251,6 +256,8 @@ impl Worker {
 
                 match node.module.process(&ctx, pkt) {
                     Ok(()) => {
+                        pkt.refcnt += node.links_to.len() as u32 - 1;
+
                         for &node_id in &node.links_to {
                             unsafe {
                                 *self.task_queue.get_unchecked_mut(index) =
@@ -272,7 +279,7 @@ impl Worker {
 }
 
 impl Node {
-    pub fn new(_id: NodeId, module: Box<dyn Module>) -> Self {
+    pub fn from_module(module: Box<dyn Module>) -> Self {
         Self {
             // id,
             module,

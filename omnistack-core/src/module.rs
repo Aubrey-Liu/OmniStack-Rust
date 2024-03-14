@@ -37,8 +37,9 @@ bitflags! {
 
 pub type Result<T> = std::result::Result<T, ModuleError>;
 
+#[allow(unused)]
 pub trait Module {
-    fn init(&mut self, _ctx: &Context) -> Result<()> {
+    fn init(&mut self, ctx: &Context) -> Result<()> {
         Ok(())
     }
 
@@ -46,7 +47,7 @@ pub trait Module {
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()>;
 
     /// invoke the module periodically
-    fn poll(&mut self, _ctx: &Context) -> Result<&'static mut Packet> {
+    fn poll(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
         Err(ModuleError::NoData)
     }
 
@@ -54,7 +55,7 @@ pub trait Module {
         ModuleCapa::PROCESS
     }
 
-    fn destroy(&mut self, _ctx: &Context) {}
+    fn destroy(&mut self, ctx: &Context) {}
 }
 
 struct Factory {
