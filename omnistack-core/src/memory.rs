@@ -88,7 +88,7 @@ impl MemoryPool {
 
         let _r = unsafe { sys::rte_mempool_get(self.mp, obj.as_mut_ptr().cast()) };
 
-        obj[0]
+        unsafe { *obj.get_unchecked(0) }
     }
 
     // TODO: return result?

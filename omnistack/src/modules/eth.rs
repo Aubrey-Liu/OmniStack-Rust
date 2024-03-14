@@ -20,7 +20,7 @@ impl Module for EthSender {
 
         let eth_header = packet.get_l2_header::<EthHeader>();
         eth_header.dst = MacAddr::from_bytes([0x02, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        eth_header.src = nic_to_mac(packet.nic);
+        eth_header.src = unsafe { nic_to_mac(packet.nic) };
         eth_header.ether_ty = EtherType::Ipv4;
 
         Ok(())

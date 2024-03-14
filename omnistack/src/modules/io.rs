@@ -15,8 +15,8 @@ use smallvec::SmallVec;
 const MAX_NIC: usize = 16;
 
 #[inline(always)]
-pub fn nic_to_mac(nic: u16) -> MacAddr {
-    unsafe { NIC_TO_MAC[nic as usize] }
+pub unsafe fn nic_to_mac(nic: u16) -> MacAddr {
+    *NIC_TO_MAC.get_unchecked(nic as usize)
 }
 
 // NOTE: mut is for performance, and it's not mutable to other modules

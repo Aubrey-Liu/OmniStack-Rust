@@ -29,7 +29,7 @@ impl Module for UserNode {
 
         let mut ret = null_mut();
         for i in (0..BATCH_SIZE).rev() {
-            let pkt = unsafe { &mut *self.rx_queue[i] };
+            let pkt = unsafe { &mut **self.rx_queue.get_unchecked(i) };
             // let size = 1500 - 28;
             let size = 64 - 28;
 

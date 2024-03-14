@@ -40,11 +40,10 @@ impl Module for Ipv4Sender {
             }
         }
 
-        if dst_nic.is_none() {
-            return Err(ModuleError::InvalidDst);
+        match dst_nic {
+            Some(nic) => packet.nic = nic,
+            None => return Err(ModuleError::InvalidDst),
         }
-
-        packet.nic = unsafe { dst_nic.unwrap_unchecked() };
 
         packet.offset -= std::mem::size_of::<Ipv4Header>() as u16;
         packet.l3_header.length = std::mem::size_of::<Ipv4Header>() as u8;
