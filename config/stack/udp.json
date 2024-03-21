@@ -1,6 +1,6 @@
 {
     "type": "Stack",
-    "name": "SIMPLE",
+    "name": "UDP",
     "nics": [
         {
             "adapter_name": "Dpdk",
@@ -9,23 +9,17 @@
             "netmask": "255.255.255.0"
         }
     ],
-    "arps": [
-        {
-            "ipv4": "192.168.10.2",
-            "mac": "3c:fd:fe:bb:c9:c9"
-        }
-    ],
     "routes": [
         {
-            "ipv4": "192.168.10.0",
+            "ipv4": "192.168.10.2",
             "cidr": 24,
             "nic": 0
         }
     ],
     "graphs": [
         {
-            "cpus": [12],
-            "name": "SIMPLE"
+            "cpus": [14],
+            "name": "UDP"
         }
     ]
 }

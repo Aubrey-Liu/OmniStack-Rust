@@ -1,27 +1,18 @@
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU16;
 use std::sync::atomic::Ordering::Relaxed;
 
-use once_cell::sync::Lazy;
+use arrayvec::ArrayVec;
 
-use omnistack_core::config::ConfigManager;
-use omnistack_core::engine::Context;
-use omnistack_core::module::*;
-use omnistack_core::packet::Packet;
-use omnistack_core::protocols::MacAddr;
-use omnistack_core::register_module;
+use crate::config::ConfigManager;
+use crate::engine::Context;
+use crate::memory::Aligned;
+use crate::module::*;
+use crate::packet::Packet;
+use crate::protocol::{EthHeader, MacAddr};
 
-const MAX_NIC: usize = 16;
-
-#[inline(always)]
-pub unsafe fn nic_to_mac(nic: u16) -> MacAddr {
-    *NIC_TO_MAC.get_unchecked(nic as usize)
-}
-
-// NOTE: mut is for performance, and it's not mutable to other modules
-static mut NIC_TO_MAC: Vec<MacAddr> = Vec::new();
-
-pub trait IoAdapter {
+pub trait Adapter {
     /// Should only be called ONCE.
     #[allow(unused)]
     fn init(
@@ -32,7 +23,7 @@ pub trait IoAdapter {
         num_queues: u16,
         queue: u16,
     ) -> Result<MacAddr> {
-        Ok(MacAddr::invalid())
+        Ok(MacAddr::new())
     }
 
     fn start(&self) -> Result<()> {
@@ -46,7 +37,7 @@ pub trait IoAdapter {
 
     #[allow(unused)]
     fn recv(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
-        Err(ModuleError::NoData)
+        Err(ModuleError::Nop)
     }
 
     #[allow(unused)]
@@ -58,31 +49,29 @@ pub trait IoAdapter {
     fn stop(&self, ctx: &Context) {}
 }
 
-struct InvalidAdapter {}
-impl IoAdapter for InvalidAdapter {}
-
 const NUM_ADAPTER_MAX: usize = 16;
 
+#[repr(C, align(64))]
+#[derive(omnistack_proc::Module)]
 struct IoNode {
     flush_queue: [u8; NUM_ADAPTER_MAX],
+    flush_flag: usize,
     flush_queue_idx: usize,
-    flush_flags: [bool; NUM_ADAPTER_MAX],
 
-    num_adapters: usize,
-    adapters: [Box<dyn IoAdapter>; NUM_ADAPTER_MAX],
+    adapters: Aligned<ArrayVec<Box<dyn Adapter>, NUM_ADAPTER_MAX>>,
+
+    nic_to_mac: [MacAddr; NUM_ADAPTER_MAX],
 }
 
 impl IoNode {
-    #[allow(invalid_value)]
     pub fn new() -> Self {
         Self {
             flush_queue: [0; NUM_ADAPTER_MAX],
+            flush_flag: 0,
             flush_queue_idx: 0,
 
-            flush_flags: [false; NUM_ADAPTER_MAX],
-
-            num_adapters: 0,
-            adapters: std::array::from_fn(|_| Box::new(InvalidAdapter {}) as _),
+            adapters: ArrayVec::new().into(),
+            nic_to_mac: [MacAddr::new(); NUM_ADAPTER_MAX],
         }
     }
 }
@@ -98,12 +87,6 @@ impl Module for IoNode {
         let num_queues = stack_config.graphs[ctx.graph_id as usize].cpus.len() as u16;
         let queue_id = QUEUE_ID.fetch_add(1, Relaxed);
 
-        unsafe {
-            if NIC_TO_MAC.is_empty() {
-                NIC_TO_MAC.resize(MAX_NIC, MacAddr::invalid());
-            }
-        }
-
         for (id, nic) in stack_config.nics.iter().enumerate() {
             let adapter_name = &nic.adapter_name;
             let builder = Factory::get().builders.get(adapter_name.as_str()).unwrap();
@@ -114,12 +97,8 @@ impl Module for IoNode {
                 .init(ctx, id as _, nic.port, num_queues, queue_id)
                 .unwrap();
 
-            unsafe {
-                NIC_TO_MAC[id] = mac;
-            }
-
-            self.adapters[self.num_adapters] = adapter;
-            self.num_adapters += 1;
+            self.nic_to_mac[id] = mac;
+            self.adapters.0.push(adapter);
         }
 
         // WARNING: DON'T EVER FORGET THIS!
@@ -127,8 +106,8 @@ impl Module for IoNode {
 
         // start adapter after all initialization are done
         if INIT_DONE_QUEUES.load(Relaxed) + 1 == num_queues {
-            for i in 0..self.num_adapters {
-                unsafe { self.adapters.get_unchecked_mut(i).start()? };
+            for adapter in &mut self.adapters.0 {
+                adapter.start()?;
             }
         }
         INIT_DONE_QUEUES.fetch_add(1, Relaxed);
@@ -143,19 +122,21 @@ impl Module for IoNode {
 
     fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         let nic = packet.nic as usize;
+        let ethh = packet.get_l2_header::<EthHeader>();
+
         unsafe {
-            self.adapters.get_unchecked_mut(nic).send(ctx, packet)?;
+            ethh.src = *self.nic_to_mac.get_unchecked(nic);
+            self.adapters.0.get_unchecked_mut(nic).send(ctx, packet)?;
         }
 
-        if unsafe { !*self.flush_flags.get_unchecked(nic) } {
-            unsafe {
-                *self.flush_flags.get_unchecked_mut(nic) = true;
-                *self.flush_queue.get_unchecked_mut(self.flush_queue_idx) = nic as u8;
-            }
+        let mask = 1 << nic;
+        if self.flush_flag & mask == 0 {
+            unsafe { *self.flush_queue.get_unchecked_mut(self.flush_queue_idx) = nic as u8 };
+            self.flush_flag |= mask;
             self.flush_queue_idx += 1;
         }
 
-        Err(ModuleError::Done)
+        Err(ModuleError::Dropped)
     }
 
     fn poll(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
@@ -163,25 +144,24 @@ impl Module for IoNode {
             self.flush_queue_idx -= 1;
 
             let nic_to_flush = unsafe { *self.flush_queue.get_unchecked(self.flush_queue_idx) };
+            self.flush_flag ^= (1 << nic_to_flush) as usize;
+
             unsafe {
                 self.adapters
+                    .0
                     .get_unchecked_mut(nic_to_flush as usize)
                     .flush(ctx)?;
-                *self.flush_flags.get_unchecked_mut(nic_to_flush as usize) = false;
             };
         }
 
-        #[cfg(not(feature = "txonly"))]
-        {
-            for i in 0..self.num_adapters {
-                match unsafe { self.adapters.get_unchecked_mut(i).recv(ctx) } {
-                    Err(ModuleError::NoData) => continue,
-                    r => return r,
-                }
+        for adapter in &mut self.adapters.0 {
+            match adapter.recv(ctx) {
+                Err(ModuleError::Nop) => continue,
+                r => return r,
             }
         }
 
-        Err(ModuleError::NoData)
+        Err(ModuleError::Nop)
     }
 
     fn capability(&self) -> ModuleCapa {
@@ -189,39 +169,39 @@ impl Module for IoNode {
     }
 
     fn destroy(&mut self, ctx: &Context) {
-        for i in 0..self.num_adapters {
-            let adapter = unsafe { self.adapters.get_unchecked_mut(i) };
+        for adapter in &mut self.adapters.0 {
             let _ = adapter.flush(ctx);
             adapter.stop(ctx);
         }
     }
 }
 
-register_module!(IoNode);
-
-#[derive(Default)]
 struct Factory {
     builders: HashMap<&'static str, AdapterBuildFn>,
 }
 
 impl Factory {
     fn get() -> &'static mut Self {
-        static mut FACTORY: Lazy<Factory> = Lazy::new(|| Factory {
-            builders: HashMap::new(),
-        });
+        static mut FACTORY: OnceCell<Factory> = OnceCell::new();
 
-        unsafe { &mut FACTORY }
+        unsafe {
+            FACTORY.get_or_init(|| Factory {
+                builders: HashMap::new(),
+            });
+        }
+
+        unsafe { FACTORY.get_mut().unwrap() }
     }
 }
 
-type AdapterBuildFn = Box<dyn Fn() -> Box<dyn IoAdapter>>;
+type AdapterBuildFn = Box<dyn Fn() -> Box<dyn Adapter>>;
 
 pub fn register<T, F>(id: &'static str, f: F)
 where
-    T: IoAdapter + 'static,
+    T: Adapter + 'static,
     F: Fn() -> T + 'static,
 {
-    let f: AdapterBuildFn = Box::new(move || -> Box<dyn IoAdapter> {
+    let f: AdapterBuildFn = Box::new(move || -> Box<dyn Adapter> {
         let m = f();
         Box::new(m)
     });

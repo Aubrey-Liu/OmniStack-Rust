@@ -10,7 +10,7 @@ pub struct MacAddr {
 
 impl MacAddr {
     #[inline(always)]
-    pub const fn invalid() -> Self {
+    pub const fn new() -> Self {
         Self::from_bytes([0; 6])
     }
 
@@ -34,14 +34,28 @@ impl Debug for MacAddr {
     }
 }
 
-#[derive(Debug)]
+// TODO: maybe just use std::net
+#[repr(transparent)]
 pub struct Ipv4Addr {
     octets: [u8; 4],
+}
+
+impl Debug for Ipv4Addr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{}.{}.{}.{}",
+            self.octets[0], self.octets[1], self.octets[2], self.octets[3]
+        ))
+    }
 }
 
 impl Ipv4Addr {
     pub const fn new(octets: [u8; 4]) -> Self {
         Self { octets }
+    }
+
+    pub const fn from_be(x: u32) -> Self {
+        Self::new(x.to_le_bytes())
     }
 
     #[inline(always)]
@@ -50,8 +64,13 @@ impl Ipv4Addr {
     }
 
     #[inline(always)]
-    pub fn to_bits(&self) -> u32 {
+    pub fn to_u32_le(&self) -> u32 {
         u32::from_be_bytes(self.octets)
+    }
+
+    #[inline(always)]
+    pub fn to_u32_be(&self) -> u32 {
+        u32::from_le_bytes(self.octets)
     }
 }
 
@@ -104,13 +123,13 @@ pub struct EthHeader {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum Ipv4ProtoType {
-    TCP = 6,
-    UDP = 11,
+    TCP = 0x06,
+    UDP = 0x11,
 }
 
 // TODO: design choices (1) mutable reference (2) pointer + dump method
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Ipv4Header {
     version_ihl: u8, /* version:4 | ihl:4 */
     pub tos: u8,
@@ -125,15 +144,33 @@ pub struct Ipv4Header {
     // options start here
 }
 
+impl Debug for Ipv4Header {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ipv4Header")
+            .field("version", &self.version())
+            .field("ihl", &self.ihl())
+            .field("len", &self.len())
+            .field("protocol", &self.protocol)
+            .field("src", &Ipv4Addr::from_be(self.src))
+            .field("dst", &Ipv4Addr::from_be(self.dst))
+            .finish()
+    }
+}
+
 impl Ipv4Header {
     #[inline(always)]
     pub fn version(&self) -> u8 {
-        self.version_ihl & 0xf
+        (self.version_ihl & 0xf0) >> 4
     }
 
     #[inline(always)]
     pub fn ihl(&self) -> u8 {
-        self.version_ihl & 0xf0
+        self.version_ihl & 0xf
+    }
+
+    #[inline(always)]
+    pub fn len(&self) -> u16 {
+        u16::from_be(self.tot_len)
     }
 
     #[inline(always)]
@@ -151,38 +188,49 @@ impl Ipv4Header {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct Route {
-    ip_addr: u32,
-
-    pub cidr: u8,
+    ip: u32, // little endian
     cidr_mask: u32,
-
     pub nic: u16,
+    pub cidr: u8,
 }
 
 impl Route {
-    pub fn new(ip_addr: u32, cidr: u8, nic: u16) -> Self {
+    pub fn new(ip: Ipv4Addr, cidr: u8, nic: u16) -> Self {
         assert!(cidr <= u32::BITS as u8);
 
         Self {
-            ip_addr,
-            cidr,
+            ip: ip.to_u32_be(),
             cidr_mask: (1 << cidr) - 1,
+            cidr,
             nic,
         }
     }
 
+    // ip is of little endian
     #[inline(always)]
-    pub fn matches(&self, dst_ip_addr: u32) -> bool {
-        ((self.ip_addr ^ dst_ip_addr) & self.cidr_mask) == 0
+    pub fn matches(&self, ip: u32) -> bool {
+        ((self.ip ^ ip) & self.cidr_mask) == 0
     }
 }
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct UdpHeader {
     pub src: u16,
     pub dst: u16,
     pub len: u16,
     pub chksum: u16,
+}
+
+impl Debug for UdpHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UdpHeader")
+            .field("src", &u16::from_be(self.src))
+            .field("dst", &u16::from_be(self.dst))
+            .field("len", &u16::from_be(self.len))
+            .finish()
+    }
 }

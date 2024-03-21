@@ -1,29 +1,27 @@
-use std::ffi::*;
+use std::ffi::c_void;
 use std::ptr::null_mut;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering::Relaxed;
-use std::thread::JoinHandle;
-use std::time::Duration;
 
-use core_affinity::CoreId;
+use arrayvec::ArrayVec;
 use dpdk_sys as sys;
-use smallvec::SmallVec;
 
 use crate::config::{ConfigManager, GraphConfig};
-use crate::module::*;
+use crate::memory::{next_thread_id, ThreadId};
+use crate::module::{build_module, Module, ModuleCapa, ModuleError, Result};
 use crate::packet::{Packet, PacketPool};
+use crate::sys::process_init;
+use crate::user::Server;
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
-pub struct NodeId(usize);
+struct NodeId(usize);
 
 const INVALID_NODEID: NodeId = NodeId(usize::MAX);
 
 #[repr(C)]
-#[derive(Debug, Clone)]
-pub struct Task {
-    pub node_id: NodeId,
-    pub data: *mut Packet,
+#[derive(Debug, Clone, Copy)]
+struct Task {
+    node_id: NodeId,
+    data: *mut Packet,
 }
 
 impl Default for Task {
@@ -35,34 +33,35 @@ impl Default for Task {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(64))]
 struct Worker {
     task_queue: [Task; Self::TASK_QUEUE_SIZE],
 
-    nodes: SmallVec<[Node; 16]>,
-    nodes_to_poll: SmallVec<[NodeId; 4]>,
+    nodes: ArrayVec<Node, 32>,
+    nodes_to_poll: ArrayVec<NodeId, 8>,
 
-    id: u32,
-    cpu: u32,
+    id: u32, // worker id
     graph_id: u32,
-    pktpool: PacketPool,
+    cpu: u32,
 
     stack_name: String,
 }
 
+#[repr(C, align(64))]
 struct Node {
     // id: NodeId,
     module: Box<dyn Module>,
     // TODO: use a forward mask
-    links_to: SmallVec<[NodeId; 4]>,
+    links_to: ArrayVec<NodeId, 4>,
 }
 
-#[repr(C)]
-#[derive(Debug)]
+unsafe impl Send for Node {}
+
+#[repr(C, align(64))]
 pub struct Context<'a> {
     pub pktpool: &'a PacketPool,
     pub cpu: u32,
-    pub thread_id: u32,
+    pub worker_id: u32,
     pub graph_id: u32,
 
     pub stack_name: &'a str,
@@ -109,101 +108,126 @@ impl Graph {
     }
 }
 
-static THREAD_ID: AtomicU32 = AtomicU32::new(0);
-
 // only the main thread would write this flag, so it's safe
-static mut STOP_FLAG: bool = false;
+pub(crate) static mut STOP_FLAG: bool = false;
 
+// TODO: don't need an Engine struct, can just use some functions
 pub struct Engine;
 
 impl Engine {
     pub fn run(stack_name: &str) -> Result<()> {
-        // TODO: use less lcore?
-        let arg0 = CString::new("").unwrap();
-        let arg1 = CString::new("--log-level").unwrap();
-        let arg2 = CString::new("debug").unwrap();
-        let mut argv = [arg0.as_ptr(), arg1.as_ptr(), arg2.as_ptr()];
-        let ret = unsafe { sys::rte_eal_init(argv.len() as _, argv.as_mut_ptr().cast()) };
-        if ret < 0 {
-            panic!("rte_eal_init failed");
-        }
-
         // TODO: subgraph on different cores?
-        let mut graphs = Vec::new();
         let config = ConfigManager::get().lock().unwrap();
-        let graph_entries = &config.get_stack_config(stack_name).unwrap().graphs;
+
+        let graph_entries = if let Some(s) = config.get_stack_config(stack_name) {
+            &s.graphs
+        } else {
+            panic!("unknown stack name '{}'", stack_name);
+        };
+
+        let mut graphs = Vec::new();
         for (id, g) in graph_entries.iter().enumerate() {
             let config = config.get_graph_config(&g.name).unwrap();
             for &cpu in &g.cpus {
                 graphs.push(Graph::new(id as _, config, cpu));
             }
         }
+
         drop(config);
 
-        let mut workers = Self::run_workers(graphs, stack_name)?;
-        while let Some(t) = workers.pop() {
-            t.join().expect("error joining a thread");
-        }
-
-        Ok(())
-    }
-
-    fn run_workers(graphs: Vec<Graph>, stack_name: &str) -> Result<Vec<JoinHandle<()>>> {
-        let mut threads = Vec::new();
-
-        for g in graphs {
-            let stack_name = stack_name.to_string();
-
-            // TODO: give thread a name
-            threads.push(std::thread::spawn(move || {
-                core_affinity::set_for_current(CoreId { id: g.cpu as _ });
-
-                unsafe { sys::rte_thread_register() };
-
-                let id = THREAD_ID.fetch_add(1, Relaxed);
-                let mut worker = Box::new(Worker::new(id, stack_name, g));
-
-                log::debug!("worker {} runs on core {}", worker.id, worker.cpu);
-
-                worker.run();
-            }));
-
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        // init dpdk
+        process_init();
 
         ctrlc::set_handler(move || unsafe { STOP_FLAG = true })
             .expect("error when setting ctrl-c handler");
 
-        Ok(threads)
+        Self::run_workers(graphs, stack_name);
+
+        let server = std::thread::Builder::new()
+            .name("Coordinator".to_string())
+            .spawn(Server::run)
+            .unwrap();
+
+        unsafe { sys::rte_eal_mp_wait_lcore() };
+        let _ = server.join();
+
+        // unsafe { sys::rte_eal_cleanup() };
+
+        Ok(())
+    }
+
+    fn run_workers(graphs: Vec<Graph>, stack_name: &str) {
+        static mut WORKERS: Vec<Worker> = Vec::new();
+
+        unsafe extern "C" fn worker_routine(worker: *mut c_void) -> i32 {
+            let worker = unsafe { worker.cast::<Worker>().as_mut().unwrap() };
+
+            // core_affinity::set_for_current(core_affinity::CoreId {
+            //     id: worker.cpu as usize,
+            // });
+
+            assert_eq!(sys::rte_lcore_id(), worker.cpu);
+
+            log::info!("Worker {} runs on core {}", worker.id, worker.cpu);
+
+            worker.run();
+
+            0
+        }
+
+        for (id, g) in graphs.into_iter().enumerate() {
+            let cpu = g.cpu;
+            let stack_name = stack_name.to_string();
+
+            unsafe { WORKERS.insert(id, Worker::new(id as _, stack_name, g.id, g.nodes, cpu)) };
+
+            let worker_ptr = unsafe { WORKERS.get_mut(id).unwrap() };
+
+            unsafe {
+                sys::rte_eal_remote_launch(
+                    Some(worker_routine),
+                    worker_ptr as *mut _ as *mut _,
+                    cpu,
+                )
+            };
+        }
     }
 }
 
 impl Worker {
     const TASK_QUEUE_SIZE: usize = 2048;
 
-    pub fn new(id: u32, stack_name: String, graph: Graph) -> Self {
-        let socket_id = unsafe { sys::rte_socket_id() };
+    pub fn new(id: u32, stack_name: String, graph_id: u32, nodes: Vec<Node>, cpu: u32) -> Self {
+        let mut nodes_arr = ArrayVec::new();
+        for node in nodes {
+            nodes_arr.try_push(node).unwrap();
+        }
 
         Self {
+            task_queue: [Task::default(); Self::TASK_QUEUE_SIZE],
+
             id,
-            cpu: graph.cpu as _,
-            graph_id: graph.id,
-            pktpool: PacketPool::get_or_create(socket_id),
+            graph_id,
+            cpu,
 
             stack_name,
 
-            nodes: graph.nodes.into(),
-            nodes_to_poll: SmallVec::new(),
-
-            task_queue: std::array::from_fn(|_| Task::default()),
+            nodes: nodes_arr,
+            nodes_to_poll: ArrayVec::new(),
         }
     }
 
     pub fn run(&mut self) {
+        let thread_id = next_thread_id();
+        ThreadId::set(thread_id);
+
+        let socket_id = unsafe { sys::rte_socket_id() };
+        let pktpool = PacketPool::get_or_create(socket_id);
+
         let ctx = Context {
-            pktpool: &self.pktpool,
+            pktpool: &pktpool,
             cpu: self.cpu,
-            thread_id: self.id,
+            worker_id: self.id,
             graph_id: self.graph_id,
             stack_name: &self.stack_name,
         };
@@ -240,7 +264,7 @@ impl Worker {
                             }
                         }
                     }
-                    Err(ModuleError::NoData) => continue,
+                    Err(ModuleError::Nop) => continue,
                     e @ Err(_) => {
                         let _ = e.unwrap();
                     }
@@ -266,7 +290,7 @@ impl Worker {
                             index += 1;
                         }
                     }
-                    Err(ModuleError::Done) => continue,
+                    Err(ModuleError::Dropped) => continue,
                     e @ Err(_) => e.unwrap(),
                 }
             }
@@ -275,15 +299,17 @@ impl Worker {
         for node in &mut self.nodes {
             node.module.destroy(&ctx);
         }
+
+        // make sure all threads would exit
+        unsafe { STOP_FLAG = true };
     }
 }
 
 impl Node {
     pub fn from_module(module: Box<dyn Module>) -> Self {
         Self {
-            // id,
             module,
-            links_to: SmallVec::new(),
+            links_to: ArrayVec::new(),
         }
     }
 }

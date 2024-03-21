@@ -1,9 +1,10 @@
 use std::path::Path;
 use std::sync::Mutex;
 
+// TODO: use serde_json
 use json::JsonValue;
 
-use crate::protocols::*;
+use crate::protocol::*;
 
 pub struct ConfigManager {
     graph_configs: Vec<GraphConfig>,
@@ -21,10 +22,13 @@ impl ConfigManager {
     }
 
     pub fn load_dir(&mut self, dir: &Path) {
-        assert!(dir.is_dir());
-
         for entry in std::fs::read_dir(dir).unwrap() {
-            self.load_file(&entry.unwrap().path())
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                self.load_dir(&path);
+            } else {
+                self.load_file(&path);
+            }
         }
     }
 
@@ -38,25 +42,25 @@ impl ConfigManager {
                 let graph_config = GraphConfig::from(&config);
 
                 if self.get_graph_config(&graph_config.name).is_some() {
-                    log::error!("duplicate graph name: {}, skipping ..", graph_config.name);
+                    log::error!("duplicate graph config: {}, skipping ..", graph_config.name);
                     return;
                 }
 
-                log::debug!("loaded graph: {}", graph_config.name);
+                log::debug!("loaded graph config: {}", graph_config.name);
                 self.graph_configs.push(graph_config);
             }
             "Stack" => {
                 let stack_config = StackConfig::from(&config);
 
                 if self.get_stack_config(&stack_config.name).is_some() {
-                    log::error!("duplicate stack name: {}, skipping ..", stack_config.name);
+                    log::error!("duplicate stack config: {}, skipping ..", stack_config.name);
                     return;
                 }
 
-                log::debug!("loaded stack: {}", stack_config.name);
+                log::debug!("loaded stack config: {}", stack_config.name);
                 self.stack_configs.push(stack_config);
             }
-            _ => panic!("invalid config type"),
+            _ => log::error!("invalid config type in '{}'", path.display()),
         }
     }
 
@@ -103,7 +107,7 @@ impl From<&JsonValue> for GraphConfig {
 pub struct StackConfig {
     pub name: String,
     pub nics: Vec<NicConfig>,
-    pub arps: Vec<ArpEntry>,
+    // pub arps: Vec<ArpEntry>,
     pub routes: Vec<Route>,
     pub graphs: Vec<GraphEntry>,
 }
@@ -115,8 +119,8 @@ impl From<&JsonValue> for StackConfig {
         let nics = json_require_value(value, "nics");
         let nics: Vec<_> = nics.members().map(NicConfig::from).collect();
 
-        let arps = json_require_value(value, "arps");
-        let arps: Vec<_> = arps.members().map(ArpEntry::from).collect();
+        // let arps = json_require_value(value, "arps");
+        // let arps: Vec<_> = arps.members().map(ArpEntry::from).collect();
 
         let routes = json_require_value(value, "routes");
         let routes: Vec<_> = routes.members().map(Route::from).collect();
@@ -127,7 +131,7 @@ impl From<&JsonValue> for StackConfig {
         Self {
             name,
             nics,
-            arps,
+            // arps,
             routes,
             graphs,
         }
@@ -172,33 +176,30 @@ impl From<&JsonValue> for NicConfig {
     }
 }
 
-pub struct ArpEntry {
-    pub ipv4: Ipv4Addr,
-    pub mac: MacAddr,
-}
-
-impl From<&JsonValue> for ArpEntry {
-    fn from(value: &JsonValue) -> Self {
-        let mac: Vec<_> = json_require_str(value, "mac")
-            .split(':')
-            .map(|s| u8::from_str_radix(s, 16).unwrap())
-            .collect();
-        let mac = MacAddr::from_bytes(mac.try_into().unwrap());
-
-        Self {
-            ipv4: json_require_str(value, "ipv4").parse::<Ipv4Addr>().unwrap(),
-            mac,
-        }
-    }
-}
+// pub struct ArpEntry {
+//     pub ipv4: Ipv4Addr,
+//     pub mac: MacAddr,
+// }
+//
+// impl From<&JsonValue> for ArpEntry {
+//     fn from(value: &JsonValue) -> Self {
+//         let mac: Vec<_> = json_require_str(value, "mac")
+//             .split(':')
+//             .map(|s| u8::from_str_radix(s, 16).unwrap())
+//             .collect();
+//         let mac = MacAddr::from_bytes(mac.try_into().unwrap());
+//
+//         Self {
+//             ipv4: json_require_str(value, "ipv4").parse::<Ipv4Addr>().unwrap(),
+//             mac,
+//         }
+//     }
+// }
 
 impl From<&JsonValue> for Route {
     fn from(value: &JsonValue) -> Self {
         Self::new(
-            json_require_str(value, "ipv4")
-                .parse::<Ipv4Addr>()
-                .unwrap()
-                .to_bits(),
+            json_require_str(value, "ipv4").parse::<Ipv4Addr>().unwrap(),
             json_require_number(value, "cidr") as _,
             json_require_number(value, "nic") as _,
         )

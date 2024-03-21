@@ -1,30 +1,26 @@
+use std::cell::OnceCell;
 use std::collections::HashMap;
 
 use bitflags::bitflags;
-use once_cell::sync::Lazy;
 use thiserror::Error;
 
 use crate::engine::Context;
 use crate::packet::Packet;
 
-pub type ModuleId = usize;
-
+// NOTE: some error types are just here to indicate an event or situation.
+// They are not actually errors.
 #[derive(Debug, Error)]
 pub enum ModuleError {
-    #[error("no incoming packets")]
-    NoData,
+    #[error("nothing happened")]
+    Nop,
 
-    #[error("unknown destination address")]
-    InvalidDst,
+    #[error("packet was dropped")]
+    Dropped,
 
-    // NOTE: Modules should take care of dropping packets
-    #[error("process is done")]
-    Done,
+    #[error("memory error")]
+    MemoryError(#[from] crate::memory::MemoryError),
 
-    #[error("out of memory")]
-    OutofMemory,
-
-    #[error("unknown reasons")]
+    #[error("unknown error happened")]
     Unknown,
 }
 
@@ -48,27 +44,34 @@ pub trait Module {
 
     /// invoke the module periodically
     fn poll(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
-        Err(ModuleError::NoData)
+        Err(ModuleError::Nop)
     }
 
     fn capability(&self) -> ModuleCapa {
         ModuleCapa::PROCESS
     }
 
+    // TODO: filter
+    //
     fn destroy(&mut self, ctx: &Context) {}
 }
 
+// TODO: maybe use serde to receive a module is a way?
 struct Factory {
     builders: HashMap<&'static str, ModuleBuildFn>,
 }
 
 impl Factory {
     fn get() -> &'static mut Self {
-        static mut FACTORY: Lazy<Factory> = Lazy::new(|| Factory {
-            builders: HashMap::new(),
-        });
+        static mut FACTORY: OnceCell<Factory> = OnceCell::new();
 
-        unsafe { &mut FACTORY }
+        unsafe {
+            FACTORY.get_or_init(|| Factory {
+                builders: HashMap::new(),
+            });
+        }
+
+        unsafe { FACTORY.get_mut().unwrap() }
     }
 }
 

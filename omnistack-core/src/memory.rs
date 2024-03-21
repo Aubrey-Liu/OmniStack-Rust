@@ -1,137 +1,224 @@
+use std::cell::Cell;
+use std::cmp::max;
 use std::ffi::CString;
 use std::mem::size_of;
 use std::ptr::null_mut;
+use std::sync::atomic::AtomicU32;
 use std::sync::Mutex;
 
 use dpdk_sys as sys;
+use sys::constants::*;
+use thiserror::Error;
 
-#[derive(Debug)]
-pub struct MemoryPool {
-    pub(crate) mp: *mut sys::rte_mempool,
-    pub(crate) socket_id: u32,
-    pub(crate) name: String,
+#[inline(always)]
+pub fn next_thread_id() -> u32 {
+    static NEXT_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+
+    NEXT_THREAD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
 }
 
-// struct Header {
-//     mp: *mut sys::rte_mempool,
-//     iova: usize,
-// }
-//
-// unsafe extern "C" fn obj_header_init(
-//     mp: *mut sys::rte_mempool,
-//     _opaque: *mut c_void,
-//     obj: *mut c_void,
-//     _obj_idx: u32,
-// ) {
-//     let header = &mut *obj.cast::<Header>();
-//     header.mp = mp;
-//     header.iova = sys::rte_mempool_virt2iova(obj) as usize + HEADER_ROOM_SIZE;
-// }
+pub struct ThreadId;
 
-// const HEADER_ROOM_SIZE: usize = (size_of::<Header>() + 64 - 1) / 64 * 64;
-
-impl MemoryPool {
-    pub const fn new() -> Self {
-        Self {
-            mp: std::ptr::null_mut(),
-            socket_id: 0,
-            name: String::new(),
-        }
+impl ThreadId {
+    thread_local! {
+        static THREAD_ID: Cell<u32> = Cell::new(u32::MAX);
     }
 
-    // NOTE: cpu is specified by user in config
-    pub fn get_or_create(
+    #[inline(always)]
+    pub fn set(id: u32) {
+        Self::THREAD_ID.set(id);
+    }
+
+    #[inline(always)]
+    pub fn get() -> u32 {
+        Self::THREAD_ID.get()
+    }
+
+    pub fn is_valid() -> bool {
+        Self::THREAD_ID.get() != u32::MAX
+    }
+}
+
+pub const CACHE_LINE_SIZE: usize = 64;
+
+const MAX_THREAD_NUM: usize = 256;
+const MEMPOOL_HDR_OFFSET: usize = size_of::<sys::rte_mempool_objhdr>();
+
+#[repr(C)]
+struct MemoryPoolPrivData {
+    cache_per_thread: *const *mut sys::rte_mempool_cache,
+}
+
+#[repr(C)]
+pub struct MemoryPool {
+    pub mp: *mut sys::rte_mempool,
+    pub socket_id: u32,
+    // pub name: [char; 32],
+    pub cache_per_thread: *mut *mut sys::rte_mempool_cache,
+}
+
+#[derive(Debug, Error)]
+pub enum MemoryError {
+    #[error("memory is exhausted")]
+    Exhausted,
+}
+
+static MEMPOOL_INIT_GUARD: Mutex<()> = Mutex::new(());
+
+impl MemoryPool {
+    pub unsafe fn get_or_create(
         name: &str,
         n: u32,
         elt_size: u32,
-        cache_size: u32,
         socket_id: u32,
-    ) -> Self {
-        let mut pool = Self::new();
+    ) -> Result<&'static mut Self, MemoryError> {
+        assert!(name.len() <= 24, "name too long");
 
-        let c_name = CString::new(name).unwrap();
-        let mp = unsafe { sys::rte_mempool_lookup(c_name.as_ptr()) };
-        if mp.is_null() {
-            pool.mp = unsafe {
-                sys::rte_mempool_create(
-                    c_name.as_ptr(),
-                    n,
-                    elt_size,
-                    cache_size,
-                    0,
-                    None,
-                    null_mut(),
-                    None,
-                    null_mut(),
-                    socket_id as _,
-                    0,
-                )
-            };
-            if pool.mp.is_null() {
-                panic!("failed to create a memory pool.");
-            }
-        } else {
-            pool.mp = mp;
+        let _guard = MEMPOOL_INIT_GUARD.lock().unwrap();
+
+        let zone_name = CString::new(format!("zone_{}", name)).unwrap();
+
+        let zone = sys::rte_memzone_lookup(zone_name.as_ptr());
+        if !zone.is_null() {
+            let mempool = (*zone)
+                .__bindgen_anon_1
+                .addr
+                .cast::<MemoryPool>()
+                .as_mut()
+                .unwrap();
+
+            return Ok(mempool);
         }
 
-        //TODO: my own cache implementation
-        pool.socket_id = socket_id;
-        pool.name = name.to_string();
+        let memzone_len =
+            max(size_of::<MemoryPool>(), CACHE_LINE_SIZE) + size_of::<usize>() * MAX_THREAD_NUM;
 
-        log::debug!("created memory pool: {}", pool.name);
+        let zone = sys::rte_memzone_reserve_aligned(
+            zone_name.as_ptr(),
+            memzone_len as _,
+            socket_id as _,
+            RTE_MEMZONE_1GB | RTE_MEMZONE_SIZE_HINT_ONLY,
+            CACHE_LINE_SIZE as _,
+        );
+        if zone.is_null() {
+            return Err(MemoryError::Exhausted);
+        }
 
-        pool
+        let pool_name = CString::new(format!("pool_{}", name)).unwrap();
+        let mp = sys::rte_mempool_create(
+            pool_name.as_ptr(),
+            n,
+            elt_size,
+            0, // use custom cache
+            max(size_of::<MemoryPoolPrivData>(), CACHE_LINE_SIZE) as _,
+            None,
+            null_mut(),
+            None,
+            null_mut(),
+            socket_id as _,
+            0,
+        );
+        if mp.is_null() {
+            return Err(MemoryError::Exhausted);
+        }
+
+        let memory_pool = &mut *(*zone).__bindgen_anon_1.addr.cast::<MemoryPool>();
+        memory_pool.mp = mp;
+        memory_pool.socket_id = socket_id;
+
+        let trailer = (memory_pool as *mut MemoryPool).add(1).cast::<u8>();
+        memory_pool.cache_per_thread = trailer.add(trailer.align_offset(CACHE_LINE_SIZE)).cast();
+
+        for i in 0..MAX_THREAD_NUM {
+            memory_pool
+                .cache_per_thread
+                .add(i)
+                .write(usize::MAX as *mut _);
+        }
+
+        let priv_data = sys::rte_mempool_get_priv(mp)
+            .cast::<MemoryPoolPrivData>()
+            .as_mut()
+            .unwrap();
+        priv_data.cache_per_thread = memory_pool.cache_per_thread.cast_const();
+
+        Ok(memory_pool)
+    }
+
+    pub unsafe fn create_cache(&mut self, cache_size: u32, thread_id: u32) {
+        self.cache_per_thread
+            .add(thread_id as usize)
+            .write(sys::rte_mempool_cache_create(
+                cache_size,
+                self.socket_id as _,
+            ));
     }
 
     #[inline(always)]
-    pub fn allocate(&self) -> *mut u8 {
-        let mut obj: [*mut u8; 1] = [null_mut()];
+    pub unsafe fn allocate(
+        &self,
+        objs: &mut [*mut u8],
+        n: u32,
+        thread_id: u32,
+    ) -> Result<(), MemoryError> {
+        let cache = self.get_cache(thread_id);
 
-        let _r = unsafe { sys::rte_mempool_get(self.mp, obj.as_mut_ptr().cast()) };
-
-        unsafe { *obj.get_unchecked(0) }
+        let r = sys::rte_mempool_generic_get(self.mp, objs.as_mut_ptr().cast(), n, cache);
+        if r == 0 {
+            Ok(())
+        } else {
+            Err(MemoryError::Exhausted)
+        }
     }
 
-    // TODO: return result?
     #[inline(always)]
-    pub fn allocate_many(&self, n: u32, objs: *mut *mut u8) -> i32 {
-        unsafe { sys::rte_mempool_get_bulk(self.mp, objs.cast(), n) }
-    }
+    pub(crate) unsafe fn deallocate(obj: *mut u8, thread_id: u32) {
+        let objs = [obj];
+        let sys_mp = (*obj
+            .sub(MEMPOOL_HDR_OFFSET)
+            .cast::<sys::rte_mempool_objhdr>())
+        .mp;
 
-    #[inline(always)]
-    pub(crate) fn deallocate(obj: *mut u8) {
-        let header = unsafe {
-            &*obj
-                .sub(size_of::<sys::rte_mempool_objhdr>())
-                .cast::<sys::rte_mempool_objhdr>()
-        };
-        unsafe { sys::rte_mempool_put(header.mp, obj.cast()) };
+        // Based on the fact that cache size was set to 0
+        let priv_data = &*sys_mp
+            .cast::<u8>()
+            .add(size_of::<sys::rte_mempool>())
+            .cast::<MemoryPoolPrivData>();
+        let cache = priv_data.cache_per_thread.add(thread_id as usize).read();
+
+        unsafe { sys::rte_mempool_generic_put(sys_mp, objs.as_ptr().cast(), 1, cache) };
     }
 
     #[inline(always)]
     pub fn virt2iova(obj: *mut u8) -> u64 {
-        // NOTE: don't know why, but it's faster than `rte_mempool_virt2iova`
         let header = unsafe {
             &*obj
-                .sub(size_of::<sys::rte_mempool_objhdr>())
+                .sub(MEMPOOL_HDR_OFFSET)
                 .cast::<sys::rte_mempool_objhdr>()
         };
         header.iova
     }
-}
 
-static DROP_GUARD: Mutex<()> = Mutex::new(());
-
-impl Drop for MemoryPool {
-    fn drop(&mut self) {
-        let _guard = DROP_GUARD.lock().unwrap();
-
-        if unsafe { sys::rte_mempool_lookup(self.name.as_ptr().cast()).is_null() } {
-            log::debug!("memory pool {} was already dropped", self.name);
-            return;
-        }
-
-        log::debug!("memory pool {} was dropped", self.name);
-        unsafe { sys::rte_mempool_free(self.mp) };
+    #[inline(always)]
+    unsafe fn get_cache(&self, thread_id: u32) -> *mut sys::rte_mempool_cache {
+        self.cache_per_thread.add(thread_id as usize).read()
     }
 }
+
+/// An useful generic type for having cache aligned fields in structs.
+#[repr(align(64))]
+pub struct Aligned<T>(pub T);
+
+impl<T> From<T> for Aligned<T> {
+    fn from(value: T) -> Self {
+        Aligned(value)
+    }
+}
+
+impl<T: Clone> Clone for Aligned<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T: Copy> Copy for Aligned<T> {}

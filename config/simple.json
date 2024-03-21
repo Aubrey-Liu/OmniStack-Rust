@@ -1,8 +1,0 @@
-{
-    "type": "Graph",
-    "name": "SIMPLE",
-    "modules": [
-        "IoNode"
-    ],
-    "links": []
-}
