@@ -60,6 +60,7 @@ impl Module for Ipv4Sender {
         ipv4_hdr.tos = 0;
         ipv4_hdr.id = 0;
         ipv4_hdr.frag_off = 0;
+        ipv4_hdr.cksum = 0;
 
         Ok(())
     }
@@ -72,7 +73,7 @@ impl Ipv4Receiver {
 }
 
 impl Module for Ipv4Receiver {
-    fn process(&mut self, _ctx: &Context, packet: &mut Packet) -> Result<()> {
+    fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         let ipv4 = packet.parse::<Ipv4Header>();
 
         packet.l3_header.offset = packet.offset as _;
@@ -81,7 +82,7 @@ impl Module for Ipv4Receiver {
         packet.offset += packet.l3_header.length;
 
         if ipv4.ihl() < 5 || ipv4.ttl == 0 {
-            PacketPool::deallocate(packet);
+            PacketPool::deallocate(packet, ctx.thread_id);
 
             Err(Error::Dropped)
         } else {

@@ -23,9 +23,9 @@ impl UserNode {
 }
 
 impl Module for UserNode {
-    fn process(&mut self, _ctx: &Context, packet: &mut Packet) -> Result<()> {
+    fn process(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         // TODO: deliver the packet to user
-        PacketPool::deallocate(packet);
+        PacketPool::deallocate(packet, ctx.thread_id);
 
         // NOTE: send packet to user, but re-collect mbufs on the server side
         // to ensure efficient cache utilization
@@ -51,7 +51,6 @@ impl Module for UserNode {
             pkt.offset = DEFAULT_OFFSET as _;
             pkt.set_len(size as _);
             pkt.nic = 0; // TODO: read from user config
-            pkt.refcnt = 1;
             pkt.next = ret;
             ret = pkt;
         }

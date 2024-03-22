@@ -228,7 +228,8 @@ impl Dpdk {
 }
 
 unsafe extern "C" fn packet_free_callback(_addr: *mut c_void, pkt: *mut c_void) {
-    PacketPool::deallocate(pkt.cast());
+    let pkt = pkt.cast::<Packet>();
+    PacketPool::deallocate(pkt, (*pkt).thread_id);
 }
 
 static INIT_DONE_FLAG: AtomicBool = AtomicBool::new(false);
@@ -305,7 +306,7 @@ impl Adapter for Dpdk {
 
     fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         let mbuf = unsafe { &mut **self.tx_bufs.get_unchecked(self.tx_idx) };
-        self.tx_idx += 1;
+        packet.thread_id = ctx.thread_id;
 
         let shared_info: &mut sys::rte_mbuf_ext_shared_info =
             unsafe { &mut *mbuf.buf_addr.add(mbuf.data_off as _).cast() };
@@ -344,8 +345,6 @@ impl Adapter for Dpdk {
                 mbuf.ol_flags |= RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_IPV4;
 
                 let ipv4h = packet.get_l3_header::<Ipv4Header>();
-                ipv4h.cksum = 0;
-
                 match ipv4h.protocol {
                     Ipv4ProtoType::UDP => {
                         mbuf.ol_flags |= RTE_MBUF_F_TX_UDP_CKSUM;
@@ -370,6 +369,7 @@ impl Adapter for Dpdk {
             self.stats.sent_bytes += packet.len() as u64;
         }
 
+        self.tx_idx += 1;
         if self.tx_idx == BURST_SIZE {
             self.flush(ctx)?;
         }
@@ -431,7 +431,7 @@ impl Adapter for Dpdk {
             pkt.nic = self.nic;
             pkt.offset = mbuf.data_off;
             pkt.set_len(mbuf.pkt_len as _);
-            pkt.refcnt = 1;
+            // pkt.refcnt = 1;
             // pkt.flow_hash = unsafe { (*mbuf).__bindgen_anon_2.hash.rss };
             pkt.data = mbuf.buf_addr.cast();
             pkt.next = ret;

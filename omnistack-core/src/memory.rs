@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::ffi::CString;
+use std::ffi::{c_void, CString};
 use std::mem::size_of;
 use std::ptr::{addr_of, null_mut};
 use std::sync::Mutex;
@@ -38,9 +38,11 @@ impl MemoryPool {
         n: u32,
         elt_size: u32,
         socket_id: u32,
+        obj_init: sys::rte_mempool_obj_cb_t,
+        obj_init_arg: *mut c_void,
     ) -> Result<&'static mut Self, MemoryError> {
-        static MEMPOOL_INIT_GUARD: Mutex<()> = Mutex::new(());
-        let _guard = MEMPOOL_INIT_GUARD.lock().unwrap();
+        static GUARD: Mutex<()> = Mutex::new(());
+        let _guard = GUARD.lock().unwrap();
 
         assert!(name.len() <= 24, "name too long");
         let zone_name = CString::new(format!("zone_{}", name)).unwrap();
@@ -81,8 +83,8 @@ impl MemoryPool {
             max(size_of::<MemoryPoolPrivData>(), CACHE_LINE_SIZE) as _,
             None,
             null_mut(),
-            None,
-            null_mut(),
+            obj_init,
+            obj_init_arg,
             socket_id as _,
             0,
         );
@@ -97,14 +99,7 @@ impl MemoryPool {
         let trailer = (memory_pool as *mut MemoryPool).add(1).cast::<u8>();
         memory_pool.cache_per_thread = trailer.add(trailer.align_offset(CACHE_LINE_SIZE)).cast();
 
-        assert!(memory_pool.cache_per_thread.align_offset(64) == 0);
-
-        // for i in 0..MAX_THREAD_NUM {
-        //     memory_pool
-        //         .cache_per_thread
-        //         .add(i)
-        //         .write(usize::MAX as *mut _);
-        // }
+        debug_assert!(memory_pool.cache_per_thread.align_offset(64) == 0);
 
         let priv_data = sys::rte_mempool_get_priv(mp)
             .cast::<MemoryPoolPrivData>()

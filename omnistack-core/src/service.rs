@@ -129,7 +129,7 @@ impl Server {
                         let res = Response { data: res };
                         let buf = serde_json::to_vec(&res).expect("failed to parse json");
 
-                        match stream.write(&buf) {
+                        match stream.write_all(&buf) {
                             Ok(_) => continue,
                             Err(ref e) => {
                                 if !matches!(e.kind(), WouldBlock | Interrupted) {
@@ -203,7 +203,7 @@ pub struct ThreadId;
 
 impl ThreadId {
     thread_local! {
-        static THREAD_ID: Cell<u32> = Cell::new(u32::MAX);
+        static THREAD_ID: Cell<u32> = const { Cell::new(u32::MAX) };
     }
 
     #[inline(always)]

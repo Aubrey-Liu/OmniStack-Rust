@@ -63,6 +63,7 @@ pub struct Context<'a> {
     pub pktpool: &'a PacketPool,
     pub cpu: u32,
     pub worker_id: u32,
+    pub thread_id: u32,
     pub graph_id: u32,
 
     pub stack_name: &'a str,
@@ -174,10 +175,8 @@ impl Engine {
     }
 
     fn run_workers(graphs: Vec<Graph>, stack_name: &str) {
-        static mut WORKERS: Vec<Worker> = Vec::new();
-
         unsafe extern "C" fn worker_routine(worker: *mut c_void) -> i32 {
-            let worker = unsafe { worker.cast::<Worker>().as_mut().unwrap() };
+            let mut worker = unsafe { Box::from_raw(worker.cast::<Worker>()) };
             assert_eq!(sys::rte_lcore_id(), worker.cpu);
             log::debug!("worker {} is running on core {}", worker.id, worker.cpu);
 
@@ -188,23 +187,15 @@ impl Engine {
         for (id, g) in graphs.into_iter().enumerate() {
             let cpu = g.cpu;
             let stack_name = stack_name.to_string();
-
-            unsafe { WORKERS.insert(id, Worker::new(id as _, stack_name, g.id, g.nodes, cpu)) };
-
-            let worker_ptr = unsafe { WORKERS.get_mut(id).unwrap() };
-
+            let worker = Box::new(Worker::new(id as _, stack_name, g.id, g.nodes, cpu));
             unsafe {
-                sys::rte_eal_remote_launch(
-                    Some(worker_routine),
-                    worker_ptr as *mut _ as *mut _,
-                    cpu,
-                );
+                sys::rte_eal_remote_launch(Some(worker_routine), Box::into_raw(worker).cast(), cpu);
             }
-
-            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
 }
+
+unsafe impl Send for Worker {}
 
 impl Worker {
     const TASK_QUEUE_SIZE: usize = 2048;
@@ -230,19 +221,22 @@ impl Worker {
     pub fn run(&mut self) -> Result<()> {
         let req = Request::ThreadEnter;
         let res = send_request(&req)?;
-        if let ResponseData::ThreadEnter { thread_id } = res.data? {
-            ThreadId::set(thread_id);
+        let thread_id = if let ResponseData::ThreadEnter { thread_id } = res.data? {
+            thread_id
         } else {
             return Err(Error::Unknown);
-        }
+        };
+
+        ThreadId::set(thread_id);
 
         let socket_id = unsafe { sys::rte_socket_id() };
-        let pktpool = PacketPool::get_or_create(socket_id);
+        let pktpool = PacketPool::get_or_create(socket_id, thread_id);
 
         let ctx = Context {
             pktpool: &pktpool,
             cpu: self.cpu,
             worker_id: self.id,
+            thread_id,
             graph_id: self.graph_id,
             stack_name: &self.stack_name,
         };

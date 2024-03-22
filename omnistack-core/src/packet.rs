@@ -1,10 +1,10 @@
-use std::mem::transmute;
+use std::ffi::c_uint;
 use std::ptr::null_mut;
+use std::{ffi::c_void, mem::transmute};
 
 use dpdk_sys as sys;
 
 use crate::memory::{Aligned, MemoryError, MemoryPool};
-use crate::service::ThreadId;
 
 pub const MTU: u16 = 1500;
 pub const DEFAULT_OFFSET: u32 = 64;
@@ -38,6 +38,8 @@ pub struct Packet {
     pub next: *mut Packet,
 
     pub nic: u16,
+    // only useful in free callbacks
+    pub thread_id: u32,
     pub refcnt: usize,
     pub buf_ty: PktBufType,
 
@@ -45,32 +47,6 @@ pub struct Packet {
 }
 
 impl Packet {
-    pub const fn new() -> Self {
-        Self {
-            len: DEFAULT_OFFSET as _,
-            nic: 0,
-            l2_header: Header {
-                length: 0,
-                offset: 0,
-            },
-            l3_header: Header {
-                length: 0,
-                offset: 0,
-            },
-            l4_header: Header {
-                length: 0,
-                offset: 0,
-            },
-            offset: DEFAULT_OFFSET as _,
-            data: null_mut(),
-            next: null_mut(),
-            buf_ty: PktBufType::Local,
-            refcnt: 1,
-            // flow_hash: 0,
-            buf: Aligned([0; PACKET_BUF_SIZE]),
-        }
-    }
-
     #[inline(always)]
     pub fn len(&self) -> u16 {
         self.len - self.offset
@@ -121,21 +97,36 @@ pub struct PacketPool {
     thread_id: u32,
 }
 
+#[allow(unused)]
+unsafe extern "C" fn packet_init(
+    mp: *mut sys::rte_mempool,
+    opaque: *mut c_void,
+    obj: *mut c_void,
+    obj_idx: c_uint,
+) {
+    let pkt = obj.cast::<Packet>().as_mut().unwrap();
+    pkt.refcnt = 1;
+    pkt.next = null_mut();
+}
+
 impl PacketPool {
     const PACKET_POOL_SIZE: u32 = 1 << 16;
     const CACHE_SIZE: u32 = 256;
 
-    pub fn get_or_create(socket_id: u32) -> Self {
+    pub fn get_or_create(socket_id: u32, thread_id: u32) -> Self {
         let pkt_size = std::mem::size_of::<Packet>();
         let name = format!("pktpool_{socket_id}");
 
-        assert!(ThreadId::is_valid(), "thread id wasn't properly set");
-
-        let thread_id = ThreadId::get();
-
         let mp = unsafe {
-            MemoryPool::get_or_create(&name, Self::PACKET_POOL_SIZE, pkt_size as _, socket_id)
-                .unwrap()
+            MemoryPool::get_or_create(
+                &name,
+                Self::PACKET_POOL_SIZE,
+                pkt_size as _,
+                socket_id,
+                Some(packet_init),
+                null_mut(),
+            )
+            .unwrap()
         };
         unsafe { mp.create_cache(Self::CACHE_SIZE, thread_id) };
 
@@ -157,19 +148,14 @@ impl PacketPool {
     }
 
     #[inline(always)]
-    pub fn deallocate(packet: *mut Packet) {
+    pub fn deallocate(packet: *mut Packet, thread_id: u32) {
         let packet = unsafe { &mut *packet };
 
         if packet.refcnt == 1 {
-            packet.refcnt = 0;
-
             if let PktBufType::Mbuf(m) = packet.buf_ty {
-                unsafe { sys::rte_pktmbuf_free(m) };
+                unsafe { sys::rte_mbuf_raw_free(m) };
             }
-
-            unsafe { MemoryPool::deallocate(packet as *mut _ as *mut _, ThreadId::get()) };
-        } else if packet.refcnt == 0 {
-            log::error!("double free");
+            unsafe { MemoryPool::deallocate(packet as *mut _ as *mut _, thread_id) };
         } else {
             packet.refcnt -= 1;
         }
