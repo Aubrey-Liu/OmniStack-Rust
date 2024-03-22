@@ -2,27 +2,11 @@ use std::cell::OnceCell;
 use std::collections::HashMap;
 
 use bitflags::bitflags;
-use thiserror::Error;
 
 use crate::engine::Context;
 use crate::packet::Packet;
-
-// NOTE: some error types are just here to indicate an event or situation.
-// They are not actually errors.
-#[derive(Debug, Error)]
-pub enum ModuleError {
-    #[error("nothing happened")]
-    Nop,
-
-    #[error("packet was dropped")]
-    Dropped,
-
-    #[error("memory error")]
-    MemoryError(#[from] crate::memory::MemoryError),
-
-    #[error("unknown error happened")]
-    Unknown,
-}
+use crate::prelude::Error;
+use crate::Result;
 
 bitflags! {
     pub struct ModuleCapa: u32 {
@@ -30,8 +14,6 @@ bitflags! {
         const POLL = 0b_0010;
     }
 }
-
-pub type Result<T> = std::result::Result<T, ModuleError>;
 
 #[allow(unused)]
 pub trait Module {
@@ -44,7 +26,7 @@ pub trait Module {
 
     /// invoke the module periodically
     fn poll(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
-        Err(ModuleError::Nop)
+        Err(Error::Nop)
     }
 
     fn capability(&self) -> ModuleCapa {

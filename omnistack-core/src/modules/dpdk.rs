@@ -2,6 +2,7 @@ use std::ffi::{c_void, CString};
 use std::mem::size_of;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Once;
 use std::time::Instant;
 
 use crate::memory::MemoryError;
@@ -16,7 +17,7 @@ const TX_RING_SIZE: u16 = 2048;
 
 const BURST_SIZE: usize = 64;
 const PKTMBUF_CACHE_SIZE: u32 = 256;
-const PKTMBUF_SIZE: u32 = (1 << 16) - 1;
+const PKTMBUF_SIZE: u32 = 8192 - 1;
 const MBUF_SIZE: usize =
     (MTU as usize + size_of::<EthHeader>() + sys::RTE_PKTMBUF_HEADROOM as usize + 64 - 1) / 64 * 64;
 const MAX_FRAME_SIZE: usize = MTU as usize + size_of::<EthHeader>();
@@ -41,9 +42,6 @@ pub struct Dpdk {
 
     pktmbuf_pool: *mut sys::rte_mempool,
 
-    rx_desc: u16,
-    tx_desc: u16,
-
     #[cfg(feature = "perf")]
     stats: Stats,
 }
@@ -62,52 +60,6 @@ impl Dpdk {
         unsafe { std::mem::zeroed() }
     }
 
-    /// This function should only be called ONCE.
-    fn port_init(&mut self, port: u16, num_queues: u16) -> Result<()> {
-        if unsafe { sys::rte_eth_dev_is_valid_port(port) } == 0 {
-            panic!("invalid port number {port}");
-        }
-
-        let mut dev_info: sys::rte_eth_dev_info = unsafe { std::mem::zeroed() };
-        let ret = unsafe { sys::rte_eth_dev_info_get(port, &mut dev_info) };
-        if ret != 0 {
-            panic!("failed to get port info");
-        }
-
-        let mut conf = Self::default_port_conf();
-        conf.txmode.offloads &= dev_info.tx_offload_capa;
-        conf.rxmode.offloads &= dev_info.rx_offload_capa;
-
-        self.rx_desc = RX_RING_SIZE;
-        self.tx_desc = TX_RING_SIZE;
-        let ret = unsafe {
-            sys::rte_eth_dev_adjust_nb_rx_tx_desc(port, &mut self.rx_desc, &mut self.tx_desc)
-        };
-        if ret != 0 {
-            panic!("failed to set descriptor numbers");
-        }
-        log::debug!(
-            "[Port {}] rx queue: {} desc, tx queue: {} desc",
-            port,
-            self.rx_desc,
-            self.tx_desc
-        );
-
-        let ret = unsafe { sys::rte_eth_dev_configure(port, num_queues, num_queues, &conf) };
-        if ret != 0 {
-            panic!("failed to configurate device");
-        }
-
-        let ret = unsafe { sys::rte_flow_flush(port, null_mut()) };
-        if ret != 0 {
-            panic!("failed to flush flow");
-        }
-
-        INIT_DONE_FLAG.store(true, Ordering::Relaxed);
-
-        Ok(())
-    }
-
     fn default_port_conf() -> sys::rte_eth_conf {
         let mut conf: sys::rte_eth_conf = unsafe { std::mem::zeroed() };
         let rxmode = &mut conf.rxmode;
@@ -123,7 +75,8 @@ impl Dpdk {
             | RTE_ETH_TX_OFFLOAD_TCP_CKSUM
             | RTE_ETH_TX_OFFLOAD_SCTP_CKSUM
             | RTE_ETH_TX_OFFLOAD_TCP_TSO
-            | RTE_ETH_TX_OFFLOAD_UDP_TSO;
+            | RTE_ETH_TX_OFFLOAD_UDP_TSO
+            | RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
 
         let rx_adv_conf = &mut conf.rx_adv_conf;
         rx_adv_conf.rss_conf = sys::rte_eth_rss_conf {
@@ -167,82 +120,133 @@ impl Dpdk {
 
         tx_conf
     }
-}
 
-unsafe extern "C" fn packet_free_callback(_addr: *mut c_void, pkt: *mut c_void) {
-    PacketPool::deallocate(pkt.cast());
-}
+    /// This function should only be called ONCE.
+    unsafe fn port_init(port: u16, num_queues: u16) {
+        if sys::rte_eth_dev_is_valid_port(port) == 0 {
+            panic!("invalid port number {port}");
+        }
 
-static INIT_GUARD: std::sync::Once = std::sync::Once::new();
-static INIT_DONE_FLAG: AtomicBool = AtomicBool::new(false);
+        let mut dev_info: sys::rte_eth_dev_info = std::mem::zeroed();
+        let ret = sys::rte_eth_dev_info_get(port, &mut dev_info);
+        if ret != 0 {
+            panic!("failed to get port info");
+        }
 
-impl Adapter for Dpdk {
-    // might be called multiple times!
-    fn init(
-        &mut self,
-        ctx: &Context,
-        nic: u16,
-        port: u16,
-        num_queues: u16,
-        queue: u16,
-    ) -> Result<MacAddr> {
-        self.nic = nic;
-        self.port = port;
-        self.queue = queue;
+        let mut conf = Self::default_port_conf();
+        conf.txmode.offloads &= dev_info.tx_offload_capa;
+        conf.rxmode.offloads &= dev_info.rx_offload_capa;
 
-        let socket_id = unsafe { sys::rte_socket_id() };
-        let name = CString::new(format!("omni_driver_pool_{}_{}", port, ctx.worker_id)).unwrap();
+        let mut rx_desc = RX_RING_SIZE;
+        let mut tx_desc = TX_RING_SIZE;
+        let ret = sys::rte_eth_dev_adjust_nb_rx_tx_desc(port, &mut rx_desc, &mut tx_desc);
+        if ret != 0 {
+            panic!("failed to set descriptor numbers");
+        }
+        log::debug!(
+            "[Port {}] rx queue: {} desc, tx queue: {} desc",
+            port,
+            rx_desc,
+            tx_desc
+        );
 
-        let dev_socket_id = unsafe { sys::rte_eth_dev_socket_id(port) as u32 };
-        assert_eq!(dev_socket_id, socket_id);
+        let ret = sys::rte_eth_dev_configure(port, num_queues, num_queues, &conf);
+        if ret != 0 {
+            panic!("failed to configurate device");
+        }
 
-        self.pktmbuf_pool = unsafe {
-            sys::rte_pktmbuf_pool_create(
+        let ret = sys::rte_flow_flush(port, null_mut());
+        if ret != 0 {
+            panic!("failed to flush flow");
+        }
+
+        let socket_id = sys::rte_socket_id();
+        let dev_socket_id = sys::rte_eth_dev_socket_id(port);
+        assert_eq!(socket_id, dev_socket_id as u32);
+
+        for queue in 0..num_queues {
+            let name = CString::new(format!("pktmbuf_p{}q{}", port, queue)).unwrap();
+
+            let pktmbuf_pool = sys::rte_pktmbuf_pool_create(
                 name.as_ptr(),
                 PKTMBUF_SIZE,
                 PKTMBUF_CACHE_SIZE,
                 0,
                 MBUF_SIZE as _,
                 socket_id as _,
-            )
-        };
-        if self.pktmbuf_pool.is_null() {
-            panic!("failed to create pktmbuf");
+            );
+
+            let rx_conf = Self::default_rx_conf(port);
+            let ret = sys::rte_eth_rx_queue_setup(
+                port,
+                queue,
+                rx_desc,
+                socket_id,
+                &rx_conf,
+                pktmbuf_pool,
+            );
+            if ret != 0 {
+                panic!("failed to setup rx queue {}", queue);
+            }
+            log::debug!("rx queue {} of port {} is ready", queue, port);
+
+            let tx_conf = Self::default_tx_conf(port);
+            let ret = sys::rte_eth_tx_queue_setup(port, queue, tx_desc, socket_id, &tx_conf);
+            if ret != 0 {
+                panic!("failed to setup tx queue {}", queue);
+            }
+            log::debug!("tx queue {} of port {} is ready", queue, port);
         }
 
-        INIT_GUARD.call_once(|| {
-            self.port_init(port, num_queues).unwrap();
+        let ret = unsafe { sys::rte_eth_dev_start(port) };
+        if ret != 0 {
+            panic!("failed to start port {}", port);
+        }
+
+        let ret = unsafe { sys::rte_eth_promiscuous_enable(port) };
+        if ret != 0 {
+            panic!("failed to enable promiscuous mode");
+        }
+
+        log::debug!("port {} started", port);
+
+        INIT_DONE_FLAG.store(true, Ordering::Relaxed);
+    }
+}
+
+unsafe extern "C" fn packet_free_callback(_addr: *mut c_void, pkt: *mut c_void) {
+    PacketPool::deallocate(pkt.cast());
+}
+
+static INIT_DONE_FLAG: AtomicBool = AtomicBool::new(false);
+
+impl Adapter for Dpdk {
+    fn init(
+        &mut self,
+        _ctx: &Context,
+        nic: u16,
+        port: u16,
+        num_queues: u16,
+        queue: u16,
+    ) -> Result<MacAddr> {
+        static INIT_ONCE: Once = Once::new();
+        INIT_ONCE.call_once(|| {
+            unsafe { Self::port_init(port, num_queues) };
         });
 
-        // wait until port is fully initialized
+        // wait until port is initialized
         while !INIT_DONE_FLAG.load(Ordering::Relaxed) {
+            log::debug!("busy waiting");
             std::hint::spin_loop();
         }
 
-        let rx_conf = Self::default_rx_conf(port);
-        let ret = unsafe {
-            sys::rte_eth_rx_queue_setup(
-                port,
-                queue,
-                self.rx_desc,
-                socket_id as _,
-                &rx_conf,
-                self.pktmbuf_pool,
-            )
-        };
-        if ret != 0 {
-            panic!("failed to setup rx queue");
-        }
-        log::debug!("rx queue {} of port {} is ready", queue, port);
+        self.nic = nic;
+        self.port = port;
+        self.queue = queue;
 
-        let tx_conf = Self::default_tx_conf(port);
-        let ret = unsafe {
-            sys::rte_eth_tx_queue_setup(port, queue, self.tx_desc, socket_id as _, &tx_conf)
-        };
-        if ret != 0 {
-            panic!("failed to setup tx queue");
-        }
-        log::debug!("tx queue {} of port {} is ready", queue, port);
+        let name = CString::new(format!("pktmbuf_p{}q{}", port, queue)).unwrap();
+        self.pktmbuf_pool = unsafe { sys::rte_mempool_lookup(name.as_ptr()) };
+        assert!(!self.pktmbuf_pool.is_null());
 
         let ret = unsafe {
             sys::rte_pktmbuf_alloc_bulk(
@@ -252,17 +256,16 @@ impl Adapter for Dpdk {
             )
         };
         if ret != 0 {
-            return Err(MemoryError::Exhausted.into());
+            return Err(Error::Unknown);
         }
 
         let mut mac_addr = sys::rte_ether_addr { addr_bytes: [0; 6] };
         let ret = unsafe { sys::rte_eth_macaddr_get(port, &mut mac_addr) };
-        let mac_addr = MacAddr::from_bytes(mac_addr.addr_bytes);
-        log::debug!("MAC addr of port {}: {:?}", port, mac_addr);
-
         if ret != 0 {
-            panic!("failed to get the MAC address of port {port}");
+            return Err(Error::Unknown);
         }
+
+        let mac_addr = MacAddr::from_bytes(mac_addr.addr_bytes);
 
         #[cfg(feature = "perf")]
         {
@@ -401,7 +404,7 @@ impl Adapter for Dpdk {
             )
         };
         if rx_items == 0 {
-            return Err(ModuleError::Nop);
+            return Err(Error::Nop);
         }
 
         let mut ret = null_mut();

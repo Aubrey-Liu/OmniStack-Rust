@@ -1,8 +1,11 @@
-use std::{mem::transmute, ptr::null_mut};
+use std::mem::transmute;
+use std::ptr::null_mut;
+use std::sync::Mutex;
 
 use dpdk_sys as sys;
 
-use crate::memory::{Aligned, MemoryError, MemoryPool, ThreadId};
+use crate::memory::{Aligned, MemoryError, MemoryPool};
+use crate::service::ThreadId;
 
 pub const MTU: u16 = 1500;
 pub const DEFAULT_OFFSET: u32 = 64;
@@ -22,7 +25,7 @@ pub enum PktBufType {
     Mbuf(*mut sys::rte_mbuf),
 }
 
-#[repr(C, align(64))]
+#[repr(C)]
 pub struct Packet {
     // WARNING: field order is crucial for performance
     pub len: u16,
@@ -38,7 +41,7 @@ pub struct Packet {
     pub next: *mut Packet,
 
     pub nic: u16,
-    pub refcnt: u32,
+    pub refcnt: usize,
     pub buf_ty: PktBufType,
 
     pub buf: Aligned<[u8; PACKET_BUF_SIZE]>,

@@ -1,7 +1,8 @@
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU16;
-use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::Ordering::*;
+use std::sync::Mutex;
 
 use arrayvec::ArrayVec;
 
@@ -10,11 +11,12 @@ use crate::engine::Context;
 use crate::memory::Aligned;
 use crate::module::*;
 use crate::packet::Packet;
+use crate::prelude::Error;
 use crate::protocol::{EthHeader, MacAddr};
+use crate::Result;
 
+#[allow(unused)]
 pub trait Adapter {
-    /// Should only be called ONCE.
-    #[allow(unused)]
     fn init(
         &mut self,
         ctx: &Context,
@@ -30,22 +32,18 @@ pub trait Adapter {
         Ok(())
     }
 
-    #[allow(unused)]
     fn send(&mut self, ctx: &Context, packet: &mut Packet) -> Result<()> {
         Ok(())
     }
 
-    #[allow(unused)]
     fn recv(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
-        Err(ModuleError::Nop)
+        Err(Error::Nop)
     }
 
-    #[allow(unused)]
     fn flush(&mut self, ctx: &Context) -> Result<()> {
         Ok(())
     }
 
-    #[allow(unused)]
     fn stop(&self, ctx: &Context) {}
 }
 
@@ -76,13 +74,11 @@ impl IoNode {
     }
 }
 
-static QUEUE_ID: AtomicU16 = AtomicU16::new(0);
-static INIT_DONE_QUEUES: AtomicU16 = AtomicU16::new(0);
-
 impl Module for IoNode {
     fn init(&mut self, ctx: &Context) -> Result<()> {
-        // this lock guarantees the following steps are not concurrent
-        let config = ConfigManager::get().lock().unwrap();
+        static QUEUE_ID: AtomicU16 = AtomicU16::new(0);
+
+        let config = ConfigManager::get();
         let stack_config = config.get_stack_config(ctx.stack_name).unwrap();
         let num_queues = stack_config.graphs[ctx.graph_id as usize].cpus.len() as u16;
         let queue_id = QUEUE_ID.fetch_add(1, Relaxed);
@@ -98,23 +94,14 @@ impl Module for IoNode {
                 .unwrap();
 
             self.nic_to_mac[id] = mac;
+            log::debug!(
+                "[Thread {}] MAC addr of nic {} is {:?}",
+                crate::service::ThreadId::get(),
+                id,
+                mac
+            );
+
             self.adapters.0.push(adapter);
-        }
-
-        // WARNING: DON'T EVER FORGET THIS!
-        drop(config);
-
-        // start adapter after all initialization are done
-        if INIT_DONE_QUEUES.load(Relaxed) + 1 == num_queues {
-            for adapter in &mut self.adapters.0 {
-                adapter.start()?;
-            }
-        }
-        INIT_DONE_QUEUES.fetch_add(1, Relaxed);
-
-        // wait until every queue is initialized
-        while INIT_DONE_QUEUES.load(Relaxed) != num_queues {
-            std::hint::spin_loop();
         }
 
         Ok(())
@@ -136,7 +123,7 @@ impl Module for IoNode {
             self.flush_queue_idx += 1;
         }
 
-        Err(ModuleError::Dropped)
+        Err(Error::Dropped)
     }
 
     fn poll(&mut self, ctx: &Context) -> Result<&'static mut Packet> {
@@ -156,12 +143,12 @@ impl Module for IoNode {
 
         for adapter in &mut self.adapters.0 {
             match adapter.recv(ctx) {
-                Err(ModuleError::Nop) => continue,
+                Err(Error::Nop) => continue,
                 r => return r,
             }
         }
 
-        Err(ModuleError::Nop)
+        Err(Error::Nop)
     }
 
     fn capability(&self) -> ModuleCapa {

@@ -21,7 +21,7 @@ impl Ipv4Sender {
 
 impl Module for Ipv4Sender {
     fn init(&mut self, ctx: &Context) -> Result<()> {
-        let config = ConfigManager::get().lock().unwrap();
+        let config = ConfigManager::get();
         let stack_config = config.get_stack_config(ctx.stack_name).unwrap();
         self.route_table
             .try_extend_from_slice(&stack_config.routes)
@@ -83,7 +83,7 @@ impl Module for Ipv4Receiver {
         if ipv4.ihl() < 5 || ipv4.ttl == 0 {
             PacketPool::deallocate(packet);
 
-            Err(ModuleError::Dropped)
+            Err(Error::Dropped)
         } else {
             Ok(())
         }

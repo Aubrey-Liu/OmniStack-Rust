@@ -6,5 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-omnistack-core = { path = "../omnistack-core" }
 serde_json = "1.0.114"
+omnistack-core = { path = "../omnistack-core" }

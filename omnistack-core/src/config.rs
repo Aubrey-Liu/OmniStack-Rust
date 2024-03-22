@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::Mutex;
 
 // TODO: use serde_json
 use json::JsonValue;
@@ -11,14 +10,18 @@ pub struct ConfigManager {
     stack_configs: Vec<StackConfig>,
 }
 
-impl ConfigManager {
-    pub fn get() -> &'static Mutex<ConfigManager> {
-        static CONFIG: Mutex<ConfigManager> = Mutex::new(ConfigManager {
-            graph_configs: Vec::new(),
-            stack_configs: Vec::new(),
-        });
+static mut CONFIG: ConfigManager = ConfigManager {
+    graph_configs: Vec::new(),
+    stack_configs: Vec::new(),
+};
 
-        &CONFIG
+impl ConfigManager {
+    pub fn get() -> &'static ConfigManager {
+        unsafe { &CONFIG }
+    }
+
+    pub fn get_mut() -> &'static mut ConfigManager {
+        unsafe { &mut CONFIG }
     }
 
     pub fn load_dir(&mut self, dir: &Path) {

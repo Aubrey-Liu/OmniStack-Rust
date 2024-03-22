@@ -1,47 +1,16 @@
-use std::cell::Cell;
 use std::cmp::max;
 use std::ffi::CString;
 use std::mem::size_of;
-use std::ptr::null_mut;
-use std::sync::atomic::AtomicU32;
+use std::ptr::{addr_of, null_mut};
 use std::sync::Mutex;
 
 use dpdk_sys as sys;
 use sys::constants::*;
 use thiserror::Error;
 
-#[inline(always)]
-pub fn next_thread_id() -> u32 {
-    static NEXT_THREAD_ID: AtomicU32 = AtomicU32::new(0);
-
-    NEXT_THREAD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-}
-
-pub struct ThreadId;
-
-impl ThreadId {
-    thread_local! {
-        static THREAD_ID: Cell<u32> = Cell::new(u32::MAX);
-    }
-
-    #[inline(always)]
-    pub fn set(id: u32) {
-        Self::THREAD_ID.set(id);
-    }
-
-    #[inline(always)]
-    pub fn get() -> u32 {
-        Self::THREAD_ID.get()
-    }
-
-    pub fn is_valid() -> bool {
-        Self::THREAD_ID.get() != u32::MAX
-    }
-}
+use crate::service::MAX_THREAD_NUM;
 
 pub const CACHE_LINE_SIZE: usize = 64;
-
-const MAX_THREAD_NUM: usize = 256;
 const MEMPOOL_HDR_OFFSET: usize = size_of::<sys::rte_mempool_objhdr>();
 
 #[repr(C)]
@@ -63,8 +32,6 @@ pub enum MemoryError {
     Exhausted,
 }
 
-static MEMPOOL_INIT_GUARD: Mutex<()> = Mutex::new(());
-
 impl MemoryPool {
     pub unsafe fn get_or_create(
         name: &str,
@@ -72,10 +39,10 @@ impl MemoryPool {
         elt_size: u32,
         socket_id: u32,
     ) -> Result<&'static mut Self, MemoryError> {
-        assert!(name.len() <= 24, "name too long");
-
+        static MEMPOOL_INIT_GUARD: Mutex<()> = Mutex::new(());
         let _guard = MEMPOOL_INIT_GUARD.lock().unwrap();
 
+        assert!(name.len() <= 24, "name too long");
         let zone_name = CString::new(format!("zone_{}", name)).unwrap();
 
         let zone = sys::rte_memzone_lookup(zone_name.as_ptr());
@@ -90,8 +57,9 @@ impl MemoryPool {
             return Ok(mempool);
         }
 
-        let memzone_len =
-            max(size_of::<MemoryPool>(), CACHE_LINE_SIZE) + size_of::<usize>() * MAX_THREAD_NUM;
+        let memzone_len = ((size_of::<MemoryPool>() + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE
+            * CACHE_LINE_SIZE)
+            + size_of::<usize>() * MAX_THREAD_NUM;
 
         let zone = sys::rte_memzone_reserve_aligned(
             zone_name.as_ptr(),
@@ -129,12 +97,14 @@ impl MemoryPool {
         let trailer = (memory_pool as *mut MemoryPool).add(1).cast::<u8>();
         memory_pool.cache_per_thread = trailer.add(trailer.align_offset(CACHE_LINE_SIZE)).cast();
 
-        for i in 0..MAX_THREAD_NUM {
-            memory_pool
-                .cache_per_thread
-                .add(i)
-                .write(usize::MAX as *mut _);
-        }
+        assert!(memory_pool.cache_per_thread.align_offset(64) == 0);
+
+        // for i in 0..MAX_THREAD_NUM {
+        //     memory_pool
+        //         .cache_per_thread
+        //         .add(i)
+        //         .write(usize::MAX as *mut _);
+        // }
 
         let priv_data = sys::rte_mempool_get_priv(mp)
             .cast::<MemoryPoolPrivData>()
@@ -173,7 +143,6 @@ impl MemoryPool {
 
     #[inline(always)]
     pub(crate) unsafe fn deallocate(obj: *mut u8, thread_id: u32) {
-        let objs = [obj];
         let sys_mp = (*obj
             .sub(MEMPOOL_HDR_OFFSET)
             .cast::<sys::rte_mempool_objhdr>())
@@ -186,7 +155,7 @@ impl MemoryPool {
             .cast::<MemoryPoolPrivData>();
         let cache = priv_data.cache_per_thread.add(thread_id as usize).read();
 
-        unsafe { sys::rte_mempool_generic_put(sys_mp, objs.as_ptr().cast(), 1, cache) };
+        unsafe { sys::rte_mempool_generic_put(sys_mp, addr_of!(obj).cast(), 1, cache) };
     }
 
     #[inline(always)]

@@ -34,9 +34,7 @@ fn main() {
     );
 
     {
-        // TODO: make it less likely to dead lock
-        let mut config_manager = ConfigManager::get().lock().unwrap();
-        config_manager.load_dir(config_dir);
+        ConfigManager::get_mut().load_dir(config_dir);
     }
 
     Engine::run(&cli.stack).unwrap();

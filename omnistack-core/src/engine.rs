@@ -5,11 +5,12 @@ use arrayvec::ArrayVec;
 use dpdk_sys as sys;
 
 use crate::config::{ConfigManager, GraphConfig};
-use crate::memory::{next_thread_id, ThreadId};
-use crate::module::{build_module, Module, ModuleCapa, ModuleError, Result};
+use crate::module::{build_module, Module, ModuleCapa};
 use crate::packet::{Packet, PacketPool};
+use crate::prelude::Error;
+use crate::service::{send_request, Request, ResponseData, Server, ThreadId, SERVER_UP_FLAG};
 use crate::sys::process_init;
-use crate::user::Server;
+use crate::Result;
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
@@ -108,8 +109,17 @@ impl Graph {
     }
 }
 
-// only the main thread would write this flag, so it's safe
-pub(crate) static mut STOP_FLAG: bool = false;
+// only the ctrl-c handler would write this flag, so it's safe
+static mut STOP_FLAG: bool = false;
+
+pub(crate) fn shutdown() {
+    unsafe { STOP_FLAG = true };
+}
+
+#[inline(always)]
+pub(crate) fn should_stop() -> bool {
+    unsafe { STOP_FLAG }
+}
 
 // TODO: don't need an Engine struct, can just use some functions
 pub struct Engine;
@@ -117,7 +127,7 @@ pub struct Engine;
 impl Engine {
     pub fn run(stack_name: &str) -> Result<()> {
         // TODO: subgraph on different cores?
-        let config = ConfigManager::get().lock().unwrap();
+        let config = ConfigManager::get();
 
         let graph_entries = if let Some(s) = config.get_stack_config(stack_name) {
             &s.graphs
@@ -133,25 +143,27 @@ impl Engine {
             }
         }
 
-        drop(config);
-
         // init dpdk
         process_init();
 
-        ctrlc::set_handler(move || unsafe { STOP_FLAG = true })
-            .expect("error when setting ctrl-c handler");
-
-        Self::run_workers(graphs, stack_name);
+        ctrlc::set_handler(shutdown).unwrap();
 
         let server = std::thread::Builder::new()
             .name("Coordinator".to_string())
             .spawn(Server::run)
             .unwrap();
 
-        unsafe { sys::rte_eal_mp_wait_lcore() };
-        let _ = server.join();
+        while unsafe { !SERVER_UP_FLAG } {
+            std::hint::spin_loop();
+        }
 
-        // unsafe { sys::rte_eal_cleanup() };
+        Self::run_workers(graphs, stack_name);
+        unsafe { sys::rte_eal_mp_wait_lcore() };
+
+        let r = server.join().unwrap();
+        if r.is_err() {
+            log::error!("server error: {:?}", r);
+        }
 
         Ok(())
     }
@@ -161,17 +173,10 @@ impl Engine {
 
         unsafe extern "C" fn worker_routine(worker: *mut c_void) -> i32 {
             let worker = unsafe { worker.cast::<Worker>().as_mut().unwrap() };
-
-            // core_affinity::set_for_current(core_affinity::CoreId {
-            //     id: worker.cpu as usize,
-            // });
-
             assert_eq!(sys::rte_lcore_id(), worker.cpu);
+            log::debug!("launch worker {} on core {}", worker.id, worker.cpu);
 
-            log::info!("Worker {} runs on core {}", worker.id, worker.cpu);
-
-            worker.run();
-
+            worker.run().unwrap();
             0
         }
 
@@ -188,8 +193,8 @@ impl Engine {
                     Some(worker_routine),
                     worker_ptr as *mut _ as *mut _,
                     cpu,
-                )
-            };
+                );
+            }
         }
     }
 }
@@ -217,9 +222,14 @@ impl Worker {
         }
     }
 
-    pub fn run(&mut self) {
-        let thread_id = next_thread_id();
-        ThreadId::set(thread_id);
+    pub fn run(&mut self) -> Result<()> {
+        let req = Request::ThreadEnter;
+        let res = send_request(&req)?;
+        if let Ok(ResponseData::ThreadEnter { thread_id }) = res.0 {
+            ThreadId::set(thread_id);
+        } else {
+            return Err(Error::Unknown);
+        }
 
         let socket_id = unsafe { sys::rte_socket_id() };
         let pktpool = PacketPool::get_or_create(socket_id);
@@ -233,7 +243,7 @@ impl Worker {
         };
 
         for (id, node) in self.nodes.iter_mut().enumerate() {
-            node.module.init(&ctx).unwrap();
+            node.module.init(&ctx)?;
 
             let capa = node.module.capability();
             assert!(capa.contains(ModuleCapa::PROCESS));
@@ -243,8 +253,7 @@ impl Worker {
         }
 
         let mut index = 0;
-
-        while unsafe { !STOP_FLAG } {
+        while !should_stop() {
             for &node_id in &self.nodes_to_poll {
                 let node = unsafe { self.nodes.get_unchecked_mut(node_id.0) };
 
@@ -264,10 +273,8 @@ impl Worker {
                             }
                         }
                     }
-                    Err(ModuleError::Nop) => continue,
-                    e @ Err(_) => {
-                        let _ = e.unwrap();
-                    }
+                    Err(Error::Nop) => continue,
+                    Err(e) => return Err(e),
                 }
             }
 
@@ -280,8 +287,7 @@ impl Worker {
 
                 match node.module.process(&ctx, pkt) {
                     Ok(()) => {
-                        pkt.refcnt += node.links_to.len() as u32 - 1;
-
+                        pkt.refcnt += node.links_to.len() - 1;
                         for &node_id in &node.links_to {
                             unsafe {
                                 *self.task_queue.get_unchecked_mut(index) =
@@ -290,8 +296,8 @@ impl Worker {
                             index += 1;
                         }
                     }
-                    Err(ModuleError::Dropped) => continue,
-                    e @ Err(_) => e.unwrap(),
+                    Err(Error::Dropped) => continue,
+                    Err(e) => return Err(e),
                 }
             }
         }
@@ -300,8 +306,7 @@ impl Worker {
             node.module.destroy(&ctx);
         }
 
-        // make sure all threads would exit
-        unsafe { STOP_FLAG = true };
+        Ok(())
     }
 }
 
