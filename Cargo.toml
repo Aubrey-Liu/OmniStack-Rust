@@ -3,5 +3,6 @@ members = ["omnistack", "omnistack-cli", "omnistack-core", "omnistack-proc"]
 resolver = "2"
 
 [profile.release]
-lto = true
+codegen-units = 1
+lto = "fat"
 panic = "abort"

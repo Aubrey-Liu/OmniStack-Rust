@@ -1,6 +1,5 @@
 use std::mem::transmute;
 use std::ptr::null_mut;
-use std::sync::Mutex;
 
 use dpdk_sys as sys;
 
@@ -12,14 +11,12 @@ pub const DEFAULT_OFFSET: u32 = 64;
 pub const PACKET_BUF_SIZE: usize = MTU as usize + DEFAULT_OFFSET as usize;
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
 pub struct Header {
     pub length: u16,
     pub offset: u16,
 }
 
 #[repr(C)]
-#[derive(Debug)]
 pub enum PktBufType {
     Local,
     Mbuf(*mut sys::rte_mbuf),
@@ -125,7 +122,7 @@ pub struct PacketPool {
 }
 
 impl PacketPool {
-    const PACKET_POOL_SIZE: u32 = (1 << 16) - 1;
+    const PACKET_POOL_SIZE: u32 = 1 << 16;
     const CACHE_SIZE: u32 = 256;
 
     pub fn get_or_create(socket_id: u32) -> Self {

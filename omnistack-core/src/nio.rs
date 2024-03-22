@@ -2,7 +2,6 @@ use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU16;
 use std::sync::atomic::Ordering::*;
-use std::sync::Mutex;
 
 use arrayvec::ArrayVec;
 

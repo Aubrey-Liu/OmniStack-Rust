@@ -16,8 +16,8 @@ const RX_RING_SIZE: u16 = 2048;
 const TX_RING_SIZE: u16 = 2048;
 
 const BURST_SIZE: usize = 64;
-const PKTMBUF_CACHE_SIZE: u32 = 256;
-const PKTMBUF_SIZE: u32 = 8192 - 1;
+const MBUF_CACHE_SIZE: u32 = 256;
+const NB_MBUFS: u32 = 1 << 16;
 const MBUF_SIZE: usize =
     (MTU as usize + size_of::<EthHeader>() + sys::RTE_PKTMBUF_HEADROOM as usize + 64 - 1) / 64 * 64;
 const MAX_FRAME_SIZE: usize = MTU as usize + size_of::<EthHeader>();
@@ -36,9 +36,9 @@ pub struct Dpdk {
     rx_bufs: [*mut sys::rte_mbuf; BURST_SIZE],
     tx_idx: usize,
 
-    nic: u16,
     port: u16,
     queue: u16,
+    nic: u16,
 
     pktmbuf_pool: *mut sys::rte_mempool,
 
@@ -57,7 +57,24 @@ struct Stats {
 
 impl Dpdk {
     fn new() -> Self {
-        unsafe { std::mem::zeroed() }
+        Self {
+            tx_bufs: [null_mut(); BURST_SIZE],
+            rx_bufs: [null_mut(); BURST_SIZE],
+            tx_idx: 0,
+            nic: 0,
+            port: 0,
+            queue: 0,
+            pktmbuf_pool: null_mut(),
+
+            #[cfg(feature = "perf")]
+            stats: Stats {
+                sent_pkts: 0,
+                sent_bytes: 0,
+                recv_pkts: 0,
+                recv_bytes: 0,
+                begin: Instant::now(),
+            },
+        }
     }
 
     fn default_port_conf() -> sys::rte_eth_conf {
@@ -82,12 +99,9 @@ impl Dpdk {
         rx_adv_conf.rss_conf = sys::rte_eth_rss_conf {
             rss_key: unsafe { DEFAULT_RSS_KEY.as_mut_ptr() },
             rss_key_len: unsafe { DEFAULT_RSS_KEY.len() as _ },
-            // TODO:
             rss_hf: RTE_ETH_RSS_FRAG_IPV4
                 | RTE_ETH_RSS_NONFRAG_IPV4_TCP
-                | RTE_ETH_RSS_NONFRAG_IPV4_UDP, // | RTE_ETH_RSS_IPV4
-                                                // | RTE_ETH_RSS_TCP
-                                                // | RTE_ETH_RSS_UDP,
+                | RTE_ETH_RSS_NONFRAG_IPV4_UDP,
         };
 
         conf
@@ -164,18 +178,17 @@ impl Dpdk {
         let dev_socket_id = sys::rte_eth_dev_socket_id(port);
         assert_eq!(socket_id, dev_socket_id as u32);
 
+        let name = CString::new(format!("mbuf_pool_p{}", port)).unwrap();
+        let pktmbuf_pool = sys::rte_pktmbuf_pool_create(
+            name.as_ptr(),
+            NB_MBUFS,
+            MBUF_CACHE_SIZE,
+            0,
+            MBUF_SIZE as _,
+            socket_id as _,
+        );
+
         for queue in 0..num_queues {
-            let name = CString::new(format!("pktmbuf_p{}q{}", port, queue)).unwrap();
-
-            let pktmbuf_pool = sys::rte_pktmbuf_pool_create(
-                name.as_ptr(),
-                PKTMBUF_SIZE,
-                PKTMBUF_CACHE_SIZE,
-                0,
-                MBUF_SIZE as _,
-                socket_id as _,
-            );
-
             let rx_conf = Self::default_rx_conf(port);
             let ret = sys::rte_eth_rx_queue_setup(
                 port,
@@ -236,7 +249,6 @@ impl Adapter for Dpdk {
 
         // wait until port is initialized
         while !INIT_DONE_FLAG.load(Ordering::Relaxed) {
-            log::debug!("busy waiting");
             std::hint::spin_loop();
         }
 
@@ -244,7 +256,7 @@ impl Adapter for Dpdk {
         self.port = port;
         self.queue = queue;
 
-        let name = CString::new(format!("pktmbuf_p{}q{}", port, queue)).unwrap();
+        let name = CString::new(format!("mbuf_pool_p{}", port)).unwrap();
         self.pktmbuf_pool = unsafe { sys::rte_mempool_lookup(name.as_ptr()) };
         assert!(!self.pktmbuf_pool.is_null());
 

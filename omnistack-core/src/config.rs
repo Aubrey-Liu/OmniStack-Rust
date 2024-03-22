@@ -1,3 +1,5 @@
+#![allow(static_mut_refs)]
+
 use std::path::Path;
 
 // TODO: use serde_json

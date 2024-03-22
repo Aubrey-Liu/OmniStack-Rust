@@ -146,10 +146,18 @@ impl Engine {
         // init dpdk
         process_init();
 
+        unsafe {
+            log::debug!(
+                "{} lcores (main lcore: {})",
+                sys::rte_lcore_count(),
+                sys::rte_get_main_lcore()
+            )
+        };
+
         ctrlc::set_handler(shutdown).unwrap();
 
         let server = std::thread::Builder::new()
-            .name("Coordinator".to_string())
+            .name("server".to_string())
             .spawn(Server::run)
             .unwrap();
 
@@ -158,12 +166,9 @@ impl Engine {
         }
 
         Self::run_workers(graphs, stack_name);
-        unsafe { sys::rte_eal_mp_wait_lcore() };
 
-        let r = server.join().unwrap();
-        if r.is_err() {
-            log::error!("server error: {:?}", r);
-        }
+        let _ = server.join();
+        unsafe { sys::rte_eal_mp_wait_lcore() };
 
         Ok(())
     }
@@ -174,7 +179,7 @@ impl Engine {
         unsafe extern "C" fn worker_routine(worker: *mut c_void) -> i32 {
             let worker = unsafe { worker.cast::<Worker>().as_mut().unwrap() };
             assert_eq!(sys::rte_lcore_id(), worker.cpu);
-            log::debug!("launch worker {} on core {}", worker.id, worker.cpu);
+            log::debug!("worker {} is running on core {}", worker.id, worker.cpu);
 
             worker.run().unwrap();
             0
@@ -195,6 +200,8 @@ impl Engine {
                     cpu,
                 );
             }
+
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
 }
@@ -204,9 +211,7 @@ impl Worker {
 
     pub fn new(id: u32, stack_name: String, graph_id: u32, nodes: Vec<Node>, cpu: u32) -> Self {
         let mut nodes_arr = ArrayVec::new();
-        for node in nodes {
-            nodes_arr.try_push(node).unwrap();
-        }
+        nodes_arr.extend(nodes);
 
         Self {
             task_queue: [Task::default(); Self::TASK_QUEUE_SIZE],
@@ -225,7 +230,7 @@ impl Worker {
     pub fn run(&mut self) -> Result<()> {
         let req = Request::ThreadEnter;
         let res = send_request(&req)?;
-        if let Ok(ResponseData::ThreadEnter { thread_id }) = res.0 {
+        if let ResponseData::ThreadEnter { thread_id } = res.data? {
             ThreadId::set(thread_id);
         } else {
             return Err(Error::Unknown);
